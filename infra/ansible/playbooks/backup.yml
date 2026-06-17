@@ -1,0 +1,5 @@
+- name: Configure complex_eeg backups
+  hosts: all
+  become: true
+  roles:
+    - backup

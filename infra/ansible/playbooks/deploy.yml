@@ -1,0 +1,6 @@
+- name: Deploy complex_eeg services
+  hosts: all
+  become: true
+  roles:
+    - app_config
+    - deploy

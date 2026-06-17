@@ -1,0 +1,10 @@
+[Unit]
+Description=Run complex_eeg restore check weekly
+
+[Timer]
+OnCalendar=Sun 04:00:00
+Persistent=true
+Unit=complex-eeg-restore-check.service
+
+[Install]
+WantedBy=timers.target

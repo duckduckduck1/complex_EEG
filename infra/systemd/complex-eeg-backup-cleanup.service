@@ -1,0 +1,9 @@
+[Unit]
+Description=complex_eeg backup cleanup
+
+[Service]
+Type=oneshot
+User=deploy
+Group=complex_eeg
+EnvironmentFile=/opt/complex_eeg/config/.env
+ExecStart=/opt/complex_eeg/scripts/backup/cleanup_old_backups.sh

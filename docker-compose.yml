@@ -1,0 +1,179 @@
+name: complex_eeg
+
+services:
+  api:
+    image: ${API_IMAGE:-python:3.12-alpine}
+    restart: unless-stopped
+    user: "${APP_UID:-1000}:${APP_GID:-1000}"
+    working_dir: /app
+    command: ["python", "-m", "http.server", "8000", "--directory", "/srv/complex_eeg/upload_tmp"]
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      EXPERIMENTS_DIR: /srv/complex_eeg/experiments
+      PIPELINE_RESULTS_DIR: /srv/complex_eeg/pipeline_results
+      UPLOAD_TMP_DIR: /srv/complex_eeg/upload_tmp
+      LOG_DIR: /var/log/complex_eeg/app
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - ${EXPERIMENTS_DIR:-/srv/complex_eeg/experiments}:/srv/complex_eeg/experiments
+      - ${PIPELINE_RESULTS_DIR:-/srv/complex_eeg/pipeline_results}:/srv/complex_eeg/pipeline_results
+      - ${UPLOAD_TMP_DIR:-/srv/complex_eeg/upload_tmp}:/srv/complex_eeg/upload_tmp
+      - ${LOG_DIR:-/var/log/complex_eeg}/app:/var/log/complex_eeg/app
+    networks:
+      - public_net
+      - internal_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000').read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  web:
+    image: ${WEB_IMAGE:-nginx:1.27-alpine}
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - public_net
+      - internal_net
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-complex_eeg}
+      POSTGRES_USER: ${POSTGRES_USER:-complex_eeg}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
+    volumes:
+      - ${POSTGRES_DATA_DIR:-/srv/complex_eeg/postgres}:/var/lib/postgresql/data
+    networks:
+      - internal_net
+      - monitoring_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-complex_eeg} -d ${POSTGRES_DB:-complex_eeg}"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  validator:
+    image: busybox:1.36
+    restart: unless-stopped
+    user: "${APP_UID:-1000}:${APP_GID:-1000}"
+    command: ["sh", "-c", "while true; do sleep 3600; done"]
+    volumes:
+      - ${EXPERIMENTS_DIR:-/srv/complex_eeg/experiments}:/srv/complex_eeg/experiments:ro
+      - ${LOG_DIR:-/var/log/complex_eeg}/app:/var/log/complex_eeg/app
+    networks:
+      - internal_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  pipeline-worker:
+    image: busybox:1.36
+    restart: unless-stopped
+    user: "${APP_UID:-1000}:${APP_GID:-1000}"
+    command: ["sh", "-c", "while true; do sleep 3600; done"]
+    volumes:
+      - ${EXPERIMENTS_DIR:-/srv/complex_eeg/experiments}:/srv/complex_eeg/experiments:ro
+      - ${PIPELINE_RESULTS_DIR:-/srv/complex_eeg/pipeline_results}:/srv/complex_eeg/pipeline_results
+      - ${LOG_DIR:-/var/log/complex_eeg}/pipeline:/var/log/complex_eeg/pipeline
+    networks:
+      - internal_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  prometheus:
+    image: ${PROMETHEUS_IMAGE:-prom/prometheus:v2.55.1}
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./infra/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infra/monitoring/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - ${DATA_ROOT:-/srv/complex_eeg}/monitoring/prometheus:/prometheus
+    networks:
+      - monitoring_net
+      - internal_net
+    depends_on:
+      - node-exporter
+      - cadvisor
+      - postgres-exporter
+
+  grafana:
+    image: ${GRAFANA_IMAGE:-grafana/grafana:11.3.0}
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD:-change_me}
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - ${DATA_ROOT:-/srv/complex_eeg}/monitoring/grafana:/var/lib/grafana
+    networks:
+      - monitoring_net
+    depends_on:
+      - prometheus
+
+  node-exporter:
+    image: ${NODE_EXPORTER_IMAGE:-prom/node-exporter:v1.8.2}
+    restart: unless-stopped
+    command:
+      - --path.rootfs=/host
+      - --collector.textfile.directory=/backup_status
+    volumes:
+      - /:/host:ro,rslave
+      - ${BACKUP_STATUS_DIR:-/backup/complex_eeg/status}:/backup_status:ro
+    networks:
+      - monitoring_net
+
+  cadvisor:
+    image: ${CADVISOR_IMAGE:-gcr.io/cadvisor/cadvisor:v0.49.1}
+    restart: unless-stopped
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks:
+      - monitoring_net
+
+  postgres-exporter:
+    image: ${POSTGRES_EXPORTER_IMAGE:-prometheuscommunity/postgres-exporter:v0.15.0}
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: postgresql://${POSTGRES_USER:-complex_eeg}:${POSTGRES_PASSWORD:-change_me}@postgres:5432/${POSTGRES_DB:-complex_eeg}?sslmode=disable
+    networks:
+      - monitoring_net
+      - internal_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+networks:
+  public_net:
+  internal_net:
+    internal: true
+  monitoring_net:
+    internal: true

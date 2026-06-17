@@ -1,0 +1,10 @@
+[Unit]
+Description=Run complex_eeg backup cleanup weekly
+
+[Timer]
+OnCalendar=Sun 03:30:00
+Persistent=true
+Unit=complex-eeg-backup-cleanup.service
+
+[Install]
+WantedBy=timers.target

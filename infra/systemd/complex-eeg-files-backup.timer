@@ -1,0 +1,10 @@
+[Unit]
+Description=Run complex_eeg files backup daily
+
+[Timer]
+OnCalendar=*-*-* 02:30:00
+Persistent=true
+Unit=complex-eeg-files-backup.service
+
+[Install]
+WantedBy=timers.target

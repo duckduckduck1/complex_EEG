@@ -1,0 +1,10 @@
+[Unit]
+Description=Run complex_eeg PostgreSQL backup daily
+
+[Timer]
+OnCalendar=*-*-* 02:00:00
+Persistent=true
+Unit=complex-eeg-postgres-backup.service
+
+[Install]
+WantedBy=timers.target
