@@ -10,6 +10,16 @@ desktop.ini
 *.tmp
 *.temp
 
+# Python virtual environments
+.venv/
+venv/
+env/
+
+# Python packaging/build artifacts
+*.egg-info/
+build/
+dist/
+
 # Python cache
 __pycache__/
 *.py[cod]
