@@ -11,6 +11,8 @@ from sqlalchemy import engine_from_config, pool
 
 from app.core.config import settings
 from app.db.base import Base
+from app.db import models  # noqa: F401 - импортируем модели, чтобы Alembic видел их metadata
+
 
 config = context.config
 
@@ -18,7 +20,8 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Alembic сравнивает target_metadata с реальной БД при autogenerate.
-# Сейчас моделей ещё нет, поэтому metadata пустая.
+# Модели импортируются выше через app.db.models.
+# Без этого Base.metadata будет пустой, и autogenerate не увидит таблицы.
 target_metadata = Base.metadata
 
 # Не храним URL подключения в alembic.ini.
