@@ -9,6 +9,7 @@ from pathlib import Path
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 
+
 SERVER_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -45,3 +46,4 @@ def test_alembic_env_uses_application_settings() -> None:
 
     assert "from app.core.config import settings" in env_source
     assert 'config.set_main_option("sqlalchemy.url", settings.database_url)' in env_source
+    assert "from app.db import models" in env_source
