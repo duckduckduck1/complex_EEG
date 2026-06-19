@@ -1,5 +1,11 @@
 """Файловый слой upload flow."""
 
+from app.features.upload.dto import (
+    UploadProcessingResponseDto,
+    UploadSourceFileDto,
+    UploadValidationErrorDto,
+    build_upload_processing_response,
+)
 from app.features.upload.file_inventory import (
     SourceFileInfo,
     SourceFileInventoryError,
@@ -28,10 +34,14 @@ __all__ = [
     "UploadPromotionError",
     "UploadPromotionResult",
     "UploadProcessingResult",
+    "UploadProcessingResponseDto",
+    "UploadSourceFileDto",
     "UploadStagingError",
     "UploadStagingResult",
+    "UploadValidationErrorDto",
     "build_experiment_dir",
     "build_source_file_inventory",
+    "build_upload_processing_response",
     "build_upload_session_dir",
     "process_upload_package",
     "promote_staged_upload",
