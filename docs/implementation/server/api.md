@@ -138,7 +138,6 @@ Request:
 {
   "experiment_id": "exp_2026_001",
   "display_name": "exp1",
-  "client_created_at": "2026-06-17T10:00:00Z",
   "expected_files": [
     "signal.bin",
     "experiment.json"
@@ -155,9 +154,15 @@ Response:
   "upload_session_id": "01HX...",
   "experiment_id": "exp_2026_001",
   "status": "uploading",
-  "upload_base_url": "/api/v1/uploads/01HX..."
+  "upload_base_url": "/api/v1/uploads/01HX...",
+  "expires_at": "2026-06-18T10:00:00Z"
 }
 ```
+
+Текущая реализация принимает `display_name` для совместимости с будущим Web UI,
+но не сохраняет его в `upload_sessions`: в таблице нет такого поля. Финальное
+решение должно быть принято DB owner: хранить display name в `experiments` при
+создании session или добавить отдельное поле/metadata для upload session.
 
 Ошибки:
 
@@ -198,6 +203,10 @@ Response:
   "upload_session_id": "01HX...",
   "experiment_id": "exp_2026_001",
   "status": "uploading",
+  "expected_files": [
+    "experiment.json",
+    "signal.bin"
+  ],
   "uploaded_files": [
     "experiment.json"
   ],

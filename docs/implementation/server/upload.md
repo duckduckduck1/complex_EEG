@@ -154,6 +154,18 @@ client_id = web_ui
 Если позже появится прямой upload из Flutter, эта колонка может стать
 идентификатором конкретного клиента или установки приложения.
 
+Текущий implementation status:
+
+- реализованы `POST /api/v1/uploads`, `GET /api/v1/uploads/{id}`,
+  `DELETE /api/v1/uploads/{id}`;
+- session создаётся со статусом `uploading`;
+- сервер генерирует ULID и создаёт временную директорию upload session;
+- TTL берётся из `UPLOAD_SESSION_TTL_HOURS`;
+- `display_name` пока не сохраняется, потому что это требует решения DB owner
+  по месту хранения: `experiments` или расширение `upload_sessions`;
+- web-auth ещё не подключён, поэтому `client_id` временно фиксируется как
+  `web_ui`.
+
 ---
 
 ## Загрузка файлов

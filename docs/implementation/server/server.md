@@ -90,6 +90,7 @@ server/
     api/
       deps.py
       routes_auth.py
+      routes_upload_sessions.py
       routes_upload.py
       routes_experiments.py
       routes_web_auth.py

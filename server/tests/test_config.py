@@ -37,3 +37,13 @@ def test_database_url_uses_environment_values(monkeypatch) -> None:
         "@localhost:15432"
         "/test_db"
     )
+
+
+def test_upload_session_ttl_hours_uses_environment_value(monkeypatch) -> None:
+    """TTL upload session должен настраиваться через environment variable."""
+
+    monkeypatch.setenv("UPLOAD_SESSION_TTL_HOURS", "12")
+
+    settings = Settings()
+
+    assert settings.upload_session_ttl_hours == 12
