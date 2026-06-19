@@ -30,7 +30,6 @@ Widget tree:
 AppBloc
 SettingsCubit
 ExperimentIndexBloc
-ServerAuthCubit
 LabelDictionaryCubit
 ```
 
@@ -80,8 +79,8 @@ UtilitiesBloc
 
 ```text
 MetadataFormBloc
-ServerSettingsCubit
 StorageSettingsCubit
+PackageExportSettingsCubit
 ```
 
 Создаются на время открытия settings/metadata screens. `MetadataFormBloc` также
@@ -106,21 +105,21 @@ RecoveryBloc
 Создаётся при startup scan, если приложение нашло незавершённые или
 повреждённые локальные эксперименты.
 
-### Server sync
+### Package handoff
 
 ```text
-ServerUploadBloc
-UploadQueueBloc
-ExperimentServerStatusBloc
+ExperimentPackageValidationCubit
+PackageExportBloc
 ```
 
-Загрузка нескольких папок — это queue BLoC плюс item states.
+Создаются при проверке/экспорте готового experiment package. В MVP эти BLoC не
+выполняют HTTP upload и не хранят server auth token.
 
 ---
 
 ## Запрещено
 
-- `setState` для recording status, BLE status, upload status, annotation,
+- `setState` для recording status, BLE status, package export status, annotation,
   selected experiment, chart window, utility params;
 - прямой вызов `File(...)` из widget;
 - прямой вызов HTTP client из widget/BLoC presentation helpers;
@@ -155,8 +154,8 @@ ConnectionLost
 ManualReconnectRequested
 StateLabelStarted
 StateLabelEnded
-UploadSessionCreateRequested
-UploadCancelled
+PackageValidationRequested
+PackageExportRequested
 ```
 
 Не использовать vague events:

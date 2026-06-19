@@ -11,11 +11,12 @@ Draft.
 ## Цель
 
 Приложение должно надёжно записывать ЭЭГ локально, отображать live-сигнал,
-позволять разметку, сохранять самодостаточный эксперимент и вручную отправлять
-его на сервер.
+позволять разметку, сохранять самодостаточный эксперимент и готовить package для
+последующей ручной загрузки через Web UI сервера.
 
 Ни один экран не должен напрямую работать с BLE, файловой системой,
-локальной БД или HTTP. Всё проходит через BLoC и слой сервисов/repositories.
+локальной БД или внешними интеграциями. Всё проходит через BLoC и слой
+сервисов/repositories.
 
 ---
 
@@ -95,7 +96,7 @@ flutter_app/
       experiments/
       visualization/
       utilities/
-      server_sync/
+      package_handoff/
       settings/
     platform/
       ble/
@@ -157,7 +158,7 @@ MultiRepositoryProvider(
   providers: [
     RepositoryProvider<DeviceRepository>(create: (_) => BleDeviceRepository(...)),
     RepositoryProvider<ExperimentRepository>(create: (_) => LocalExperimentRepository(...)),
-    RepositoryProvider<ServerSyncRepository>(create: (_) => HttpServerSyncRepository(...)),
+    RepositoryProvider<PackageExportRepository>(create: (_) => LocalPackageExportRepository(...)),
   ],
   child: MultiBlocProvider(...),
 )
@@ -180,7 +181,7 @@ Navigation layer не выполняет бизнес-операции.
 
 - стартовать запись из route callback;
 - писать файлы из screen;
-- отправлять HTTP из widget;
+- выполнять внешние интеграции из widget;
 - менять статус эксперимента вне BLoC/use case.
 
 ---
@@ -211,9 +212,10 @@ Live chart and saved experiment chart.
 
 Frequency spectrum, band power, spectrogram, filter preview, diagnostic logs.
 
-### `server_sync`
+### `package_handoff`
 
-Manual selection and upload of experiment folders, upload progress, server status.
+Package validation, optional `.zip` export, and handoff instructions for Web UI
+upload. This feature does not perform HTTP upload in MVP.
 
 ---
 
@@ -243,7 +245,7 @@ BleFailure
 RecordingFailure
 StorageFailure
 ValidationFailure
-ServerSyncFailure
+PackageExportFailure
 RecoveryFailure
 ```
 
@@ -275,7 +277,7 @@ the experiment source.
 
 - no production screen uses repository directly;
 - every feature screen is backed by BLoC/Cubit;
-- file/BLE/HTTP calls are absent from widgets;
+- file/BLE/external integration calls are absent from widgets;
 - experiment IDs pass server regex;
 - each active device has isolated recording state;
 - BLoC tests cover main state transitions.

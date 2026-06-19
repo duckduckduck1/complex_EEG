@@ -5,7 +5,8 @@
 Draft.
 
 Раздел описывает реализацию Windows Flutter-приложения для локальной записи,
-разметки, диагностики и ручной отправки экспериментов на сервер.
+разметки, диагностики и подготовки experiment package для последующей ручной
+загрузки через Web UI сервера.
 
 ---
 
@@ -39,11 +40,15 @@ experiments.md        - список сохранённых эксперимен
 annotation.md         - разметка, справочник меток, доразметка
 visualization.md      - график live/saved сигнала
 utils.md              - спектр, мощность, спектрограмма, фильтры, логи
-server_sync.md        - ручная отправка экспериментов на сервер
+server_sync.md        - package handoff: проверка и экспорт пакета для Web UI
 recovery.md           - восстановление после краша приложения/системы
 settings.md           - настройки приложения, метаданные, справочники
 testing.md            - тестовая стратегия Flutter-приложения
 ```
+
+`server_sync.md` сохраняет старое имя файла, но в MVP не описывает прямую
+сетевую синхронизацию. Реальная feature в коде должна называться
+`package_handoff`.
 
 ---
 
@@ -58,7 +63,7 @@ testing.md            - тестовая стратегия Flutter-прилож
 - Source of truth для эксперимента: папка эксперимента.
 - Source of truth во время записи: `signal.bin` + `journal.ndjson`.
 - Final export contract: `signal.bin` + `experiment.json`.
-- Server upload: manual, upload session API.
+- Server handoff: manual package export; upload выполняется через Web UI.
 
 ---
 

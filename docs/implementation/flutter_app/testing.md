@@ -11,7 +11,7 @@ Draft.
 ## Цель
 
 Проверить не внешний вид сам по себе, а надёжность записи, разметки,
-восстановления и отправки экспериментов.
+восстановления и подготовки experiment package.
 
 ---
 
@@ -26,7 +26,7 @@ Draft.
 - experiment JSON builder;
 - segment policies;
 - annotation validation;
-- upload preflight validation.
+- package preflight validation.
 
 ### BLoC tests
 
@@ -42,8 +42,8 @@ Draft.
 
 - file writes are atomic;
 - index rebuild from folders;
-- upload repository maps server errors;
-- settings repository hides secrets from logs.
+- package export repository creates safe exports;
+- settings repository does not store server credentials in MVP.
 
 ### Widget tests
 
@@ -57,7 +57,7 @@ Draft.
 - start/stop recording with fake BLE stream;
 - disconnect/reconnect creates segments;
 - crash recovery from synthetic journal;
-- manual upload using fake server;
+- package export and validation flow;
 - saved experiment annotation flow.
 
 ---
@@ -71,8 +71,8 @@ FakeBleDevice
 FakeBlePacketStream
 FakeFileSystem
 FakeClock
-FakeServerApi
 FakeDiskSpaceService
+FakePackageExportService
 ```
 
 Fake clock is required for deterministic segment and gap tests.
@@ -85,7 +85,7 @@ Golden tests are useful for:
 
 - chart with gap;
 - annotation overlays;
-- upload status badges;
+- package status badges;
 - recovery dialog.
 
 Golden tests are not a replacement for BLoC and domain tests.
@@ -100,7 +100,7 @@ Must pass before first field use:
 - BLE disconnect closes segment and does not synthesize samples;
 - app restart recovers unfinished experiment;
 - annotation cannot cross segment boundary;
-- server upload can resume/check status after app restart;
+- package validation/export works after app restart;
 - two fake devices write isolated experiments.
 
 ---

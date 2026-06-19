@@ -4,8 +4,9 @@
 
 Draft.
 
-Документ фиксирует HTTP API первого серверного стенда. API обслуживает два типа
-клиентов: Flutter-приложение и веб-интерфейс.
+Документ фиксирует HTTP API первого серверного стенда. MVP обслуживает Web UI,
+через который пользователь вручную загружает готовые EEG experiment packages.
+Прямое API для Flutter-приложения является будущим расширением.
 
 ---
 
@@ -64,17 +65,6 @@ upload session и повторяется во время валидации `exp
 
 ## Аутентификация
 
-### Flutter-приложение
-
-Первый стенд использует client token:
-
-```http
-Authorization: Bearer <token>
-```
-
-Токен хранится в конфигурации приложения и сверяется сервером. Позже механизм
-может быть заменён на OAuth/device flow без изменения upload lifecycle.
-
 ### Web UI
 
 Web UI использует HTTP-only session cookie. Bearer token для web UI не
@@ -83,6 +73,17 @@ Web UI использует HTTP-only session cookie. Bearer token для web UI
 
 Mutating web endpoints дополнительно защищаются SameSite cookie и CSRF token,
 если web UI работает как browser SPA.
+
+### Future Flutter/API clients
+
+Прямой upload из Flutter-приложения в MVP не используется. Если он появится
+позже, для него будет добавлен отдельный client auth механизм:
+
+```http
+Authorization: Bearer <token>
+```
+
+Этот будущий механизм не должен менять upload lifecycle.
 
 ---
 
@@ -160,7 +161,8 @@ Response:
 
 Ошибки:
 
-- `auth.invalid_token`;
+- `auth.required`;
+- `auth.forbidden`;
 - `experiment.already_accepted`;
 - `upload.session_already_active`;
 - `request.invalid_payload`.
@@ -203,8 +205,8 @@ Response:
 }
 ```
 
-Flutter-приложение использует endpoint после рестарта, если сохранило
-`upload_session_id`.
+Web UI использует endpoint после перезагрузки страницы, если сохранил
+`upload_session_id` в browser state.
 
 ### Отменить upload session
 
@@ -243,7 +245,7 @@ Response:
 
 ---
 
-## Experiment API для приложения
+## Experiment Status API
 
 ### Получить статус эксперимента
 
@@ -281,7 +283,7 @@ Response:
 }
 ```
 
-### Получить список серверных статусов для локальных экспериментов
+### Получить список серверных статусов
 
 ```http
 POST /api/v1/experiments/status-batch
@@ -306,8 +308,8 @@ max 100 experiment_ids per request
 
 Если список больше 100 элементов, сервер возвращает `422 request.too_many_ids`.
 
-Этот endpoint нужен Flutter-приложению, чтобы показывать локальному
-пользователю статусы `не отправлен / отправлен / ошибка / принят`.
+В MVP endpoint используется Web UI или служебными инструментами. Flutter может
+использовать его позже, если появится прямой режим синхронизации статусов.
 
 ---
 

@@ -4,193 +4,156 @@
 
 Draft.
 
-Документ описывает реализацию ручной отправки локальных экспериментов на сервер.
+Документ описывает MVP-взаимодействие Flutter-приложения с серверным контуром.
+В первом стенде Flutter-приложение не выполняет HTTP upload на сервер. Его задача
+— создать корректный experiment package, который пользователь затем загружает
+через Web UI.
+
+Название файла сохранено для связности документации; фактически документ
+описывает package handoff, а не сетевую синхронизацию.
 
 ---
 
 ## BLoC
 
 ```text
-ServerAuthCubit
-ServerUploadBloc
-UploadQueueBloc
-ExperimentServerStatusBloc
+ExperimentPackageValidationCubit
+PackageExportBloc
 ```
 
-Загрузка нескольких экспериментов управляется queue BLoC. Каждый элемент очереди
-имеет независимый state.
+Эти BLoC/Cubit живут на экране сохранённых экспериментов или в export dialog.
+Они не хранят server auth token и не вызывают upload API.
 
 ---
 
-## Auth
+## MVP handoff flow
 
-Flutter app uses server bearer token:
+1. User finishes recording.
+2. App finalizes `experiment.json`.
+3. App keeps experiment as a local folder.
+4. User opens saved experiments list.
+5. User selects experiment package export/check action.
+6. App validates that the package is ready for server upload.
+7. App shows folder location or creates an optional `.zip` export.
+8. User opens server Web UI in browser.
+9. User uploads the folder/archive through Web UI.
 
-```http
-Authorization: Bearer <token>
-```
-
-Token хранится в settings secure storage или в защищённой конфигурации стенда.
-Token не пишется в `app.log`.
-
-На первом стенде серверный `client_id` будет `flutter_app`.
-
----
-
-## Manual upload flow
-
-1. User opens saved experiments list.
-2. User selects one or more experiment folders.
-3. App validates local package.
-4. App creates upload session.
-5. App uploads files.
-6. App completes upload.
-7. App polls upload/experiment status.
-8. Local index updates server status.
-
-Upload is never automatic after recording stop.
+The app never starts upload automatically after recording stop.
 
 ---
 
-## Client-side preflight
+## Package preflight
 
-Before upload:
+Before handoff, Flutter checks:
 
 - `experiment.json` exists;
 - `signal.bin` exists;
 - `experiment_id` matches `^[a-zA-Z0-9_-]{1,64}$`;
-- `signal.bin` size divisible by 4;
+- `signal.bin` size is divisible by 4;
+- required server compatibility fields exist;
 - segments fit inside sample count;
-- required files readable.
+- required files are readable.
 
-Server repeats validation.
+Server repeats validation after upload. Flutter preflight is a user convenience,
+not a security boundary.
 
 ---
 
-## Upload session API
+## Export formats
 
-Used endpoints:
+MVP supports:
+
+```text
+experiment folder
+optional .zip archive
+```
+
+The canonical package content is:
+
+```text
+signal.bin
+experiment.json
+journal.ndjson optional
+app.log optional
+```
+
+If `.zip` export is implemented, archive entries must be relative paths. Absolute
+Windows paths must not be embedded into the archive.
+
+---
+
+## Server API usage
+
+No server API is required by the Flutter app in MVP.
+
+The following may be added later as a separate feature:
 
 ```text
 POST /api/v1/uploads
-GET /api/v1/uploads/{upload_session_id}
 PUT /api/v1/uploads/{upload_session_id}/files/{file_name}
 POST /api/v1/uploads/{upload_session_id}/complete
-DELETE /api/v1/uploads/{upload_session_id}
-GET /api/v1/experiments/{experiment_id}/status
 POST /api/v1/experiments/status-batch
 ```
 
-`status-batch` sends max 100 IDs per request.
+Future direct upload must reuse the same package contract and must not change
+recording behavior.
 
 ---
 
-## Upload statuses
+## Local status
 
-Canonical local statuses are defined in `storage.md`. `ServerUploadBloc` uses the
-same enum and does not introduce additional string values.
+Flutter stores local package readiness, not authoritative server status.
 
----
-
-## Resume after app restart
-
-If app has saved `active_upload_session_id` in the local experiment index, it
-calls:
-
-```http
-GET /api/v1/uploads/{upload_session_id}
-```
-
-If session is still active, upload can continue or be cancelled.
-
-If session is absent/expired and experiment is not accepted, app creates a new
-session.
-
----
-
-## Cancellation
-
-If user cancels upload:
-
-1. `ServerUploadBloc` sends `DELETE /uploads/{id}`;
-2. local status becomes `cancelled`;
-3. local experiment folder remains unchanged.
-
-If network is unavailable during cancel, app marks local upload as
-`cancel_pending` and retries or lets server TTL expire.
-
----
-
-## Retry policy
-
-`upload_retry_count` from settings controls retry attempts.
-
-Retryable:
+Canonical local package statuses:
 
 ```text
-network.unavailable
-request.timeout
-server.temporary_unavailable
+not_ready
+ready
+exported
+export_error
 ```
 
-Not retryable:
-
-```text
-auth.invalid_token
-experiment.already_accepted
-validation.*
-upload.session_expired
-request.invalid_payload
-```
-
-Backoff:
-
-```text
-retry up to upload_retry_count times
-delay after attempt 1: 1s
-delay after attempt 2: 2s
-delay after attempt 3 and later: 5s
-```
-
-Retries never create a second upload session while `active_upload_session_id`
-exists.
+Server status is authoritative only in Web UI for the MVP. If status sync is
+added later, it must be optional and must not block local viewing or recording.
 
 ---
 
 ## Error handling
 
-Server errors map to user messages:
+Package validation errors map to user messages:
 
 ```text
-experiment.already_accepted
-upload.session_expired
-upload.session_not_found
-validation.missing_file
-validation.segment_out_of_bounds
-network.unavailable
-auth.invalid_token
+package.missing_experiment_json
+package.missing_signal_bin
+package.invalid_experiment_id
+package.signal_size_invalid
+package.segment_out_of_bounds
+package.unreadable_file
+package.export_failed
 ```
 
-The app stores last server error in local index.
+The app writes technical details to `app.log`, but must not rewrite source files
+silently.
 
 ---
 
 ## Local folder policy
 
-After successful server acceptance:
+After server acceptance through Web UI:
 
-- local folder is not deleted;
-- user may delete/archive manually;
-- app must ask confirmation before deletion;
-- deletion is allowed only for local copy, not server data.
+- local folder is not deleted automatically;
+- app may not know server status in MVP;
+- user may delete/archive local copy manually;
+- app must ask confirmation before deletion.
 
 ---
 
 ## Проверки реализации
 
-- upload cannot start without auth token;
-- selecting 3 folders creates 3 independent queue items;
-- failure of one upload does not stop others;
-- cancelled upload calls server cancel endpoint;
-- after app restart active upload status can be restored;
-- local folder remains after accepted.
+- package validation works offline;
+- missing `signal.bin` blocks export;
+- missing `experiment.json` blocks export;
+- invalid `experiment_id` blocks export;
+- `.zip` export never contains absolute paths;
+- export does not modify `signal.bin`;
+- local folder remains after export.

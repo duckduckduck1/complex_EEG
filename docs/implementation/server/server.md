@@ -22,8 +22,8 @@ Draft.
 - запуск валидации;
 - сохранение метаданных и статусов;
 - запуск первичной обработки;
-- API для Flutter-приложения;
 - API для веб-интерфейса;
+- API для будущих клиентских интеграций;
 - эксплуатационные endpoints и метрики.
 
 ---
@@ -133,7 +133,7 @@ layer и возвращают DTO. Работа с PostgreSQL идёт чере�
 ## Основной lifecycle эксперимента
 
 ```text
-client authenticates
+web user authenticates
   -> create upload session
   -> upload files
   -> complete upload
@@ -141,10 +141,15 @@ client authenticates
   -> accept or reject
   -> store metadata and immutable source files
   -> start primary pipeline run
-  -> expose status to app and web
+  -> expose status to web
 ```
 
 Сервер не создаёт `accepted` до успешной валидации.
+
+Flutter-приложение в MVP не является upload-клиентом сервера. Оно создаёт
+локальный пакет эксперимента. Web UI выполняет ручную загрузку этого пакета.
+Прямой Flutter upload может быть добавлен позже без изменения серверного
+lifecycle.
 
 ---
 
@@ -314,8 +319,8 @@ Server implementation считается готовым к первому зап
 - `/health` отвечает без доступа к PostgreSQL;
 - `/ready` проверяет PostgreSQL и файловые директории;
 - миграции применяются;
-- upload session создаётся только после auth;
+- upload session создаётся только после web-auth;
 - обязательные файлы принимаются и сохраняются;
 - валидатор может перевести эксперимент в `accepted` или `validation_failed`;
 - pipeline worker получает задачу после `accepted`;
-- статусы доступны приложению и web backend.
+- статусы доступны web backend.
