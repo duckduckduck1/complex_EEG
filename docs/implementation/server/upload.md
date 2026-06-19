@@ -280,6 +280,8 @@ Cleanup не удаляет:
 - можно загрузить обязательные файлы;
 - `complete` без `signal.bin` возвращает ошибку;
 - path traversal в имени файла отклоняется;
+- path traversal внутри zip-архива отклоняется;
+- некорректный `upload_session_id` отклоняется до распаковки zip-архива;
 - повторный `complete` идемпотентен;
 - `GET /uploads/{upload_session_id}` возвращает состояние после рестарта app;
 - `DELETE /uploads/{upload_session_id}` переводит session в `cancelled`;
