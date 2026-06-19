@@ -264,6 +264,7 @@ API возвращает прикладные ошибки в едином фо�
 
 ```text
 APP_ENV
+ENABLE_LOCAL_UPLOAD_ENDPOINT
 APP_BASE_URL
 POSTGRES_HOST
 POSTGRES_PORT

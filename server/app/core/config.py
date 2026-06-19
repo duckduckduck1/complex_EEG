@@ -27,6 +27,7 @@ class Settings(BaseSettings):
 
     app_env: str = "local"
     app_name: str = "complex_eeg_server"
+    enable_local_upload_endpoint: bool = False
 
     postgres_host: str = "postgres"
     postgres_port: int = 5432
