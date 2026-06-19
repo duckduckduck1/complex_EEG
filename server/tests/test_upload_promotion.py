@@ -107,6 +107,12 @@ def test_promote_staged_upload_creates_permanent_layout(workspace_tmp_path: Path
     assert (result.source_dir / "experiment.json").exists()
     assert (result.source_dir / "journal.ndjson").exists()
     assert (result.source_dir / "app.log").exists()
+    assert {item.name for item in result.source_files} == {
+        "app.log",
+        "experiment.json",
+        "journal.ndjson",
+        "signal.bin",
+    }
 
     report = json.loads(result.validation_report_path.read_text(encoding="utf-8"))
     assert report["status"] == "accepted"

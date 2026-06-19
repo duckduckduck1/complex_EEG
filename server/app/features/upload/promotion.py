@@ -6,6 +6,7 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.features.upload.file_inventory import SourceFileInfo, build_source_file_inventory
 from app.features.upload.staging import PACKAGE_FILE_NAMES, UploadStagingResult
 from app.features.validation.package_validator import EXPERIMENT_ID_PATTERN
 
@@ -23,6 +24,7 @@ class UploadPromotionResult:
     source_dir: Path
     validation_dir: Path
     validation_report_path: Path
+    source_files: tuple[SourceFileInfo, ...]
 
 
 def build_experiment_dir(experiments_root: str | Path, experiment_id: str) -> Path:
@@ -82,6 +84,7 @@ def promote_staged_upload(
         permanent_source_dir=source_dir,
     )
     shutil.copy2(staging_result.validation_report_path, validation_report_path)
+    source_files = build_source_file_inventory(source_dir)
 
     return UploadPromotionResult(
         experiment_id=experiment_id,
@@ -89,6 +92,7 @@ def promote_staged_upload(
         source_dir=source_dir,
         validation_dir=validation_dir,
         validation_report_path=validation_report_path,
+        source_files=source_files,
     )
 
 
