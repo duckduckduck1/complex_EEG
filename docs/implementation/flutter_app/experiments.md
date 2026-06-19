@@ -5,7 +5,7 @@
 Draft.
 
 Документ описывает работу со списком сохранённых экспериментов, открытие
-эксперимента, локальные действия и связь со статусами сервера.
+эксперимента, локальные действия и подготовку пакета для загрузки через Web UI.
 
 ---
 
@@ -16,7 +16,8 @@ ExperimentIndexBloc
 ExperimentListFilterCubit
 ExperimentViewerBloc
 ExperimentActionsBloc
-ExperimentServerStatusBloc
+PackageExportBloc
+ExperimentPackageValidationCubit
 ```
 
 Список, фильтры, выбранный эксперимент и действия с локальными файлами
@@ -35,7 +36,7 @@ created_at
 duration
 sample_count
 recording_status
-server_status
+package_status
 last_error
 folder_path user-visible optional
 ```
@@ -51,7 +52,7 @@ folder_path user-visible optional
 
 ```text
 recording_status
-server_status
+package_status
 date_from
 date_to
 text search over display_name and experiment_id
@@ -63,7 +64,7 @@ Sort:
 created_at_desc
 created_at_asc
 display_name_asc
-server_status_asc
+package_status_asc
 ```
 
 ---
@@ -85,7 +86,7 @@ BLE connection не нужен для просмотра сохранённог�
 
 ## Export package
 
-Экспорт в серверный пакет означает, что папка содержит:
+Экспорт в серверный пакет означает, что папка или `.zip` archive содержит:
 
 ```text
 signal.bin
@@ -94,8 +95,12 @@ journal.ndjson optional
 app.log optional
 ```
 
-Перед ручной отправкой `ServerUploadBloc` запускает preflight validation из
-`server_sync.md`.
+Перед передачей пакета в Web UI `ExperimentPackageValidationCubit` запускает
+preflight validation из `server_sync.md`. `PackageExportBloc` отвечает за
+создание optional `.zip` archive или показ пользователю готовой папки.
+
+Flutter-приложение не создаёт upload session и не отправляет файлы на сервер в
+MVP.
 
 ---
 
@@ -133,4 +138,5 @@ Rebuild uses:
 - accepted experiment не удаляется автоматически;
 - open saved experiment works offline;
 - index rebuild восстанавливает experiment records;
-- server status refresh не блокирует локальный просмотр.
+- package validation не требует сети;
+- export не изменяет `signal.bin`.

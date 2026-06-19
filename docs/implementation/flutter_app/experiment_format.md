@@ -4,8 +4,8 @@
 
 Draft.
 
-Документ фиксирует локальный формат файла эксперимента, который приложение
-создаёт и отправляет на сервер.
+Документ фиксирует локальный формат experiment package, который приложение
+создаёт для последующей загрузки через Web UI сервера.
 
 ---
 
@@ -66,7 +66,8 @@ sample_count = file_size_bytes / 4
 exp_<ULID>
 ```
 
-Этот ID передаётся серверу и используется для защиты от дублей.
+Этот ID находится в `experiment.json`, передаётся серверу при Web UI upload и
+используется для защиты от дублей.
 
 ---
 
@@ -179,16 +180,16 @@ Final `experiment.json` is built from journal plus actual `signal.bin` size.
 - BLE errors;
 - file write errors;
 - recovery actions;
-- upload errors;
+- package export errors;
 - unexpected exceptions.
 
 `app.log` is not source of scientific truth.
 
 ---
 
-## Validation before upload
+## Validation before handoff
 
-Before upload, app validates:
+Before handoff to Web UI, app validates:
 
 - required files exist;
 - `experiment_id` matches regex;
@@ -197,4 +198,5 @@ Before upload, app validates:
 - labels fit inside their segment;
 - ФБМ events fit inside their segment.
 
-The server repeats validation. Client-side validation is for fast feedback only.
+The server repeats validation after upload. Client-side validation is for fast
+feedback only.

@@ -71,8 +71,7 @@ folder_path
 created_at
 updated_at
 recording_status
-server_status
-active_upload_session_id
+package_status
 sample_count
 duration_seconds
 has_final_json
@@ -115,35 +114,23 @@ Repository methods return domain entities or typed failures, not raw exceptions.
 
 ---
 
-## Server status storage
+## Package handoff status
 
-Local server status values:
+Local package status values:
 
 ```text
-not_sent
-queued
-creating_session
-uploading
-upload_error
-uploaded
-accepted
-validation_failed
-processing
-processed
-processing_failed
-cancelled
-cancel_pending
-expired
+not_ready
+ready
+exported
+export_error
 ```
 
-This is the canonical local upload/server status list. Other documents reference
-this list instead of redefining it.
+This is the canonical local package handoff status list. Server-side experiment
+status is authoritative in Web UI for the MVP and is not stored as a required
+Flutter index field.
 
-Status is stored in local index and refreshed from server by
-`ExperimentServerStatusBloc`.
-
-`active_upload_session_id` is stored in the local experiment index while upload
-is active, cancelled pending, or resumable after app restart.
+If direct server sync is added later, it must be an optional extension and must
+not block local recording, local viewing, or local package export.
 
 ---
 
@@ -153,8 +140,6 @@ Settings include:
 
 ```text
 experiments_root
-server_base_url
-server_auth_token
 signal_flush_interval_seconds
 chart_window_seconds
 default_sample_rate_hz
@@ -172,5 +157,5 @@ Secret values must not be logged.
 - index can be rebuilt by scanning folders;
 - final JSON write is atomic;
 - folder names are sanitized;
-- server status survives app restart;
+- package status survives app restart;
 - paths from user input cannot escape experiments root.

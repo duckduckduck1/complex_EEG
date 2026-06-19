@@ -14,8 +14,8 @@ Draft.
 ```text
 SettingsCubit
 MetadataFormBloc
-ServerSettingsCubit
 StorageSettingsCubit
+PackageExportSettingsCubit
 ```
 
 Настройки не читаются напрямую из widget. UI показывает state и dispatch events.
@@ -30,8 +30,6 @@ Settings screen использует app-level singleton `LabelDictionaryCubit` 
 
 ```text
 experiments_root
-server_base_url
-server_auth_token
 signal_flush_interval_seconds
 chart_window_seconds
 default_sample_rate_hz
@@ -118,22 +116,18 @@ Rules:
 
 ---
 
-## Server settings
+## Package export settings
 
-Server settings:
-
-```text
-server_base_url
-server_auth_token
-connection_timeout_seconds
-upload_retry_count
-```
-
-Token is never printed to logs. UI may show masked token state:
+Package export settings:
 
 ```text
-configured / missing / invalid
+default_export_directory optional
+zip_export_enabled
+include_app_log_by_default
 ```
+
+Flutter-приложение не хранит server auth token в MVP. Загрузка пакета
+выполняется через Web UI после web-аутентификации пользователя.
 
 ---
 
@@ -155,7 +149,7 @@ archive/move action.
 
 - metadata cannot start recording while invalid;
 - generated experiment ID matches server regex;
-- server token never appears in logs;
+- package export settings do not contain server credentials;
 - changing experiments root validates directory access;
 - inactive labels still render old experiments;
 - settings state is managed by Cubit/BLoC, not widget local state.

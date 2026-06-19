@@ -257,7 +257,8 @@ experiment source.
 - message;
 - optional error code.
 
-Logs are for diagnostics and can be included in server upload as `app.log`.
+Logs are for diagnostics and can be included in the experiment package as
+`app.log`.
 
 ---
 

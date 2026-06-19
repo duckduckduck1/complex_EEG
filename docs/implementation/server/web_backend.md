@@ -11,8 +11,9 @@ Draft.
 ## Назначение
 
 Web backend отдаёт сотрудникам лаборатории список экспериментов, карточку
-эксперимента, статусы, ошибки и результаты обработки. Веб-интерфейс не читает
-PostgreSQL и файловое хранилище напрямую.
+эксперимента, статусы, ошибки и результаты обработки. Он также является основным
+MVP-клиентом для ручной загрузки experiment package на сервер. Веб-интерфейс не
+читает PostgreSQL и файловое хранилище напрямую.
 
 ---
 
@@ -76,7 +77,7 @@ admin
 Права:
 
 - `viewer` — просмотр списка, карточек, результатов;
-- `operator` — повторный запуск обработки;
+- `operator` — загрузка экспериментов и повторный запуск обработки;
 - `admin` — управление пользователями и служебные действия.
 
 ---
@@ -120,6 +121,40 @@ POST /api/v1/web/auth/logout
 ```http
 GET /api/v1/web/auth/me
 ```
+
+### Upload experiment package
+
+Web UI использует общий upload lifecycle из `upload.md`, но действует от имени
+аутентифицированного web-пользователя.
+
+```http
+POST /api/v1/uploads
+PUT /api/v1/uploads/{upload_session_id}/files/{file_name}
+POST /api/v1/uploads/{upload_session_id}/complete
+GET /api/v1/uploads/{upload_session_id}
+DELETE /api/v1/uploads/{upload_session_id}
+```
+
+На первом стенде Web UI может принимать:
+
+```text
+folder selection
+.zip archive
+```
+
+Browser не должен отправлять абсолютные локальные пути пользователя на сервер как
+часть API-контракта. Сервер получает только имена файлов внутри пакета и
+содержимое файлов.
+
+Минимальная UI-логика:
+
+1. пользователь выбирает папку или архив;
+2. web frontend читает/проверяет обязательные файлы, если platform API это
+   позволяет;
+3. сервер создаёт upload session;
+4. файлы отправляются по allowlist;
+5. complete запускает server validation;
+6. пользователь видит статус upload/validation/processing.
 
 ### Experiment list
 

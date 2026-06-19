@@ -95,8 +95,11 @@ completed_at timestamptz null
 expires_at timestamptz not null
 ```
 
-`client_id` — логический идентификатор клиента, полученный auth layer из bearer
-token. Это не raw token и не `AUTH_SECRET`.
+`client_id` — логический идентификатор upload-клиента, полученный auth layer.
+Для MVP ручной загрузки через Web UI используется `web_ui`. Это не raw token,
+не cookie и не `AUTH_SECRET`. Когда DB owner добавит поля владения
+экспериментом, пользовательская принадлежность должна храниться явно, например
+через `uploaded_by_user_id` / `owner_user_id`.
 
 ### `experiment_events`
 
