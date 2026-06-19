@@ -1,5 +1,9 @@
 """Файловый слой upload flow."""
 
+from app.features.upload.archive import (
+    UploadArchiveError,
+    extract_experiment_zip,
+)
 from app.features.upload.dto import (
     UploadProcessingResponseDto,
     UploadSourceFileDto,
@@ -31,6 +35,7 @@ from app.features.upload.staging import (
 __all__ = [
     "SourceFileInfo",
     "SourceFileInventoryError",
+    "UploadArchiveError",
     "UploadPromotionError",
     "UploadPromotionResult",
     "UploadProcessingResult",
@@ -43,6 +48,7 @@ __all__ = [
     "build_source_file_inventory",
     "build_upload_processing_response",
     "build_upload_session_dir",
+    "extract_experiment_zip",
     "process_upload_package",
     "promote_staged_upload",
     "stage_upload_package",

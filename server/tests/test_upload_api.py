@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import io
 import json
+import zipfile
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -18,6 +20,7 @@ from app.main import app
 client = TestClient(app)
 VALID_UPLOAD_SESSION_ID = "01HX7M8M9RF2K0Z6GNZ6D7Q7AP"
 UPLOAD_ENDPOINT = "/api/v1/dev/uploads/process-local-folder"
+ZIP_UPLOAD_ENDPOINT = "/api/v1/dev/uploads/process-zip"
 
 
 @pytest.fixture()
@@ -75,6 +78,47 @@ def _write_package(
         json.dumps(experiment_json),
         encoding="utf-8",
     )
+
+
+def _build_package_zip(
+    *,
+    experiment_id: str = "exp_01",
+    signal_samples: int = 1000,
+    include_signal: bool = True,
+    signal_bytes: bytes | None = None,
+    zip_prefix: str = "",
+) -> bytes:
+    """Собирает zip-архив EEG-пакета в памяти для API-тестов."""
+
+    archive_buffer = io.BytesIO()
+    experiment_json: dict[str, Any] = {
+        "experiment_id": experiment_id,
+        "metadata": {"animal_id": "mouse_1"},
+        "segments": [
+            {
+                "segment_id": "seg_1",
+                "start_sample": 0,
+                "end_sample": signal_samples,
+            }
+        ],
+        "labels": [],
+        "fbm_events": [],
+    }
+
+    with zipfile.ZipFile(archive_buffer, mode="w") as archive:
+        if include_signal:
+            if signal_bytes is None:
+                signal_bytes = b"\x00\x00\x00\x00" * signal_samples
+            archive.writestr(
+                f"{zip_prefix}signal.bin",
+                signal_bytes,
+            )
+        archive.writestr(
+            f"{zip_prefix}experiment.json",
+            json.dumps(experiment_json),
+        )
+
+    return archive_buffer.getvalue()
 
 
 def test_process_local_folder_upload_is_disabled_by_default(workspace_tmp_path: Path) -> None:
@@ -183,3 +227,149 @@ def test_process_local_folder_upload_returns_conflict_for_existing_experiment(
 
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "upload.promotion_failed"
+
+
+def test_process_zip_upload_accepts_valid_zip(
+    monkeypatch: pytest.MonkeyPatch,
+    workspace_tmp_path: Path,
+) -> None:
+    """Валидный zip проходит upload flow и возвращает accepted DTO."""
+
+    upload_tmp_root, experiments_root = _enable_local_upload_endpoint(
+        monkeypatch,
+        workspace_tmp_path,
+    )
+
+    response = client.post(
+        ZIP_UPLOAD_ENDPOINT,
+        params={
+            "upload_session_id": VALID_UPLOAD_SESSION_ID,
+            "experiment_id": "exp_01",
+        },
+        content=_build_package_zip(zip_prefix="exp1/"),
+        headers={"content-type": "application/zip"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "accepted"
+    assert body["accepted"] is True
+    assert body["experiment_id"] == "exp_01"
+    assert body["validation_report_scope"] == "permanent"
+
+    serialized = json.dumps(body)
+    assert str(upload_tmp_root) not in serialized
+    assert str(experiments_root) not in serialized
+
+
+def test_process_zip_upload_is_disabled_by_default(workspace_tmp_path: Path) -> None:
+    """Zip endpoint тоже должен требовать явного включения config-флагом."""
+
+    response = client.post(
+        ZIP_UPLOAD_ENDPOINT,
+        params={
+            "upload_session_id": VALID_UPLOAD_SESSION_ID,
+            "experiment_id": "exp_01",
+        },
+        content=_build_package_zip(),
+        headers={"content-type": "application/zip"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "upload.local_endpoint_disabled"
+
+
+def test_process_zip_upload_returns_validation_failed(
+    monkeypatch: pytest.MonkeyPatch,
+    workspace_tmp_path: Path,
+) -> None:
+    """Zip с некорректным EEG-пакетом возвращает validation_failed DTO."""
+
+    _enable_local_upload_endpoint(monkeypatch, workspace_tmp_path)
+
+    response = client.post(
+        ZIP_UPLOAD_ENDPOINT,
+        params={
+            "upload_session_id": VALID_UPLOAD_SESSION_ID,
+            "experiment_id": "exp_01",
+        },
+        content=_build_package_zip(signal_bytes=b"\x00\x01"),
+        headers={"content-type": "application/zip"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "validation_failed"
+    assert {error["code"] for error in body["errors"]} == {"validation.signal_size_invalid"}
+
+
+def test_process_zip_upload_rejects_bad_zip(
+    monkeypatch: pytest.MonkeyPatch,
+    workspace_tmp_path: Path,
+) -> None:
+    """Невалидный zip возвращает 400 до запуска upload flow."""
+
+    _enable_local_upload_endpoint(monkeypatch, workspace_tmp_path)
+
+    response = client.post(
+        ZIP_UPLOAD_ENDPOINT,
+        params={
+            "upload_session_id": VALID_UPLOAD_SESSION_ID,
+            "experiment_id": "exp_01",
+        },
+        content=b"not a zip",
+        headers={"content-type": "application/zip"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "upload.archive_invalid"
+
+
+def test_process_zip_upload_rejects_invalid_upload_session_id_before_extract(
+    monkeypatch: pytest.MonkeyPatch,
+    workspace_tmp_path: Path,
+) -> None:
+    """Некорректный upload_session_id отклоняется до создания extract-директории."""
+
+    upload_tmp_root, _ = _enable_local_upload_endpoint(monkeypatch, workspace_tmp_path)
+
+    response = client.post(
+        ZIP_UPLOAD_ENDPOINT,
+        params={
+            "upload_session_id": "../evil",
+            "experiment_id": "exp_01",
+        },
+        content=_build_package_zip(),
+        headers={"content-type": "application/zip"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "upload.staging_failed"
+    assert not (upload_tmp_root / "_zip_extract").exists()
+
+
+def test_process_zip_upload_rejects_zip_slip(
+    monkeypatch: pytest.MonkeyPatch,
+    workspace_tmp_path: Path,
+) -> None:
+    """Zip-slip попытка возвращает 400 и не попадает в staging."""
+
+    _enable_local_upload_endpoint(monkeypatch, workspace_tmp_path)
+    archive_buffer = io.BytesIO()
+    with zipfile.ZipFile(archive_buffer, mode="w") as archive:
+        archive.writestr("../evil.txt", "evil")
+        archive.writestr("signal.bin", b"\x00\x00\x00\x00")
+        archive.writestr("experiment.json", "{}")
+
+    response = client.post(
+        ZIP_UPLOAD_ENDPOINT,
+        params={
+            "upload_session_id": VALID_UPLOAD_SESSION_ID,
+            "experiment_id": "exp_01",
+        },
+        content=archive_buffer.getvalue(),
+        headers={"content-type": "application/zip"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "upload.archive_invalid"

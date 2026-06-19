@@ -243,6 +243,39 @@ Response:
 - если session уже `accepted`, сервер возвращает `200` со статусом `accepted`;
 - если session `cancelled`, `expired` или `failed`, сервер возвращает `409`.
 
+### Dev/test upload bridge
+
+Пока production Web UI upload ещё не реализован, сервер содержит временные
+endpoint'ы для локальной проверки файлового upload flow:
+
+```http
+POST /api/v1/dev/uploads/process-local-folder
+POST /api/v1/dev/uploads/process-zip?upload_session_id=...&experiment_id=...
+```
+
+Оба endpoint'а доступны только при:
+
+```text
+APP_ENV in local/dev/test
+ENABLE_LOCAL_UPLOAD_ENDPOINT=true
+```
+
+`process-local-folder` принимает путь к папке на серверной машине и не должен
+использоваться из browser UI. `process-zip` принимает raw body с
+`Content-Type: application/zip`, безопасно распаковывает архив во временную
+директорию и затем запускает тот же staging/validation/promotion flow.
+
+Правила zip endpoint'а:
+
+- архив может содержать `signal.bin` и `experiment.json` в корне;
+- архив может содержать одну верхнеуровневую папку с EEG-пакетом внутри;
+- `upload_session_id` валидируется как ULID до распаковки архива;
+- zip entries с path traversal отклоняются;
+- API response не возвращает абсолютные filesystem paths.
+
+Этот dev/test bridge не заменяет production upload lifecycle. Когда появится
+Web UI upload, он должен использовать authenticated upload session из БД.
+
 ---
 
 ## Experiment Status API
