@@ -1,5 +1,9 @@
 """Файловый слой upload flow."""
 
+from app.features.upload.orchestration import (
+    UploadProcessingResult,
+    process_upload_package,
+)
 from app.features.upload.promotion import (
     UploadPromotionError,
     UploadPromotionResult,
@@ -16,10 +20,12 @@ from app.features.upload.staging import (
 __all__ = [
     "UploadPromotionError",
     "UploadPromotionResult",
+    "UploadProcessingResult",
     "UploadStagingError",
     "UploadStagingResult",
     "build_experiment_dir",
     "build_upload_session_dir",
+    "process_upload_package",
     "promote_staged_upload",
     "stage_upload_package",
 ]
