@@ -190,6 +190,28 @@ app.log
 
 Сервер сохраняет файл во временную директорию upload session.
 
+Response:
+
+```json
+{
+  "upload_session_id": "01HX...",
+  "experiment_id": "exp_2026_001",
+  "status": "uploading",
+  "expected_files": [
+    "experiment.json",
+    "signal.bin"
+  ],
+  "uploaded_files": [
+    "experiment.json"
+  ],
+  "expires_at": "2026-06-18T10:00:00Z"
+}
+```
+
+Реализация пишет файл во временный `.part` и после успешной записи переносит его
+в финальное имя. Если request превышает `UPLOAD_MAX_SIZE`, сервер возвращает
+`413 upload.file_too_large`.
+
 ### Получить статус upload session
 
 ```http
@@ -237,18 +259,34 @@ Response:
 
 ```json
 {
+  "upload_session_id": "01HX...",
   "experiment_id": "exp_2026_001",
-  "status": "validating"
+  "status": "accepted",
+  "accepted": true,
+  "validation_report_scope": "permanent",
+  "signal_size_bytes": 4000,
+  "sample_count": 1000,
+  "source_files": [
+    {
+      "name": "signal.bin",
+      "relative_path": "signal.bin",
+      "size_bytes": 4000,
+      "sha256": "..."
+    }
+  ],
+  "errors": [],
+  "warnings": []
 }
 ```
 
-После `complete` сервер запускает валидацию.
+В текущей реализации первого стенда `complete` синхронно запускает validation.
+Если пакет валиден, сервер переносит source-файлы и validation report в
+permanent storage и возвращает `status = accepted`. Если пакет невалиден,
+возвращается `status = failed`, `accepted = false`,
+`validation_report_scope = upload_tmp` и список validation errors.
 
 Идемпотентность:
 
-- если session уже `completed` или `validating`, сервер возвращает `200` с
-  текущим статусом;
-- второй validation job не создаётся;
 - если session уже `accepted`, сервер возвращает `200` со статусом `accepted`;
 - если session `cancelled`, `expired` или `failed`, сервер возвращает `409`.
 

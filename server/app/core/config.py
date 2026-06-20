@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     upload_tmp_dir: str = "/srv/complex_eeg/upload_tmp"
     pipeline_results_dir: str = "/srv/complex_eeg/pipeline_results"
     upload_session_ttl_hours: int = 24
+    upload_max_size: int = 1024 * 1024 * 1024
 
     @property
     def database_url(self) -> str:

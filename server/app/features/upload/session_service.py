@@ -18,9 +18,19 @@ from typing import Protocol
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import Experiment, UploadSession
-from app.features.upload.staging import build_upload_session_dir
-from app.features.validation.package_validator import EXPERIMENT_ID_PATTERN
+from app.db.models import Experiment, SourceFile, UploadSession
+from app.features.upload.promotion import (
+    UploadPromotionError,
+    UploadPromotionResult,
+    promote_staged_upload,
+)
+from app.features.upload.staging import UploadStagingResult, build_upload_session_dir
+from app.features.validation.package_validator import (
+    EXPERIMENT_ID_PATTERN,
+    ValidationResult,
+    validate_experiment_package,
+)
+from app.features.validation.report_writer import write_validation_report
 
 
 CROCKFORD_BASE32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
@@ -29,6 +39,8 @@ OPTIONAL_UPLOAD_FILES = ("journal.ndjson", "app.log")
 DEFAULT_UPLOAD_FILES = REQUIRED_UPLOAD_FILES + OPTIONAL_UPLOAD_FILES
 ACTIVE_UPLOAD_SESSION_STATUSES = frozenset({"created", "uploading", "completed", "validating"})
 FINAL_UPLOAD_SESSION_STATUSES = frozenset({"accepted", "failed", "expired", "cancelled"})
+UPLOAD_SOURCE_DIR_NAME = "source"
+VALIDATION_REPORT_FILE_NAME = "validation_report.json"
 
 
 class UploadSessionServiceError(ValueError):
@@ -47,6 +59,10 @@ class UploadSessionStateConflictError(UploadSessionServiceError):
     """Операция невозможна для текущего статуса upload session."""
 
 
+class UploadSessionIncompleteError(UploadSessionServiceError):
+    """Upload session нельзя завершить, потому что пакет ещё неполный."""
+
+
 @dataclass(frozen=True)
 class UploadSessionView:
     """API-safe представление upload session без внутренних filesystem paths."""
@@ -57,6 +73,31 @@ class UploadSessionView:
     expected_files: list[str]
     uploaded_files: list[str]
     expires_at: datetime
+
+
+@dataclass(frozen=True)
+class UploadFileTarget:
+    """Безопасные пути для потоковой записи одного upload-файла."""
+
+    upload_session_id: str
+    file_name: str
+    part_path: Path
+    final_path: Path
+
+
+@dataclass(frozen=True)
+class UploadCompletionResult:
+    """Результат синхронного complete upload."""
+
+    upload_session_id: str
+    experiment_id: str
+    status: str
+    validation_result: ValidationResult | None
+    promotion_result: UploadPromotionResult | None
+
+    @property
+    def accepted(self) -> bool:
+        return self.status == "accepted"
 
 
 class UploadSessionRepository(Protocol):
@@ -73,6 +114,16 @@ class UploadSessionRepository(Protocol):
 
     def add(self, upload_session: UploadSession) -> None:
         """Добавляет новую upload session в unit of work."""
+
+    def record_accepted_experiment(
+        self,
+        *,
+        upload_session: UploadSession,
+        promotion_result: UploadPromotionResult,
+        validation_result: ValidationResult,
+        accepted_at: datetime,
+    ) -> None:
+        """Сохраняет accepted experiment и source file inventory."""
 
     def commit(self) -> None:
         """Фиксирует изменения."""
@@ -109,6 +160,39 @@ class SqlAlchemyUploadSessionRepository:
     def add(self, upload_session: UploadSession) -> None:
         self._db.add(upload_session)
 
+    def record_accepted_experiment(
+        self,
+        *,
+        upload_session: UploadSession,
+        promotion_result: UploadPromotionResult,
+        validation_result: ValidationResult,
+        accepted_at: datetime,
+    ) -> None:
+        experiment = Experiment(
+            experiment_id=promotion_result.experiment_id,
+            # Пока display_name не хранится в upload_sessions. На первом стенде
+            # используем experiment_id, чтобы не расширять DB-схему в API-ветке.
+            display_name=promotion_result.experiment_id,
+            status="accepted",
+            source_path=str(promotion_result.source_dir),
+            validation_report_path=str(promotion_result.validation_report_path),
+            metadata_json=validation_result.metadata,
+            uploaded_at=upload_session.created_at,
+            accepted_at=accepted_at,
+        )
+        self._db.add(experiment)
+
+        for source_file in promotion_result.source_files:
+            self._db.add(
+                SourceFile(
+                    experiment_id=promotion_result.experiment_id,
+                    name=source_file.name,
+                    relative_path=source_file.relative_path,
+                    size_bytes=source_file.size_bytes,
+                    sha256=source_file.sha256,
+                )
+            )
+
     def commit(self) -> None:
         self._db.commit()
 
@@ -121,11 +205,13 @@ class UploadSessionService:
         *,
         repository: UploadSessionRepository,
         upload_tmp_root: str | Path,
+        experiments_root: str | Path,
         ttl_hours: int,
         now: datetime | None = None,
     ) -> None:
         self._repository = repository
         self._upload_tmp_root = Path(upload_tmp_root)
+        self._experiments_root = Path(experiments_root)
         self._ttl_hours = ttl_hours
         self._now = now
 
@@ -197,10 +283,145 @@ class UploadSessionService:
 
         return _to_view(upload_session)
 
+    def prepare_file_upload(self, upload_session_id: str, file_name: str) -> UploadFileTarget:
+        """Проверяет session и возвращает пути для безопасной потоковой записи."""
+
+        upload_session = self._get_uploading_session(upload_session_id)
+        normalized_file_name = self._validate_upload_file_name(upload_session, file_name)
+
+        source_dir = _source_dir(upload_session)
+        source_dir.mkdir(parents=True, exist_ok=True)
+
+        final_path = source_dir / normalized_file_name
+        part_path = source_dir / f"{normalized_file_name}.part"
+
+        return UploadFileTarget(
+            upload_session_id=upload_session.id,
+            file_name=normalized_file_name,
+            part_path=part_path,
+            final_path=final_path,
+        )
+
+    def record_uploaded_file(self, upload_session_id: str, file_name: str) -> UploadSessionView:
+        """Фиксирует в metadata, что файл успешно записан в upload_tmp."""
+
+        upload_session = self._get_uploading_session(upload_session_id)
+        normalized_file_name = self._validate_upload_file_name(upload_session, file_name)
+        final_path = _source_dir(upload_session) / normalized_file_name
+
+        if not final_path.is_file():
+            raise UploadSessionServiceError("uploaded file is missing after write")
+
+        uploaded_files = set(_files_from_json(upload_session.uploaded_files))
+        uploaded_files.add(normalized_file_name)
+        upload_session.uploaded_files = {"files": sorted(uploaded_files)}
+        self._repository.commit()
+
+        return _to_view(upload_session)
+
+    def complete_session(self, upload_session_id: str) -> UploadCompletionResult:
+        """Завершает upload, синхронно валидирует пакет и делает promotion."""
+
+        upload_session = self._get_existing_session(upload_session_id)
+        self._expire_if_needed(upload_session)
+
+        if upload_session.status == "accepted":
+            return UploadCompletionResult(
+                upload_session_id=upload_session.id,
+                experiment_id=upload_session.experiment_id,
+                status=upload_session.status,
+                validation_result=None,
+                promotion_result=None,
+            )
+
+        if upload_session.status != "uploading":
+            raise UploadSessionStateConflictError(
+                f"upload session cannot be completed from status {upload_session.status}"
+            )
+
+        source_dir = _source_dir(upload_session)
+
+        missing_files = sorted(
+            set(REQUIRED_UPLOAD_FILES) - set(_files_from_json(upload_session.uploaded_files))
+        )
+        if missing_files:
+            raise UploadSessionIncompleteError(
+                "upload session is missing required files: " + ", ".join(missing_files)
+            )
+
+        if _has_unfinished_part_files(source_dir):
+            raise UploadSessionIncompleteError("upload session contains unfinished .part files")
+
+        validation_report_path = _validation_report_path(upload_session)
+        validation_result = validate_experiment_package(
+            source_dir,
+            expected_experiment_id=upload_session.experiment_id,
+        )
+        write_validation_report(validation_result, validation_report_path)
+
+        staging_result = UploadStagingResult(
+            upload_session_id=upload_session.id,
+            expected_experiment_id=upload_session.experiment_id,
+            session_dir=Path(upload_session.tmp_path),
+            package_dir=source_dir,
+            validation_report_path=validation_report_path,
+            validation_result=validation_result,
+        )
+
+        now = self._current_time()
+        upload_session.completed_at = now
+
+        if not validation_result.is_valid:
+            upload_session.status = "failed"
+            self._repository.commit()
+            return UploadCompletionResult(
+                upload_session_id=upload_session.id,
+                experiment_id=upload_session.experiment_id,
+                status=upload_session.status,
+                validation_result=validation_result,
+                promotion_result=None,
+            )
+
+        try:
+            promotion_result = promote_staged_upload(
+                staging_result=staging_result,
+                experiments_root=self._experiments_root,
+            )
+        except UploadPromotionError as exc:
+            raise UploadSessionStateConflictError(str(exc)) from exc
+
+        upload_session.status = "accepted"
+        self._repository.record_accepted_experiment(
+            upload_session=upload_session,
+            promotion_result=promotion_result,
+            validation_result=validation_result,
+            accepted_at=now,
+        )
+        self._repository.commit()
+
+        return UploadCompletionResult(
+            upload_session_id=upload_session.id,
+            experiment_id=upload_session.experiment_id,
+            status=upload_session.status,
+            validation_result=validation_result,
+            promotion_result=promotion_result,
+        )
+
     def _get_existing_session(self, upload_session_id: str) -> UploadSession:
         upload_session = self._repository.get_by_id(upload_session_id)
         if upload_session is None:
             raise UploadSessionNotFoundError("upload session was not found")
+        return upload_session
+
+    def _get_uploading_session(self, upload_session_id: str) -> UploadSession:
+        upload_session = self._get_existing_session(upload_session_id)
+        self._expire_if_needed(upload_session)
+
+        if upload_session.status != "uploading":
+            raise UploadSessionStateConflictError(
+                f"upload session cannot accept this operation from status {upload_session.status}"
+            )
+
         return upload_session
 
     def _expire_if_needed(self, upload_session: UploadSession) -> None:
@@ -220,6 +441,17 @@ class UploadSessionService:
     def _validate_experiment_id(experiment_id: str) -> None:
         if not EXPERIMENT_ID_PATTERN.fullmatch(experiment_id):
             raise UploadSessionServiceError("experiment_id has invalid format")
+
+    @staticmethod
+    def _validate_upload_file_name(upload_session: UploadSession, file_name: str) -> str:
+        if file_name not in DEFAULT_UPLOAD_FILES:
+            raise UploadSessionServiceError("file_name is not allowed")
+
+        expected_files = set(_files_from_json(upload_session.expected_files))
+        if file_name not in expected_files:
+            raise UploadSessionServiceError("file_name is not expected for this upload session")
+
+        return file_name
 
 
 def generate_ulid(*, now: datetime | None = None) -> str:
@@ -262,6 +494,23 @@ def _to_view(upload_session: UploadSession) -> UploadSessionView:
         uploaded_files=_files_from_json(upload_session.uploaded_files),
         expires_at=upload_session.expires_at,
     )
+
+
+def _source_dir(upload_session: UploadSession) -> Path:
+    return Path(upload_session.tmp_path) / UPLOAD_SOURCE_DIR_NAME
+
+
+def _validation_report_path(upload_session: UploadSession) -> Path:
+    return Path(upload_session.tmp_path) / VALIDATION_REPORT_FILE_NAME
+
+
+def _has_unfinished_part_files(source_dir: Path) -> bool:
+    for part_path in source_dir.glob("*.part"):
+        final_name = part_path.name.removesuffix(".part")
+        if not (source_dir / final_name).is_file():
+            return True
+
+    return False
 
 
 def _files_from_json(value: dict[str, object] | None) -> list[str]:

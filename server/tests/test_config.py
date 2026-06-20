@@ -47,3 +47,13 @@ def test_upload_session_ttl_hours_uses_environment_value(monkeypatch) -> None:
     settings = Settings()
 
     assert settings.upload_session_ttl_hours == 12
+
+
+def test_upload_max_size_uses_environment_value(monkeypatch) -> None:
+    """Максимальный размер upload-файла должен задаваться через env."""
+
+    monkeypatch.setenv("UPLOAD_MAX_SIZE", "4096")
+
+    settings = Settings()
+
+    assert settings.upload_max_size == 4096
