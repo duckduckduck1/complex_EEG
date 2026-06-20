@@ -157,13 +157,28 @@ audit_events
 
 Хранит поле `metadata` из `experiment.json` как есть.
 
-Полный `experiment.json` остаётся в файловом хранилище.
+Полный `experiment.json` остаётся в MinIO bronze как исходный объект.
+
+### `experiments.storage_bucket` / `experiments.storage_prefix`
+
+После `accepted` указывают на bucket и prefix source-пакета, например:
+
+```text
+storage_bucket = lakehouse-bronze
+storage_prefix = eeg/{experiment_id}/
+```
 
 ### `source_files.relative_path`
 
-Путь относительно директории `source/`.
+Имя файла внутри `storage_prefix`, например `signal.bin` или
+`experiment.json`.
 
 Абсолютные filesystem paths не должны возвращаться в API.
+
+### `source_files.bucket` / `source_files.object_key`
+
+Полная ссылка на объект в MinIO. Пара `(bucket, object_key)` уникальна и
+используется как дополнительная защита от дублей объектов.
 
 ### `pipeline_artifacts.relative_path`
 
@@ -211,7 +226,8 @@ DB owner может предлагать изменения в документ�
 - мержить полную lakehouse-схему из `feat/added-db-implementation`;
 - добавлять универсальную модель файлов для всех будущих лабораторных данных;
 - менять upload flow с Web UI обратно на прямой Flutter upload;
-- заменять Alembic raw SQL-скриптами как главным источником схемы.
+- расходиться между `scripts/db_scripts/010_schema.sql`, ORM-моделями и
+  документацией контракта.
 
 Источник схемы первого стенда:
 
