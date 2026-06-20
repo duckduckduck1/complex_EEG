@@ -91,6 +91,7 @@ CI/CD считается внедрённым, когда:
 - server/web/pipeline tests запускаются после появления кода;
 - Docker images собираются;
 - `docker compose config` проходит;
+- API image собирается из `server/Dockerfile`;
 - Ansible syntax check проходит;
 - deploy на VM запускается вручную;
 - после deploy выполняется healthcheck;

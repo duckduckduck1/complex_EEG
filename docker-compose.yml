@@ -2,18 +2,31 @@ name: complex_eeg
 
 services:
   api:
-    image: ${API_IMAGE:-python:3.12-alpine}
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    image: ${API_IMAGE:-complex-eeg-api:local}
     restart: unless-stopped
     user: "${APP_UID:-1000}:${APP_GID:-1000}"
     working_dir: /app
-    command: ["python", "-m", "http.server", "8000", "--directory", "/srv/complex_eeg/upload_tmp"]
+    command: ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
     environment:
       APP_ENV: ${APP_ENV:-local}
+      ENABLE_LOCAL_UPLOAD_ENDPOINT: ${ENABLE_LOCAL_UPLOAD_ENDPOINT:-false}
+      AUTH_SECRET: ${AUTH_SECRET:-change_me}
+      SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-complex_eeg_session}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-12}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-complex_eeg}
+      POSTGRES_USER: ${POSTGRES_USER:-complex_eeg}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
       EXPERIMENTS_DIR: /srv/complex_eeg/experiments
       PIPELINE_RESULTS_DIR: /srv/complex_eeg/pipeline_results
       UPLOAD_TMP_DIR: /srv/complex_eeg/upload_tmp
+      UPLOAD_SESSION_TTL_HOURS: ${UPLOAD_SESSION_TTL_HOURS:-24}
+      UPLOAD_MAX_SIZE: ${UPLOAD_MAX_SIZE:-10737418240}
       LOG_DIR: /var/log/complex_eeg/app
     ports:
       - "${API_PORT:-8000}:8000"
@@ -29,7 +42,7 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000').read()"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health').read()"]
       interval: 30s
       timeout: 5s
       retries: 3
