@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     app_env: str = "local"
     app_name: str = "complex_eeg_server"
     enable_local_upload_endpoint: bool = False
+    auth_secret: SecretStr = SecretStr("change_me")
+    session_cookie_name: str = "complex_eeg_session"
+    session_ttl_hours: int = 12
+    session_cookie_secure: bool = False
 
     postgres_host: str = "postgres"
     postgres_port: int = 5432

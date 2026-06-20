@@ -225,6 +225,14 @@ is_active boolean not null
 created_at timestamptz not null
 ```
 
+`password_hash` первого стенда хранится в формате:
+
+```text
+pbkdf2_sha256$iterations$salt$hash
+```
+
+Hash создаётся server auth service. Plain text пароль в PostgreSQL не хранится.
+
 ---
 
 ## Миграции

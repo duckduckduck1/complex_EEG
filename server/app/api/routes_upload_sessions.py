@@ -1,8 +1,8 @@
 """HTTP API для upload sessions.
 
-Это первый production-like слой upload lifecycle. Здесь ещё нет настоящей
-загрузки файлов и web-auth, но уже есть стабильные API-контракты для создания,
-проверки статуса и отмены upload session.
+Этот слой принимает ручную загрузку EEG experiment package через Web UI:
+создаёт session, принимает файлы, показывает статус, отменяет загрузку и
+запускает complete flow. Все production endpoints требуют web-auth.
 """
 
 from __future__ import annotations
@@ -15,9 +15,11 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.api.deps_auth import require_current_user
 from app.core.config import settings
 from app.db.session import get_db_session
 from app.features.upload.dto import UploadSourceFileDto, UploadValidationErrorDto
+from app.features.auth import CurrentUser
 from app.features.upload.session_service import (
     DEFAULT_UPLOAD_FILES,
     UploadCompletionResult,
@@ -92,9 +94,8 @@ def get_upload_session_service(
 ) -> UploadSessionService:
     """Собирает service-слой для HTTP request.
 
-    Сейчас client identity ещё не приходит из web-auth. Поэтому service получает
-    технический `client_id = web_ui` внутри endpoint'а. Когда появится auth layer,
-    здесь появится dependency текущего пользователя.
+    Service не зависит от FastAPI и auth напрямую: HTTP layer отдельно проверяет
+    пользователя, а сюда передаёт только repository и filesystem-настройки.
     """
 
     return UploadSessionService(
@@ -108,6 +109,7 @@ def get_upload_session_service(
 @router.post("", response_model=CreateUploadSessionResponse, status_code=status.HTTP_201_CREATED)
 def create_upload_session(
     request: CreateUploadSessionRequest,
+    _current_user: Annotated[CurrentUser, Depends(require_current_user)],
     service: Annotated[UploadSessionService, Depends(get_upload_session_service)],
 ) -> CreateUploadSessionResponse:
     """Создаёт upload session для одного experiment_id."""
@@ -149,6 +151,7 @@ async def upload_session_file(
     upload_session_id: Annotated[str, Path(min_length=1)],
     file_name: Annotated[str, Path(min_length=1)],
     request: Request,
+    _current_user: Annotated[CurrentUser, Depends(require_current_user)],
     service: Annotated[UploadSessionService, Depends(get_upload_session_service)],
 ) -> UploadSessionStatusResponse:
     """Потоково записывает один файл в upload session."""
@@ -190,6 +193,7 @@ async def upload_session_file(
 @router.get("/{upload_session_id}", response_model=UploadSessionStatusResponse)
 def get_upload_session(
     upload_session_id: Annotated[str, Path(min_length=1)],
+    _current_user: Annotated[CurrentUser, Depends(require_current_user)],
     service: Annotated[UploadSessionService, Depends(get_upload_session_service)],
 ) -> UploadSessionStatusResponse:
     """Возвращает состояние upload session после reload страницы или UI polling."""
@@ -205,6 +209,7 @@ def get_upload_session(
 @router.post("/{upload_session_id}/complete", response_model=CompleteUploadSessionResponse)
 def complete_upload_session(
     upload_session_id: Annotated[str, Path(min_length=1)],
+    _current_user: Annotated[CurrentUser, Depends(require_current_user)],
     service: Annotated[UploadSessionService, Depends(get_upload_session_service)],
 ) -> CompleteUploadSessionResponse:
     """Завершает upload session и синхронно запускает validation/promotion."""
@@ -230,6 +235,7 @@ def complete_upload_session(
 @router.delete("/{upload_session_id}", response_model=UploadSessionStatusResponse)
 def cancel_upload_session(
     upload_session_id: Annotated[str, Path(min_length=1)],
+    _current_user: Annotated[CurrentUser, Depends(require_current_user)],
     service: Annotated[UploadSessionService, Depends(get_upload_session_service)],
 ) -> UploadSessionStatusResponse:
     """Отменяет upload session по пользовательскому действию."""

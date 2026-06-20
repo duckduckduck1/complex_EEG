@@ -66,7 +66,7 @@ class Experiment(Base, TimestampMixin):
 
 
 class UploadSession(Base):
-    """Сессия ручной загрузки эксперимента с Flutter-приложения."""
+    """Сессия ручной загрузки experiment package через Web UI."""
 
     __tablename__ = "upload_sessions"
     __table_args__ = (

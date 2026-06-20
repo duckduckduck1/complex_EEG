@@ -71,6 +71,14 @@ Web UI использует HTTP-only session cookie. Bearer token для web UI
 используется. На первом этапе допустим простой login/password для сотрудников
 лаборатории.
 
+Текущая реализация:
+
+- `POST /api/v1/web/auth/login` проверяет username/password;
+- успешный login выставляет signed HTTP-only cookie;
+- `GET /api/v1/web/auth/me` возвращает текущего пользователя;
+- `POST /api/v1/web/auth/logout` удаляет cookie в браузере;
+- production upload endpoints требуют валидную web-auth cookie.
+
 Mutating web endpoints дополнительно защищаются SameSite cookie и CSRF token,
 если web UI работает как browser SPA.
 

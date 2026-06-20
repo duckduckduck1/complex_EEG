@@ -4,14 +4,16 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 
+from app.api.deps_auth import require_current_user
 from app.api.routes_upload_sessions import get_upload_session_service
 from app.core.config import settings
 from app.db.models import UploadSession
+from app.features.auth import CurrentUser
 from app.features.upload.session_service import UploadSessionService
 from app.main import app
 from tests.test_upload_session_service import (
@@ -24,6 +26,11 @@ from tests.test_upload_session_service import (
 client = TestClient(app)
 UPLOAD_SESSIONS_ENDPOINT = "/api/v1/uploads"
 VALID_UPLOAD_SESSION_ID = "01HX7M8M9RF2K0Z6GNZ6D7Q7AP"
+TEST_USER = CurrentUser(
+    id=UUID("00000000-0000-0000-0000-000000000001"),
+    username="lab_user",
+    role="operator",
+)
 
 
 def _valid_experiment_json(experiment_id: str = "exp_01") -> bytes:
@@ -55,6 +62,7 @@ def upload_session_service(workspace_tmp_path: Path) -> Iterator[UploadSessionSe
     service = _service(repository, workspace_tmp_path)
 
     app.dependency_overrides[get_upload_session_service] = lambda: service
+    app.dependency_overrides[require_current_user] = lambda: TEST_USER
     yield service
     app.dependency_overrides.clear()
 
@@ -79,6 +87,21 @@ def test_create_upload_session_returns_session_contract(
     assert body["upload_base_url"] == f"/api/v1/uploads/{body['upload_session_id']}"
     assert body["expires_at"] == "2026-06-21T12:00:00+00:00"
     assert "tmp_path" not in body
+
+
+def test_create_upload_session_requires_authentication() -> None:
+    """Production upload endpoints не доступны без web-auth cookie."""
+
+    response = client.post(
+        UPLOAD_SESSIONS_ENDPOINT,
+        json={
+            "experiment_id": "exp_01",
+            "display_name": "Experiment 01",
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"]["code"] == "auth.required"
 
 
 def test_create_upload_session_rejects_expected_files_without_required_file(

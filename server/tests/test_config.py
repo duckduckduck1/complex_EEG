@@ -57,3 +57,19 @@ def test_upload_max_size_uses_environment_value(monkeypatch) -> None:
     settings = Settings()
 
     assert settings.upload_max_size == 4096
+
+
+def test_auth_settings_use_environment_values(monkeypatch) -> None:
+    """Auth-настройки должны быть управляемыми через env для Docker/VM."""
+
+    monkeypatch.setenv("AUTH_SECRET", "test-secret")
+    monkeypatch.setenv("SESSION_COOKIE_NAME", "test_session")
+    monkeypatch.setenv("SESSION_TTL_HOURS", "2")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "true")
+
+    settings = Settings()
+
+    assert settings.auth_secret.get_secret_value() == "test-secret"
+    assert settings.session_cookie_name == "test_session"
+    assert settings.session_ttl_hours == 2
+    assert settings.session_cookie_secure is True
