@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -10,15 +11,18 @@ from uuid import uuid4
 import pytest
 
 from app.db.models import Experiment, UploadSession
+from app.features.upload.promotion import UploadPromotionResult
 from app.features.upload.session_service import (
     ACTIVE_UPLOAD_SESSION_STATUSES,
     UploadSessionAlreadyExistsError,
+    UploadSessionIncompleteError,
     UploadSessionNotFoundError,
     UploadSessionService,
     UploadSessionServiceError,
     UploadSessionStateConflictError,
     generate_ulid,
 )
+from app.features.validation.package_validator import ValidationResult
 from app.features.upload.staging import UPLOAD_SESSION_ID_PATTERN
 
 
@@ -44,6 +48,7 @@ class FakeUploadSessionRepository:
     def __init__(self) -> None:
         self.experiments: list[Experiment] = []
         self.upload_sessions: dict[str, UploadSession] = {}
+        self.source_files: list[object] = []
         self.commits = 0
 
     def has_accepted_experiment(self, experiment_id: str) -> bool:
@@ -67,6 +72,28 @@ class FakeUploadSessionRepository:
     def add(self, upload_session: UploadSession) -> None:
         self.upload_sessions[upload_session.id] = upload_session
 
+    def record_accepted_experiment(
+        self,
+        *,
+        upload_session: UploadSession,
+        promotion_result: UploadPromotionResult,
+        validation_result: ValidationResult,
+        accepted_at: datetime,
+    ) -> None:
+        self.experiments.append(
+            Experiment(
+                experiment_id=promotion_result.experiment_id,
+                display_name=promotion_result.experiment_id,
+                status="accepted",
+                source_path=str(promotion_result.source_dir),
+                validation_report_path=str(promotion_result.validation_report_path),
+                metadata_json=validation_result.metadata,
+                uploaded_at=upload_session.created_at,
+                accepted_at=accepted_at,
+            )
+        )
+        self.source_files.extend(promotion_result.source_files)
+
     def commit(self) -> None:
         self.commits += 1
 
@@ -80,9 +107,50 @@ def _service(
     return UploadSessionService(
         repository=repository,
         upload_tmp_root=upload_tmp_root,
+        experiments_root=upload_tmp_root / "experiments",
         ttl_hours=24,
         now=now,
     )
+
+
+def _write_valid_uploaded_package(
+    service: UploadSessionService,
+    upload_session_id: str,
+    *,
+    experiment_id: str = "exp_01",
+    signal_bytes: bytes = b"\x00\x00\x00\x00" * 1000,
+) -> None:
+    signal_target = service.prepare_file_upload(upload_session_id, "signal.bin")
+    signal_target.part_path.write_bytes(signal_bytes)
+    _finish_test_upload_file(signal_target.part_path, signal_target.final_path)
+    service.record_uploaded_file(upload_session_id, "signal.bin")
+
+    metadata_target = service.prepare_file_upload(upload_session_id, "experiment.json")
+    metadata_target.part_path.write_text(
+        (
+            "{"
+            f'"experiment_id": "{experiment_id}", '
+            '"metadata": {"animal_id": "mouse_1"}, '
+            '"segments": [{"segment_id": "seg_1", "start_sample": 0, "end_sample": 1000}], '
+            '"labels": [], '
+            '"fbm_events": []'
+            "}"
+        ),
+        encoding="utf-8",
+    )
+    _finish_test_upload_file(metadata_target.part_path, metadata_target.final_path)
+    service.record_uploaded_file(upload_session_id, "experiment.json")
+
+
+def _finish_test_upload_file(part_path: Path, final_path: Path) -> None:
+    try:
+        part_path.replace(final_path)
+    except PermissionError:
+        shutil.copy2(part_path, final_path)
+        try:
+            part_path.unlink()
+        except PermissionError:
+            return
 
 
 def test_generate_ulid_returns_valid_upload_session_id() -> None:
@@ -264,3 +332,105 @@ def test_cancel_session_rejects_final_status(workspace_tmp_path: Path) -> None:
 
     with pytest.raises(UploadSessionStateConflictError):
         service.cancel_session("01HX7M8M9RF2K0Z6GNZ6D7Q7AP")
+
+
+def test_prepare_and_record_uploaded_file_updates_session(workspace_tmp_path: Path) -> None:
+    """После успешной записи файл появляется в uploaded_files."""
+
+    repository = FakeUploadSessionRepository()
+    service = _service(repository, workspace_tmp_path)
+    created = service.create_session(experiment_id="exp_01")
+
+    target = service.prepare_file_upload(created.upload_session_id, "experiment.json")
+    target.part_path.write_text("{}", encoding="utf-8")
+    _finish_test_upload_file(target.part_path, target.final_path)
+    result = service.record_uploaded_file(created.upload_session_id, "experiment.json")
+
+    assert target.final_path == workspace_tmp_path / created.upload_session_id / "source" / "experiment.json"
+    assert result.uploaded_files == ["experiment.json"]
+
+
+def test_prepare_file_upload_rejects_unexpected_file(workspace_tmp_path: Path) -> None:
+    """Сервер принимает только файлы из upload-контракта."""
+
+    service = _service(FakeUploadSessionRepository(), workspace_tmp_path)
+    created = service.create_session(experiment_id="exp_01")
+
+    with pytest.raises(UploadSessionServiceError):
+        service.prepare_file_upload(created.upload_session_id, "../evil.txt")
+
+
+def test_complete_session_accepts_valid_uploaded_package(workspace_tmp_path: Path) -> None:
+    """Complete валидирует пакет, переносит его в permanent storage и пишет accepted."""
+
+    repository = FakeUploadSessionRepository()
+    service = _service(repository, workspace_tmp_path)
+    created = service.create_session(experiment_id="exp_01")
+    _write_valid_uploaded_package(service, created.upload_session_id)
+
+    result = service.complete_session(created.upload_session_id)
+
+    permanent_source = workspace_tmp_path / "experiments" / "exp_01" / "source"
+    assert result.status == "accepted"
+    assert result.accepted is True
+    assert (permanent_source / "signal.bin").is_file()
+    assert (permanent_source / "experiment.json").is_file()
+    assert repository.upload_sessions[created.upload_session_id].status == "accepted"
+    assert repository.experiments[0].experiment_id == "exp_01"
+    assert len(repository.source_files) == 2
+
+
+def test_complete_session_writes_failed_report_for_invalid_package(
+    workspace_tmp_path: Path,
+) -> None:
+    """Невалидный пакет остаётся в upload_tmp и получает validation report."""
+
+    repository = FakeUploadSessionRepository()
+    service = _service(repository, workspace_tmp_path)
+    created = service.create_session(experiment_id="exp_01")
+    _write_valid_uploaded_package(
+        service,
+        created.upload_session_id,
+        signal_bytes=b"\x00\x01",
+    )
+
+    result = service.complete_session(created.upload_session_id)
+
+    report_path = workspace_tmp_path / created.upload_session_id / "validation_report.json"
+    assert result.status == "failed"
+    assert result.accepted is False
+    assert report_path.is_file()
+    assert repository.upload_sessions[created.upload_session_id].status == "failed"
+    assert repository.experiments == []
+
+
+def test_complete_session_rejects_missing_required_files(workspace_tmp_path: Path) -> None:
+    """Complete без обязательного файла возвращает service-level incomplete."""
+
+    repository = FakeUploadSessionRepository()
+    service = _service(repository, workspace_tmp_path)
+    created = service.create_session(experiment_id="exp_01")
+    target = service.prepare_file_upload(created.upload_session_id, "experiment.json")
+    target.part_path.write_text("{}", encoding="utf-8")
+    _finish_test_upload_file(target.part_path, target.final_path)
+    service.record_uploaded_file(created.upload_session_id, "experiment.json")
+
+    with pytest.raises(UploadSessionIncompleteError):
+        service.complete_session(created.upload_session_id)
+
+
+def test_complete_session_is_idempotent_for_accepted(workspace_tmp_path: Path) -> None:
+    """Повторный complete для accepted session не запускает promotion второй раз."""
+
+    repository = FakeUploadSessionRepository()
+    service = _service(repository, workspace_tmp_path)
+    created = service.create_session(experiment_id="exp_01")
+    _write_valid_uploaded_package(service, created.upload_session_id)
+    first_result = service.complete_session(created.upload_session_id)
+
+    second_result = service.complete_session(created.upload_session_id)
+
+    assert first_result.status == "accepted"
+    assert second_result.status == "accepted"
+    assert second_result.validation_result is None
+    assert len(repository.experiments) == 1

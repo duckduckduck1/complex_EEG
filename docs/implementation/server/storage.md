@@ -29,6 +29,12 @@ PostgreSQL не хранит основной бинарный сигнал.
 /srv/complex_eeg/
   upload_tmp/
     {upload_session_id}/
+      source/
+        signal.bin
+        experiment.json
+        journal.ndjson
+        app.log
+      validation_report.json
   experiments/
     {experiment_id}/
       source/

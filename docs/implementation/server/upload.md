@@ -158,9 +158,15 @@ client_id = web_ui
 
 - реализованы `POST /api/v1/uploads`, `GET /api/v1/uploads/{id}`,
   `DELETE /api/v1/uploads/{id}`;
+- реализованы `PUT /api/v1/uploads/{id}/files/{file_name}` и
+  `POST /api/v1/uploads/{id}/complete`;
 - session создаётся со статусом `uploading`;
 - сервер генерирует ULID и создаёт временную директорию upload session;
 - TTL берётся из `UPLOAD_SESSION_TTL_HOURS`;
+- размер одного upload-файла ограничивается `UPLOAD_MAX_SIZE`;
+- complete синхронно запускает validation и возвращает `accepted` или `failed`;
+- accepted upload создаёт permanent source layout и records для существующих
+  моделей `Experiment`/`SourceFile`;
 - `display_name` пока не сохраняется, потому что это требует решения DB owner
   по месту хранения: `experiments` или расширение `upload_sessions`;
 - web-auth ещё не подключён, поэтому `client_id` временно фиксируется как
@@ -179,6 +185,8 @@ client_id = web_ui
 - размер файла проверяется до записи или во время streaming;
 - файл пишется во временный путь с suffix `.part`;
 - после успешной записи `.part` атомарно переименовывается в финальное имя;
+- если Windows/dev sandbox запрещает rename/delete, implementation использует
+  best-effort fallback; production Linux path остаётся atomic rename;
 - checksum можно добавить позже, если приложение начнёт его передавать.
 
 Разрешённые файлы первого этапа:
@@ -201,7 +209,7 @@ experiment.json
 
 ## Завершение upload
 
-Endpoint `complete` переводит session в состояние `completed` только если:
+Endpoint `complete` запускает validation/promotion только если:
 
 - session существует;
 - session принадлежит аутентифицированному клиенту;
@@ -209,18 +217,18 @@ Endpoint `complete` переводит session в состояние `completed`
 - файлы не находятся в состоянии `.part`;
 - upload не expired.
 
-После этого сервер запускает validation job.
+В текущей реализации validation выполняется синхронно внутри API процесса.
+Успешный пакет сразу получает `accepted`, неуспешный — `failed` с validation
+report в `upload_tmp`.
 
 Повторный `complete` идемпотентен:
 
-- `completed` или `validating` возвращает `200` с текущим статусом;
-- новый validation job не создаётся;
 - `accepted` возвращает `200`;
 - `cancelled`, `expired` или `failed` возвращает `409`.
 
-Для первого стенда validation можно выполнить синхронно внутри API процесса, если
-пакет небольшой. Целевое решение — вынести в service/worker, чтобы долгие
-проверки не блокировали HTTP worker.
+Целевое решение — вынести validation/promotion в service/worker, чтобы долгие
+проверки не блокировали HTTP worker. API contract при этом должен остаться
+совместимым: status check продолжит показывать актуальное состояние session.
 
 ---
 
