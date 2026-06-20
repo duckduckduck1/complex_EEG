@@ -323,7 +323,8 @@ Server implementation считается готовым к первому зап
 
 - приложение стартует через Uvicorn;
 - `/health` отвечает без доступа к PostgreSQL;
-- `/ready` проверяет PostgreSQL и файловые директории;
+- `/ready` проверяет PostgreSQL connection через `SELECT 1` и файловые
+  директории `EXPERIMENTS_DIR`, `UPLOAD_TMP_DIR`, `PIPELINE_RESULTS_DIR`;
 - миграции применяются;
 - upload session создаётся только после web-auth;
 - обязательные файлы принимаются и сохраняются;

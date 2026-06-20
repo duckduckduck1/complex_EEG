@@ -297,7 +297,12 @@ ansible-playbook -i infra/ansible/inventories/local_vm/hosts.yml \
 ```bash
 ssh deploy@SERVER_IP "cd /opt/complex_eeg/app && docker compose ps"
 curl -f http://SERVER_IP/health
+curl -f http://SERVER_IP/ready
 ```
+
+`/ready` может вернуть `503`, если PostgreSQL или runtime-директории ещё не
+подготовлены. В этом случае деплой считается незавершённым, а причина берётся из
+JSON-поля `checks`.
 
 После появления web:
 
