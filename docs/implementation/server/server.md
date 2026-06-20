@@ -82,6 +82,7 @@ pytest
 server/
   app/
     main.py
+    cli.py
     core/
       config.py
       logging.py
@@ -104,6 +105,7 @@ server/
       schemas.py
     services/
       auth_service.py
+      user_admin_service.py
       upload_service.py
       validation_service.py
       experiment_service.py
