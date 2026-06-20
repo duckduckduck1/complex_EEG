@@ -28,6 +28,8 @@ services:
       UPLOAD_SESSION_TTL_HOURS: ${UPLOAD_SESSION_TTL_HOURS:-24}
       UPLOAD_MAX_SIZE: ${UPLOAD_MAX_SIZE:-10737418240}
       LOG_DIR: /var/log/complex_eeg/app
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      REQUEST_ID_HEADER: ${REQUEST_ID_HEADER:-X-Request-ID}
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:
