@@ -169,8 +169,9 @@ client_id = web_ui
   моделей `Experiment`/`SourceFile`;
 - `display_name` пока не сохраняется, потому что это требует решения DB owner
   по месту хранения: `experiments` или расширение `upload_sessions`;
-- web-auth ещё не подключён, поэтому `client_id` временно фиксируется как
-  `web_ui`.
+- production endpoints требуют web-auth session cookie;
+- `client_id` временно фиксируется как `web_ui`, потому что схема ещё не хранит
+  явную связь upload session с `users.id`.
 
 ---
 
