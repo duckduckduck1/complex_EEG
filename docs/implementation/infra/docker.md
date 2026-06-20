@@ -531,11 +531,15 @@ docker compose logs postgres
 
 ```bash
 curl -f http://localhost:${API_PORT:-8000}/health
+curl -f http://localhost:${API_PORT:-8000}/ready
 ```
 
-`/ready` будет использоваться как строгая проверка готовности после реализации
-проверки PostgreSQL, директорий и миграций. На текущем этапе compose healthcheck
-для `api` использует `/health`, чтобы проверить именно запуск FastAPI-процесса.
+`/ready` проверяет PostgreSQL connection и runtime-директории. Он может вернуть
+`503`, если PostgreSQL ещё не доступен или bind mounts не подготовлены.
+
+Compose healthcheck для `api` использует `/health`, чтобы проверять именно запуск
+FastAPI-процесса. Это позволяет отдельно диагностировать ситуацию: контейнер
+жив, но runtime dependency ещё не готова.
 
 ---
 

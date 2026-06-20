@@ -476,4 +476,8 @@ GET /metrics
 - доступность `UPLOAD_TMP_DIR`;
 - доступность `PIPELINE_RESULTS_DIR`.
 
+Если хотя бы одна проверка не проходит, endpoint возвращает HTTP `503` и
+`status = not_ready`. Проверка миграций не входит в текущий `/ready` и будет
+добавлена после появления initial Alembic migrations.
+
 `/metrics` отдаёт Prometheus metrics.
