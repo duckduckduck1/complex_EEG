@@ -233,6 +233,12 @@ pbkdf2_sha256$iterations$salt$hash
 
 Hash создаётся server auth service. Plain text пароль в PostgreSQL не хранится.
 
+Первый пользователь создаётся через server admin CLI:
+
+```bash
+complex-eeg users create --username admin --role admin
+```
+
 ---
 
 ## Миграции

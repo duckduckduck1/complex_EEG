@@ -27,7 +27,7 @@ MVP-клиентом для ручной загрузки experiment package н�
 - password hash в PostgreSQL;
 - HTTP-only session cookie;
 - logout endpoint;
-- ручное создание пользователей администратором.
+- создание пользователей через server admin CLI.
 
 Bearer token для web UI не используется. Публичная регистрация не нужна.
 
@@ -92,6 +92,14 @@ admin
 - `viewer` — просмотр списка, карточек, результатов;
 - `operator` — загрузка экспериментов и повторный запуск обработки;
 - `admin` — управление пользователями и служебные действия.
+
+Пользователь первого стенда создаётся не через HTTP API, а через CLI:
+
+```bash
+complex-eeg users create --username admin --role admin
+```
+
+Подробности: `docs/implementation/server/admin_cli.md`.
 
 ---
 
