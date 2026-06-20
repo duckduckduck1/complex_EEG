@@ -4,7 +4,7 @@
 """
 
 from app.db.base import Base
-from app.db.models import Experiment, UploadSession
+from app.db.models import Experiment, SourceFile, UploadSession
 
 
 def test_all_expected_tables_are_registered() -> None:
@@ -32,6 +32,24 @@ def test_experiment_model_matches_storage_contract() -> None:
     assert columns.display_name.nullable is False
     assert columns.status.nullable is False
     assert columns.metadata_json.nullable is True
+    assert columns.storage_bucket.nullable is True
+    assert columns.storage_prefix.nullable is True
+
+
+def test_source_file_bucket_object_key_unique() -> None:
+    """Пара bucket+object_key уникальна — защита от дублей объектов в MinIO."""
+
+    constraints = {
+        constraint.name
+        for constraint in SourceFile.__table__.constraints
+        if constraint.name
+    }
+
+    assert "uq_source_files_bucket_object_key" in constraints
+
+    columns = SourceFile.__table__.c
+    assert columns.bucket.nullable is False
+    assert columns.object_key.nullable is False
 
 
 def test_upload_session_model_uses_ulid_primary_key() -> None:

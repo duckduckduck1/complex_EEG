@@ -1,5 +1,8 @@
 # EEG DB owner handoff
 
+Current task list for the DB owner lives in
+`docs/implementation/server/db_owner_tasks.md`.
+
 ## Purpose
 
 This document describes how DB ownership works for the current `complex_EEG` MVP.
@@ -175,4 +178,3 @@ Reason:
 
 Useful ideas from that branch can be reintroduced later through focused EEG-specific
 PRs.
-

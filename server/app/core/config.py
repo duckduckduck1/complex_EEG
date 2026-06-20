@@ -47,6 +47,14 @@ class Settings(BaseSettings):
     upload_session_ttl_hours: int = 24
     upload_max_size: int = 1024 * 1024 * 1024
 
+    minio_endpoint: str = "http://minio:9000"
+    minio_root_user: str = "minioadmin"
+    minio_root_password: SecretStr = SecretStr("change_me")
+    minio_bucket_bronze: str = "lakehouse-bronze"
+    minio_bucket_silver: str = "lakehouse-silver"
+    minio_bucket_gold: str = "lakehouse-gold"
+    minio_bucket_derived: str = "lakehouse-derived"
+
     @property
     def database_url(self) -> str:
         """SQLAlchemy-compatible URL для подключения к PostgreSQL.

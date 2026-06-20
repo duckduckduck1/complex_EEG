@@ -1,8 +1,8 @@
 """SQLAlchemy-модели серверной БД.
 
 Каждый класс в этом файле описывает одну таблицу PostgreSQL.
-Важно: эти классы не создают таблицы сами по себе. Таблицы будут создаваться
-через Alembic migration files.
+Исполняемая схема создаётся SQL-скриптами в `scripts/db_scripts/`.
+ORM-модели должны оставаться синхронизированными с `010_schema.sql`.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Index, String, Text, func
+from sqlalchemy import BigInteger, Boolean, DateTime, Index, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -37,8 +37,8 @@ class TimestampMixin:
 class Experiment(Base, TimestampMixin):
     """Основная карточка эксперимента.
 
-    PostgreSQL хранит только метаданные и статусы.
-    Сам бинарный сигнал остаётся в файловой системе.
+    PostgreSQL хранит метаданные, статусы и ссылки на объекты в MinIO bronze.
+    Сам бинарный сигнал остаётся в object storage.
     """
 
     __tablename__ = "experiments"
@@ -52,6 +52,8 @@ class Experiment(Base, TimestampMixin):
     display_name: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(64), nullable=False)
 
+    storage_bucket: Mapped[str | None] = mapped_column(String(63), nullable=True)
+    storage_prefix: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     validation_report_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
@@ -107,10 +109,11 @@ class ExperimentEvent(Base):
 
 
 class SourceFile(Base):
-    """Файл исходного пакета, принятый сервером."""
+    """Файл исходного пакета, принятый сервером и сохранённый в MinIO bronze."""
 
     __tablename__ = "source_files"
     __table_args__ = (
+        UniqueConstraint("bucket", "object_key", name="uq_source_files_bucket_object_key"),
         Index("ix_source_files_experiment_id", "experiment_id"),
     )
 
@@ -118,6 +121,8 @@ class SourceFile(Base):
     experiment_id: Mapped[str] = mapped_column(String(64), nullable=False)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     relative_path: Mapped[str] = mapped_column(Text, nullable=False)
+    bucket: Mapped[str] = mapped_column(String(63), nullable=False)
+    object_key: Mapped[str] = mapped_column(Text, nullable=False)
     size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
     sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

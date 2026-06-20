@@ -60,11 +60,15 @@ exp1/
 /srv/complex_eeg/upload_tmp/{upload_session_id}/
 ```
 
-После успешной валидации исходный пакет переносится в постоянное хранилище:
+После успешной валидации исходный пакет загружается в MinIO bronze:
 
 ```text
-/srv/complex_eeg/experiments/{experiment_id}/source/
+s3://lakehouse-bronze/eeg/{experiment_id}/signal.bin
+s3://lakehouse-bronze/eeg/{experiment_id}/experiment.json
 ```
+
+PostgreSQL получает `metadata_json` из `experiment.json` и ссылки
+(`storage_bucket`, `storage_prefix`, `source_files.bucket/object_key`).
 
 Если валидация не прошла, временный пакет сохраняется на ограниченное время для
 диагностики или удаляется по cleanup policy. Решение фиксируется в настройке
@@ -165,8 +169,8 @@ client_id = web_ui
 - TTL берётся из `UPLOAD_SESSION_TTL_HOURS`;
 - размер одного upload-файла ограничивается `UPLOAD_MAX_SIZE`;
 - complete синхронно запускает validation и возвращает `accepted` или `failed`;
-- accepted upload создаёт permanent source layout и records для существующих
-  моделей `Experiment`/`SourceFile`;
+- accepted upload записывает metadata в PostgreSQL и ссылки на объекты MinIO
+  bronze; promotion в object storage подключается отдельным шагом;
 - `display_name` пока не сохраняется, потому что это требует решения DB owner
   по месту хранения: `experiments` или расширение `upload_sessions`;
 - production endpoints требуют web-auth session cookie;
@@ -285,7 +289,7 @@ Cancel переводит session в `cancelled`, эксперимент в `upl
 
 Cleanup не удаляет:
 
-- permanent source files;
+- объекты MinIO bronze для accepted experiments;
 - accepted experiments;
 - pipeline results;
 - записи истории в PostgreSQL.

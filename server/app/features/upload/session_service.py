@@ -18,6 +18,7 @@ from typing import Protocol
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.db.models import Experiment, SourceFile, UploadSession
 from app.features.upload.promotion import (
     UploadPromotionError,
@@ -168,12 +169,17 @@ class SqlAlchemyUploadSessionRepository:
         validation_result: ValidationResult,
         accepted_at: datetime,
     ) -> None:
+        storage_bucket = settings.minio_bucket_bronze
+        storage_prefix = f"eeg/{promotion_result.experiment_id}/"
+
         experiment = Experiment(
             experiment_id=promotion_result.experiment_id,
             # Пока display_name не хранится в upload_sessions. На первом стенде
             # используем experiment_id, чтобы не расширять DB-схему в API-ветке.
             display_name=promotion_result.experiment_id,
             status="accepted",
+            storage_bucket=storage_bucket,
+            storage_prefix=storage_prefix,
             source_path=str(promotion_result.source_dir),
             validation_report_path=str(promotion_result.validation_report_path),
             metadata_json=validation_result.metadata,
@@ -188,6 +194,8 @@ class SqlAlchemyUploadSessionRepository:
                     experiment_id=promotion_result.experiment_id,
                     name=source_file.name,
                     relative_path=source_file.relative_path,
+                    bucket=storage_bucket,
+                    object_key=f"{storage_prefix}{source_file.relative_path}",
                     size_bytes=source_file.size_bytes,
                     sha256=source_file.sha256,
                 )
