@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     app_env: str = "local"
     app_name: str = "complex_eeg_server"
     enable_local_upload_endpoint: bool = False
+    log_level: str = "INFO"
+    request_id_header: str = "X-Request-ID"
     auth_secret: SecretStr = SecretStr("change_me")
     session_cookie_name: str = "complex_eeg_session"
     session_ttl_hours: int = 12

@@ -269,6 +269,8 @@ API возвращает прикладные ошибки в едином фо�
 APP_ENV
 ENABLE_LOCAL_UPLOAD_ENDPOINT
 APP_BASE_URL
+LOG_LEVEL
+REQUEST_ID_HEADER
 POSTGRES_HOST
 POSTGRES_PORT
 POSTGRES_DB
@@ -314,6 +316,33 @@ GET /metrics
 - длительность обработки;
 - ошибки pipeline;
 - доступность PostgreSQL.
+
+### Structured request logs
+
+API пишет один JSON-log на каждый HTTP-запрос в stdout. Docker собирает эти
+строки, поэтому на VM их можно смотреть через:
+
+```bash
+docker compose logs api
+```
+
+Минимальные поля события `http_request`:
+
+```text
+event
+request_id
+method
+path
+status_code
+duration_ms
+client_ip
+user_agent
+error_type
+```
+
+`path` пишется без query string, чтобы случайно не сохранить секреты из URL.
+Response всегда получает header `X-Request-ID` или значение из
+`REQUEST_ID_HEADER`.
 
 ---
 

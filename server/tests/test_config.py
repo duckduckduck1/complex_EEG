@@ -73,3 +73,15 @@ def test_auth_settings_use_environment_values(monkeypatch) -> None:
     assert settings.session_cookie_name == "test_session"
     assert settings.session_ttl_hours == 2
     assert settings.session_cookie_secure is True
+
+
+def test_logging_settings_use_environment_values(monkeypatch) -> None:
+    """Logging-настройки должны управляться через env для Docker runtime."""
+
+    monkeypatch.setenv("LOG_LEVEL", "DEBUG")
+    monkeypatch.setenv("REQUEST_ID_HEADER", "X-Correlation-ID")
+
+    settings = Settings()
+
+    assert settings.log_level == "DEBUG"
+    assert settings.request_id_header == "X-Correlation-ID"

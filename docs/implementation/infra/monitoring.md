@@ -266,6 +266,7 @@ complex_eeg_files_backup_size_bytes
 ### Application
 
 - API health;
+- structured request logs with request_id;
 - upload sessions count;
 - upload errors;
 - validation failures;

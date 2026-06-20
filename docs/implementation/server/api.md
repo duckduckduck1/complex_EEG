@@ -105,6 +105,22 @@ variable, но wildcard `*` запрещён для authenticated endpoints.
 
 ---
 
+## Request ID
+
+Каждый HTTP response содержит header:
+
+```http
+X-Request-ID: <request_id>
+```
+
+Если клиент передал `X-Request-ID`, сервер переиспользует его при безопасном
+формате. Если header отсутствует или некорректен, сервер генерирует новый id.
+
+`request_id` пишется в structured request log и позволяет связать ошибку в UI,
+HTTP response и запись в `docker compose logs api`.
+
+---
+
 ## Общий формат ошибки
 
 ```json
