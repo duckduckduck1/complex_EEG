@@ -4,38 +4,51 @@
 
 Draft.
 
-Документ описывает реализацию хранилища серверной части: PostgreSQL, файловые
-пути, миграции и правила консистентности между БД и файловой системой.
+Документ описывает реализацию хранилища серверной части: PostgreSQL, MinIO,
+локальный staging, SQL init scripts и правила консистентности.
 
 ---
 
 ## Решение
 
-Используются два слоя хранения:
+Используются три зоны хранения:
 
-1. PostgreSQL — метаданные, статусы, события, ссылки на файлы и результаты.
-2. Файловая система — `signal.bin`, `experiment.json`, логи и производные
-   результаты.
+1. PostgreSQL — метаданные, статусы, события, ссылки на объекты MinIO.
+2. MinIO bronze — immutable source-пакет после `accepted`.
+3. Локальная файловая система — staging (`upload_tmp`), validation reports,
+   pipeline results.
 
 PostgreSQL не хранит основной бинарный сигнал.
 
+Исполняемая схема PostgreSQL: `scripts/db_scripts/010_schema.sql`.
+
 ---
 
-## Файловая структура
+## MinIO layout (bronze)
 
-Целевой layout:
+```text
+s3://lakehouse-bronze/eeg/{experiment_id}/signal.bin
+s3://lakehouse-bronze/eeg/{experiment_id}/experiment.json
+```
+
+Buckets создаёт `scripts/minio/010_init_buckets.sh` через сервис `minio-init`.
+
+---
+
+## Локальная файловая структура (staging и pipeline)
 
 ```text
 /srv/complex_eeg/
   upload_tmp/
     {upload_session_id}/
-  experiments/
-    {experiment_id}/
       source/
         signal.bin
         experiment.json
         journal.ndjson
         app.log
+      validation_report.json
+  experiments/
+    {experiment_id}/
       validation/
         validation_report.json
   pipeline_results/
@@ -49,10 +62,10 @@ PostgreSQL не хранит основной бинарный сигнал.
 
 Правила:
 
-- `source/` immutable после `accepted`;
+- `upload_tmp` — только до успешной валидации;
+- после `accepted` source-файлы живут в MinIO bronze;
 - pipeline writes only в `pipeline_results`;
-- временные файлы имеют suffix `.part`;
-- сервер не отдаёт файлы напрямую по filesystem path.
+- временные файлы имеют suffix `.part`.
 
 ---
 
@@ -67,6 +80,8 @@ id UUID primary key
 experiment_id text unique not null
 display_name text not null
 status text not null
+storage_bucket text null
+storage_prefix text null
 source_path text null
 validation_report_path text null
 metadata_json jsonb null
@@ -125,17 +140,16 @@ id UUID primary key
 experiment_id text not null
 name text not null
 relative_path text not null
+bucket text not null
+object_key text not null
 size_bytes bigint not null
 sha256 text null
 created_at timestamptz not null
+unique (bucket, object_key)
 ```
 
-При переходе эксперимента в `accepted` сервер выполняет `stat()` для каждого
-source file и сохраняет `size_bytes`. Web DTO `source_files.size_bytes` берёт
-значение из этой таблицы, а не вычисляет размер при каждом запросе.
-
-`relative_path` относителен директории `source/`. Абсолютные пути в API не
-возвращаются.
+`relative_path` — имя файла внутри `storage_prefix`. API не возвращает полные
+S3 URI.
 
 ### `pipeline_runs`
 
@@ -219,31 +233,55 @@ is_active boolean not null
 created_at timestamptz not null
 ```
 
+`password_hash` первого стенда хранится в формате:
+
+```text
+pbkdf2_sha256$iterations$salt$hash
+```
+
+Hash создаётся server auth service. Plain text пароль в PostgreSQL не хранится.
+
+Первый пользователь создаётся через server admin CLI:
+
+```bash
+complex-eeg users create --username admin --role admin
+```
+
 ---
 
-## Миграции
+## Инициализация схемы
 
-Используется Alembic.
+Первый стенд создаёт PostgreSQL-схему через SQL init scripts:
+
+```text
+scripts/db_scripts/010_schema.sql
+scripts/db_scripts/090_seed_dev.sql
+```
+
+Docker Compose монтирует `scripts/db_scripts` в
+`/docker-entrypoint-initdb.d` контейнера `postgres`.
 
 Правила:
 
-- все изменения схемы идут через migration files;
+- исполняемая схема описывается в SQL, не в Alembic autogenerate;
+- `server/app/db/models.py` должен оставаться синхронизированным с SQL;
 - ручные изменения БД на сервере запрещены;
-- migration должна быть обратимой там, где это разумно;
-- перед рискованной migration выполняется backup;
-- CI запускает проверку миграций после появления server-кода.
+- Alembic остаётся для будущих инкрементальных migration files после первого
+  стенда.
 
-Команды:
+Проверка схемы:
 
 ```bash
-alembic revision --autogenerate -m "create experiments"
-alembic upgrade head
-alembic downgrade -1
+psql "$DATABASE_URL" -f scripts/db_scripts/checks/001_schema_readiness.sql
 ```
 
-`alembic/env.py` должен читать настройки подключения через `app.core.config`, где
-`DATABASE_URL` собирается из `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`,
-`POSTGRES_USER`, `POSTGRES_PASSWORD`, если не задан явно.
+---
+
+## Alembic (после первого стенда)
+
+Alembic skeleton остаётся в `server/alembic`, но не заменяет SQL init scripts.
+
+`alembic/env.py` читает подключение через `app.core.config`.
 
 ---
 
@@ -252,30 +290,31 @@ alembic downgrade -1
 `experiments.metadata_json` хранит поле `metadata` из `experiment.json` как есть.
 Если `metadata` отсутствует, сохраняется пустой объект `{}`.
 
-Полный `experiment.json` остаётся в файловом хранилище как исходный документ.
+Полный `experiment.json` остаётся в MinIO bronze как исходный объект.
 
 ---
 
-## Консистентность БД и файлов
+## Консистентность БД и MinIO
 
 Для accepted эксперимента должны быть истинны оба условия:
 
-- в PostgreSQL есть запись `experiments.status = accepted`;
-- `source_path` указывает на существующую директорию с обязательными файлами.
+- в PostgreSQL есть запись `experiments.status = accepted` с `storage_bucket` и
+  `storage_prefix`;
+- объекты `signal.bin` и `experiment.json` существуют по ключам из `source_files`.
 
 Порядок commit для successful validation:
 
-1. проверить временный пакет;
-2. создать permanent directory;
-3. атомарно перенести файлы в permanent directory;
+1. проверить временный пакет в `upload_tmp`;
+2. проверить отсутствие accepted эксперимента с тем же `experiment_id`;
+3. загрузить файлы в MinIO bronze;
 4. открыть DB transaction;
 5. обновить `experiments`;
-6. записать `experiment_events`;
-7. commit.
+6. записать `source_files` с `bucket` + `object_key`;
+7. записать `experiment_events`;
+8. commit.
 
-Если шаги 2-3 успешны, а DB commit падает, cleanup должен пометить orphan
-directory для ручного разбора. Сервер не удаляет такие данные автоматически без
-логирования.
+Если шаг 3 успешен, а DB commit падает, cleanup должен пометить orphan objects
+в MinIO для ручного разбора.
 
 ---
 
@@ -290,6 +329,7 @@ experiments(uploaded_at)
 upload_sessions(experiment_id)
 upload_sessions(status)
 source_files(experiment_id)
+source_files(bucket, object_key) unique
 experiment_events(experiment_id, created_at)
 pipeline_runs(experiment_id, created_at)
 pipeline_runs(status)
@@ -307,7 +347,7 @@ users(username) unique
 Бэкап должен включать:
 
 - PostgreSQL database;
-- `/srv/complex_eeg/experiments`;
+- MinIO data volume (`MINIO_DATA_DIR`);
 - `/srv/complex_eeg/pipeline_results`;
 - server configs, если они не восстанавливаются из Git/Ansible.
 
@@ -320,8 +360,6 @@ users(username) unique
 Минимальные тесты:
 
 - `experiment_id` нельзя принять дважды;
-- статусная история пишется при переходах;
-- accepted experiment имеет source path;
-- source path нельзя поменять обычным update;
+- `source_files (bucket, object_key)` нельзя продублировать;
+- accepted experiment имеет `storage_bucket` и `storage_prefix`;
 - pipeline run создаётся отдельно от experiment;
-- orphan file path не появляется при штатном successful flow.

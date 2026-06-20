@@ -4,9 +4,14 @@
 Docker, nginx, CI/CD и мониторингу.
 """
 
-from fastapi import APIRouter
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, status
+from fastapi.responses import JSONResponse
 
 from app.core.config import settings
+from app.db.session import engine
+from app.features.readiness import ReadinessReport, ReadinessService, RequiredDirectory
 
 router = APIRouter()
 
@@ -22,12 +27,53 @@ def health() -> dict[str, str]:
     return {"status": "ok", "service": settings.app_name}
 
 
-@router.get("/ready")
-def ready() -> dict[str, str]:
+def get_readiness_service() -> ReadinessService:
+    """Собирает readiness service из runtime-настроек приложения."""
+
+    return ReadinessService(
+        engine=engine,
+        required_directories=[
+            RequiredDirectory(name="experiments_dir", path=settings.experiments_dir),
+            RequiredDirectory(name="upload_tmp_dir", path=settings.upload_tmp_dir),
+            RequiredDirectory(
+                name="pipeline_results_dir",
+                path=settings.pipeline_results_dir,
+            ),
+        ],
+    )
+
+
+@router.get("/ready", response_model=None)
+def ready(
+    readiness_service: Annotated[ReadinessService, Depends(get_readiness_service)],
+) -> dict[str, object] | JSONResponse:
     """Проверяет, готово ли приложение принимать трафик.
 
-    Сейчас это заглушка. Позже /ready будет проверять PostgreSQL,
-    доступность директорий и, возможно, состояние миграций.
+    /ready строже, чем /health: он проверяет PostgreSQL и директории, без
+    которых upload/validation/pipeline flow не сможет работать.
     """
 
-    return {"status": "ready"}
+    report = readiness_service.check()
+    body = _readiness_body(report)
+
+    if report.is_ready:
+        return body
+
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content=body,
+    )
+
+
+def _readiness_body(report: ReadinessReport) -> dict[str, object]:
+    return {
+        "status": report.status,
+        "checks": [
+            {
+                "name": check.name,
+                "status": check.status,
+                "message": check.message,
+            }
+            for check in report.checks
+        ],
+    }

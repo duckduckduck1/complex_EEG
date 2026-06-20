@@ -91,6 +91,7 @@ CI/CD считается внедрённым, когда:
 - server/web/pipeline tests запускаются после появления кода;
 - Docker images собираются;
 - `docker compose config` проходит;
+- API image собирается из `server/Dockerfile`;
 - Ansible syntax check проходит;
 - deploy на VM запускается вручную;
 - после deploy выполняется healthcheck;
@@ -296,7 +297,12 @@ ansible-playbook -i infra/ansible/inventories/local_vm/hosts.yml \
 ```bash
 ssh deploy@SERVER_IP "cd /opt/complex_eeg/app && docker compose ps"
 curl -f http://SERVER_IP/health
+curl -f http://SERVER_IP/ready
 ```
+
+`/ready` может вернуть `503`, если PostgreSQL или runtime-директории ещё не
+подготовлены. В этом случае деплой считается незавершённым, а причина берётся из
+JSON-поля `checks`.
 
 После появления web:
 

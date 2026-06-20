@@ -27,15 +27,26 @@ MVP-клиентом для ручной загрузки experiment package н�
 - password hash в PostgreSQL;
 - HTTP-only session cookie;
 - logout endpoint;
-- ручное создание пользователей администратором.
+- создание пользователей через server admin CLI.
 
 Bearer token для web UI не используется. Публичная регистрация не нужна.
 
 Password hash algorithm:
 
 ```text
-bcrypt
+pbkdf2_sha256
 ```
+
+На первом стенде используется `pbkdf2_sha256` из стандартной библиотеки Python,
+чтобы не добавлять отдельную криптографическую зависимость до полноценного user
+management. Формат хранения:
+
+```text
+pbkdf2_sha256$iterations$salt$hash
+```
+
+Если позже будет выбран `bcrypt` или `argon2`, миграция должна поддерживать
+проверку старых hash'ей до принудительной смены пароля.
 
 Cookie settings:
 
@@ -43,6 +54,8 @@ Cookie settings:
 HttpOnly=true
 SameSite=Lax
 Secure=${SESSION_COOKIE_SECURE}
+Name=${SESSION_COOKIE_NAME}
+TTL=${SESSION_TTL_HOURS}h
 ```
 
 Для локального стенда:
@@ -79,6 +92,14 @@ admin
 - `viewer` — просмотр списка, карточек, результатов;
 - `operator` — загрузка экспериментов и повторный запуск обработки;
 - `admin` — управление пользователями и служебные действия.
+
+Пользователь первого стенда создаётся не через HTTP API, а через CLI:
+
+```bash
+complex-eeg users create --username admin --role admin
+```
+
+Подробности: `docs/implementation/server/admin_cli.md`.
 
 ---
 
@@ -308,7 +329,7 @@ Web backend показывает прикладные ошибки:
 Правила:
 
 - web session cookie, если используется, должна быть HTTP-only;
-- password hash хранится через bcrypt;
+- password hash хранится через `pbkdf2_sha256`;
 - download endpoints проверяют path ownership;
 - path traversal запрещён;
 - ошибки auth не раскрывают, существует ли username;

@@ -24,6 +24,8 @@ dist/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.pytest_tmp/
+.test_tmp/
 
 # Local environment files
 .env

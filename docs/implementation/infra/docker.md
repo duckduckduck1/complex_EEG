@@ -272,6 +272,59 @@ Backup jobs на первом стенде запускаются на хост�
 
 ---
 
+## API Runtime
+
+### Текущее решение
+
+`api` больше не является placeholder-контейнером. Он собирается из:
+
+```text
+server/Dockerfile
+```
+
+Compose-фрагмент:
+
+```yaml
+api:
+  build:
+    context: ./server
+    dockerfile: Dockerfile
+  image: ${API_IMAGE:-complex-eeg-api:local}
+  command:
+    - python
+    - -m
+    - uvicorn
+    - app.main:app
+    - --host
+    - 0.0.0.0
+    - --port
+    - "8000"
+```
+
+Dockerfile устанавливает server package через:
+
+```bash
+python -m pip install .
+```
+
+Это означает, что внутри контейнера доступны:
+
+- FastAPI-приложение `app.main:app`;
+- CLI `complex-eeg`;
+- зависимости из `server/pyproject.toml`.
+
+### Важное ограничение
+
+API-контейнер может стартовать и отвечать на `/health` до применения Alembic
+migrations, потому что `/health` проверяет только живость процесса.
+
+Операции, которые обращаются к PostgreSQL-таблицам (`login`, upload sessions,
+создание пользователя через CLI), требуют, чтобы миграции уже создали таблицы.
+До появления migration files это проверяется вручную и считается зоной DB
+handoff.
+
+---
+
 ## Модель прав bind mount
 
 ### Решение
@@ -400,12 +453,18 @@ UPLOAD_TMP_DIR
 BACKUP_DIR
 BACKUP_STATUS_DIR
 LOG_DIR
+LOG_LEVEL
+REQUEST_ID_HEADER
 
 AUTH_SECRET
+SESSION_COOKIE_NAME
+SESSION_TTL_HOURS
+SESSION_COOKIE_SECURE
 GF_SECURITY_ADMIN_USER
 GF_SECURITY_ADMIN_PASSWORD
 ALERTMANAGER_TOKEN
 UPLOAD_MAX_SIZE
+UPLOAD_SESSION_TTL_HOURS
 ```
 
 ### Правила
@@ -473,8 +532,16 @@ docker compose logs postgres
 После реализации API:
 
 ```bash
-curl -f http://localhost:API_PORT/health
+curl -f http://localhost:${API_PORT:-8000}/health
+curl -f http://localhost:${API_PORT:-8000}/ready
 ```
+
+`/ready` проверяет PostgreSQL connection и runtime-директории. Он может вернуть
+`503`, если PostgreSQL ещё не доступен или bind mounts не подготовлены.
+
+Compose healthcheck для `api` использует `/health`, чтобы проверять именно запуск
+FastAPI-процесса. Это позволяет отдельно диагностировать ситуацию: контейнер
+жив, но runtime dependency ещё не готова.
 
 ---
 
@@ -535,7 +602,7 @@ docker compose ps
 Если образы собираются на сервере:
 
 ```bash
-docker compose build
+docker compose build api
 docker compose up -d
 ```
 

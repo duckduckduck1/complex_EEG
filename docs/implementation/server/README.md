@@ -20,6 +20,7 @@ storage.md      - PostgreSQL, файловое хранилище и мигра�
 validation.md   - реализация валидатора пакета эксперимента
 pipeline.md     - запуск и повторный запуск обработки
 web_backend.md  - backend-контракты для веб-интерфейса
+admin_cli.md    - служебный CLI для создания пользователей Web UI
 ```
 
 ---
@@ -37,6 +38,7 @@ web_backend.md  - backend-контракты для веб-интерфейса
 - Фоновые задачи первого этапа: отдельный worker-процесс или контейнер,
   запускаемый через Docker Compose.
 - Web-auth: HTTP-only session cookie.
+- Runtime API: Docker image из `server/Dockerfile`, запуск через Uvicorn.
 
 Эти решения фиксируют первый реализуемый вариант. Они не меняют архитектурные
 принципы: запись ЭЭГ остаётся локальной, Flutter создаёт experiment package,

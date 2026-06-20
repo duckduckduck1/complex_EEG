@@ -25,6 +25,9 @@ jobs:
       - name: Validate Docker Compose
         run: docker compose --env-file .env.example config
 
+      - name: Build API image
+        run: docker compose --env-file .env.example build api
+
       - name: ShellCheck
         run: |
           sudo apt-get update

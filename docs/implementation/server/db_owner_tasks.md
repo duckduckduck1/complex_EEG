@@ -38,7 +38,7 @@ git switch -c feature/eeg-db-owner-workspace
 ## Цель ветки
 
 Довести слой БД до состояния, в котором остальные части сервера смогут спокойно
-опираться на стабильные таблицы, SQLAlchemy-модели и Alembic-миграции.
+опираться на стабильные таблицы, SQLAlchemy-модели и SQL init scripts.
 
 Текущий продукт - EEG-only MVP.
 
@@ -53,7 +53,9 @@ Flutter-приложение формирует локальный пакет э
 ```
 
 Web UI загружает этот пакет на сервер. Сервер валидирует пакет, сохраняет
-метаданные в PostgreSQL, а сами файлы хранит в файловой системе.
+метаданные в PostgreSQL, а сами файлы после `accepted` хранит в MinIO bronze.
+
+См. [ADR 0002](../../decisions/0002-eeg-minio-bronze-storage.md).
 
 ---
 
@@ -65,19 +67,19 @@ Web UI загружает этот пакет на сервер. Сервер в
 - ручная загрузка EEG-эксперимента через web UI;
 - проверка уникальности `experiment_id`;
 - хранение метаданных эксперимента;
+- MinIO bronze для source-файлов;
+- SQL init scripts и Docker init для PostgreSQL/MinIO;
 - хранение статусов upload, validation и pipeline;
 - история событий по эксперименту;
 - audit-события web UI;
-- Alembic-миграции;
-- индексы и ограничения, нужные для текущих серверных flow.
+- индексы и ограничения, нужные для текущих server flow.
 
 В MVP не входит:
 
 - microscopy;
 - LAS/LAZ;
-- MinIO/S3;
 - Airflow;
-- lakehouse layers;
+- silver/gold pipeline outputs в MinIO (buckets создаются, схема — позже);
 - универсальный каталог всех лабораторных файлов;
 - обработка изображений;
 - отдельная data platform поверх текущего сервиса.
@@ -94,22 +96,16 @@ PostgreSQL хранит:
 - пользователей;
 - карточки экспериментов;
 - upload sessions;
-- список исходных файлов;
+- список исходных файлов с `bucket` + `object_key`;
 - validation errors;
 - pipeline runs;
 - pipeline artifacts;
 - experiment events;
-- audit events.
+- audit events;
 
-Файловая система хранит:
+MinIO bronze хранит immutable source-пакет после `accepted`.
 
-- `signal.bin`;
-- `experiment.json`;
-- `journal.ndjson`;
-- `app.log`;
-- validation reports;
-- pipeline logs;
-- pipeline artifacts.
+Локальная файловая система — staging (`upload_tmp`) и pipeline results.
 
 PostgreSQL не хранит бинарный EEG-сигнал.
 
@@ -211,17 +207,21 @@ DB owner может предлагать изменения в документ�
 - переписывать весь сервер;
 - менять Flutter-документацию без необходимости;
 - добавлять новые продуктовые домены;
-- добавлять S3/MinIO;
 - добавлять Airflow;
+- мержить полную lakehouse-схему из `feat/added-db-implementation`;
 - добавлять универсальную модель файлов для всех будущих лабораторных данных;
 - менять upload flow с Web UI обратно на прямой Flutter upload;
 - заменять Alembic raw SQL-скриптами как главным источником схемы.
 
-Источник схемы:
+Источник схемы первого стенда:
 
 ```text
-SQLAlchemy models -> Alembic migrations -> PostgreSQL
+scripts/db_scripts/010_schema.sql -> PostgreSQL
+server/app/db/models.py           -> ORM mirror
+scripts/minio/010_init_buckets.sh -> MinIO buckets
 ```
+
+Incremental changes после первого стенда могут идти через Alembic migration files.
 
 ---
 
@@ -341,28 +341,25 @@ audit_events.actor_user_id -> users.id
 
 ---
 
-### 6. Создать первую реальную Alembic migration
+### 6. Поддерживать SQL init scripts как source of truth
 
-Нужно создать migration, которая создаёт текущие таблицы.
+Исполняемая схема первого стенда:
 
-Команда:
-
-```bash
-cd server
-alembic revision --autogenerate -m "create initial eeg schema"
+```text
+scripts/db_scripts/010_schema.sql
+scripts/db_scripts/090_seed_dev.sql
+scripts/minio/010_init_buckets.sh
 ```
 
-После генерации migration нельзя просто доверять autogenerate.
+После изменения SQL нужно синхронизировать:
 
-Нужно вручную проверить:
+- `server/app/db/models.py`;
+- `docs/implementation/server/storage.md`;
+- `server/tests/test_db_models.py`;
+- `server/tests/test_db_schema_scripts.py`.
 
-- имена таблиц;
-- типы колонок;
-- nullable;
-- indexes;
-- unique constraints;
-- foreign keys;
-- downgrade.
+Alembic migration для initial schema не используется. Incremental migrations
+можно добавить позже отдельным PR.
 
 ---
 
@@ -420,10 +417,10 @@ alembic upgrade head
 Перед отправкой PR проверить:
 
 - проект всё ещё EEG-only;
-- нет MinIO/S3/Airflow/lakehouse/microscopy;
-- нет хранения `signal.bin` в PostgreSQL;
-- нет абсолютных filesystem paths в API-контракте;
+- нет Airflow / microscopy / universal lakehouse catalog;
+- accepted source-файлы ссылаются на MinIO bronze;
 - `experiment_id` уникален;
+- `source_files (bucket, object_key)` уникален;
 - ownership пользователя явно определён;
 - Alembic migration обратима там, где это разумно;
 - `pytest` проходит;
@@ -473,9 +470,9 @@ alembic upgrade head
 Твоя зона ответственности - PostgreSQL, SQLAlchemy models, Alembic migrations,
 constraints, indexes, ownership экспериментов и DB tests.
 
-Просьба держать текущий scope: только EEG MVP. Не добавляем microscopy, MinIO,
-Airflow, lakehouse и универсальную платформу файлов. Эти идеи не теряем, но
-оставляем на будущий отдельный этап.
+Просьба держать текущий scope: только EEG MVP. MinIO bronze и SQL init scripts
+входят в scope (ADR 0002). Не добавляем microscopy, Airflow и universal
+lakehouse platform.
 
 Главный документ для работы:
 docs/implementation/server/db_owner_tasks.md

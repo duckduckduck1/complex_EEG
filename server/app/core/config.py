@@ -27,6 +27,13 @@ class Settings(BaseSettings):
 
     app_env: str = "local"
     app_name: str = "complex_eeg_server"
+    enable_local_upload_endpoint: bool = False
+    log_level: str = "INFO"
+    request_id_header: str = "X-Request-ID"
+    auth_secret: SecretStr = SecretStr("change_me")
+    session_cookie_name: str = "complex_eeg_session"
+    session_ttl_hours: int = 12
+    session_cookie_secure: bool = False
 
     postgres_host: str = "postgres"
     postgres_port: int = 5432
@@ -37,6 +44,16 @@ class Settings(BaseSettings):
     experiments_dir: str = "/srv/complex_eeg/experiments"
     upload_tmp_dir: str = "/srv/complex_eeg/upload_tmp"
     pipeline_results_dir: str = "/srv/complex_eeg/pipeline_results"
+    upload_session_ttl_hours: int = 24
+    upload_max_size: int = 1024 * 1024 * 1024
+
+    minio_endpoint: str = "http://minio:9000"
+    minio_root_user: str = "minioadmin"
+    minio_root_password: SecretStr = SecretStr("change_me")
+    minio_bucket_bronze: str = "lakehouse-bronze"
+    minio_bucket_silver: str = "lakehouse-silver"
+    minio_bucket_gold: str = "lakehouse-gold"
+    minio_bucket_derived: str = "lakehouse-derived"
 
     @property
     def database_url(self) -> str:

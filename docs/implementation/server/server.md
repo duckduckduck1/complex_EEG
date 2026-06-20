@@ -82,6 +82,7 @@ pytest
 server/
   app/
     main.py
+    cli.py
     core/
       config.py
       logging.py
@@ -90,6 +91,7 @@ server/
     api/
       deps.py
       routes_auth.py
+      routes_upload_sessions.py
       routes_upload.py
       routes_experiments.py
       routes_web_auth.py
@@ -103,6 +105,7 @@ server/
       schemas.py
     services/
       auth_service.py
+      user_admin_service.py
       upload_service.py
       validation_service.py
       experiment_service.py
@@ -264,7 +267,10 @@ API возвращает прикладные ошибки в едином фо�
 
 ```text
 APP_ENV
+ENABLE_LOCAL_UPLOAD_ENDPOINT
 APP_BASE_URL
+LOG_LEVEL
+REQUEST_ID_HEADER
 POSTGRES_HOST
 POSTGRES_PORT
 POSTGRES_DB
@@ -274,6 +280,9 @@ EXPERIMENTS_DIR
 PIPELINE_RESULTS_DIR
 UPLOAD_TMP_DIR
 AUTH_SECRET
+SESSION_COOKIE_NAME
+SESSION_TTL_HOURS
+SESSION_COOKIE_SECURE
 UPLOAD_MAX_SIZE
 LOG_DIR
 UPLOAD_SESSION_TTL_HOURS
@@ -281,7 +290,6 @@ PIPELINE_VERSION
 PIPELINE_POLL_INTERVAL_SECONDS
 PIPELINE_MAX_RUN_DURATION_HOURS
 PIPELINE_STUCK_HEARTBEAT_MINUTES
-SESSION_COOKIE_SECURE
 ```
 
 Файл `.env` создаётся инфраструктурным слоем и не хранится в Git.
@@ -309,6 +317,33 @@ GET /metrics
 - ошибки pipeline;
 - доступность PostgreSQL.
 
+### Structured request logs
+
+API пишет один JSON-log на каждый HTTP-запрос в stdout. Docker собирает эти
+строки, поэтому на VM их можно смотреть через:
+
+```bash
+docker compose logs api
+```
+
+Минимальные поля события `http_request`:
+
+```text
+event
+request_id
+method
+path
+status_code
+duration_ms
+client_ip
+user_agent
+error_type
+```
+
+`path` пишется без query string, чтобы случайно не сохранить секреты из URL.
+Response всегда получает header `X-Request-ID` или значение из
+`REQUEST_ID_HEADER`.
+
 ---
 
 ## Проверки готовности
@@ -317,7 +352,8 @@ Server implementation считается готовым к первому зап
 
 - приложение стартует через Uvicorn;
 - `/health` отвечает без доступа к PostgreSQL;
-- `/ready` проверяет PostgreSQL и файловые директории;
+- `/ready` проверяет PostgreSQL connection через `SELECT 1` и файловые
+  директории `EXPERIMENTS_DIR`, `UPLOAD_TMP_DIR`, `PIPELINE_RESULTS_DIR`;
 - миграции применяются;
 - upload session создаётся только после web-auth;
 - обязательные файлы принимаются и сохраняются;

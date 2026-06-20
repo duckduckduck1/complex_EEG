@@ -71,6 +71,14 @@ Web UI использует HTTP-only session cookie. Bearer token для web UI
 используется. На первом этапе допустим простой login/password для сотрудников
 лаборатории.
 
+Текущая реализация:
+
+- `POST /api/v1/web/auth/login` проверяет username/password;
+- успешный login выставляет signed HTTP-only cookie;
+- `GET /api/v1/web/auth/me` возвращает текущего пользователя;
+- `POST /api/v1/web/auth/logout` удаляет cookie в браузере;
+- production upload endpoints требуют валидную web-auth cookie.
+
 Mutating web endpoints дополнительно защищаются SameSite cookie и CSRF token,
 если web UI работает как browser SPA.
 
@@ -94,6 +102,22 @@ Authorization: Bearer <token>
 
 Для локальной разработки можно включить allowlist origin через environment
 variable, но wildcard `*` запрещён для authenticated endpoints.
+
+---
+
+## Request ID
+
+Каждый HTTP response содержит header:
+
+```http
+X-Request-ID: <request_id>
+```
+
+Если клиент передал `X-Request-ID`, сервер переиспользует его при безопасном
+формате. Если header отсутствует или некорректен, сервер генерирует новый id.
+
+`request_id` пишется в structured request log и позволяет связать ошибку в UI,
+HTTP response и запись в `docker compose logs api`.
 
 ---
 
@@ -138,7 +162,6 @@ Request:
 {
   "experiment_id": "exp_2026_001",
   "display_name": "exp1",
-  "client_created_at": "2026-06-17T10:00:00Z",
   "expected_files": [
     "signal.bin",
     "experiment.json"
@@ -155,9 +178,15 @@ Response:
   "upload_session_id": "01HX...",
   "experiment_id": "exp_2026_001",
   "status": "uploading",
-  "upload_base_url": "/api/v1/uploads/01HX..."
+  "upload_base_url": "/api/v1/uploads/01HX...",
+  "expires_at": "2026-06-18T10:00:00Z"
 }
 ```
+
+Текущая реализация принимает `display_name` для совместимости с будущим Web UI,
+но не сохраняет его в `upload_sessions`: в таблице нет такого поля. Финальное
+решение должно быть принято DB owner: хранить display name в `experiments` при
+создании session или добавить отдельное поле/metadata для upload session.
 
 Ошибки:
 
@@ -185,6 +214,28 @@ app.log
 
 Сервер сохраняет файл во временную директорию upload session.
 
+Response:
+
+```json
+{
+  "upload_session_id": "01HX...",
+  "experiment_id": "exp_2026_001",
+  "status": "uploading",
+  "expected_files": [
+    "experiment.json",
+    "signal.bin"
+  ],
+  "uploaded_files": [
+    "experiment.json"
+  ],
+  "expires_at": "2026-06-18T10:00:00Z"
+}
+```
+
+Реализация пишет файл во временный `.part` и после успешной записи переносит его
+в финальное имя. Если request превышает `UPLOAD_MAX_SIZE`, сервер возвращает
+`413 upload.file_too_large`.
+
 ### Получить статус upload session
 
 ```http
@@ -198,6 +249,10 @@ Response:
   "upload_session_id": "01HX...",
   "experiment_id": "exp_2026_001",
   "status": "uploading",
+  "expected_files": [
+    "experiment.json",
+    "signal.bin"
+  ],
   "uploaded_files": [
     "experiment.json"
   ],
@@ -228,20 +283,69 @@ Response:
 
 ```json
 {
+  "upload_session_id": "01HX...",
   "experiment_id": "exp_2026_001",
-  "status": "validating"
+  "status": "accepted",
+  "accepted": true,
+  "validation_report_scope": "permanent",
+  "signal_size_bytes": 4000,
+  "sample_count": 1000,
+  "source_files": [
+    {
+      "name": "signal.bin",
+      "relative_path": "signal.bin",
+      "size_bytes": 4000,
+      "sha256": "..."
+    }
+  ],
+  "errors": [],
+  "warnings": []
 }
 ```
 
-После `complete` сервер запускает валидацию.
+В текущей реализации первого стенда `complete` синхронно запускает validation.
+Если пакет валиден, сервер переносит source-файлы и validation report в
+permanent storage и возвращает `status = accepted`. Если пакет невалиден,
+возвращается `status = failed`, `accepted = false`,
+`validation_report_scope = upload_tmp` и список validation errors.
 
 Идемпотентность:
 
-- если session уже `completed` или `validating`, сервер возвращает `200` с
-  текущим статусом;
-- второй validation job не создаётся;
 - если session уже `accepted`, сервер возвращает `200` со статусом `accepted`;
 - если session `cancelled`, `expired` или `failed`, сервер возвращает `409`.
+
+### Dev/test upload bridge
+
+Пока production Web UI upload ещё не реализован, сервер содержит временные
+endpoint'ы для локальной проверки файлового upload flow:
+
+```http
+POST /api/v1/dev/uploads/process-local-folder
+POST /api/v1/dev/uploads/process-zip?upload_session_id=...&experiment_id=...
+```
+
+Оба endpoint'а доступны только при:
+
+```text
+APP_ENV in local/dev/test
+ENABLE_LOCAL_UPLOAD_ENDPOINT=true
+```
+
+`process-local-folder` принимает путь к папке на серверной машине и не должен
+использоваться из browser UI. `process-zip` принимает raw body с
+`Content-Type: application/zip`, безопасно распаковывает архив во временную
+директорию и затем запускает тот же staging/validation/promotion flow.
+
+Правила zip endpoint'а:
+
+- архив может содержать `signal.bin` и `experiment.json` в корне;
+- архив может содержать одну верхнеуровневую папку с EEG-пакетом внутри;
+- `upload_session_id` валидируется как ULID до распаковки архива;
+- zip entries с path traversal отклоняются;
+- API response не возвращает абсолютные filesystem paths.
+
+Этот dev/test bridge не заменяет production upload lifecycle. Когда появится
+Web UI upload, он должен использовать authenticated upload session из БД.
 
 ---
 
@@ -387,5 +491,9 @@ GET /metrics
 - доступность `EXPERIMENTS_DIR`;
 - доступность `UPLOAD_TMP_DIR`;
 - доступность `PIPELINE_RESULTS_DIR`.
+
+Если хотя бы одна проверка не проходит, endpoint возвращает HTTP `503` и
+`status = not_ready`. Проверка миграций не входит в текущий `/ready` и будет
+добавлена после появления initial Alembic migrations.
 
 `/metrics` отдаёт Prometheus metrics.

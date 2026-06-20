@@ -2,19 +2,41 @@ name: complex_eeg
 
 services:
   api:
-    image: ${API_IMAGE:-python:3.12-alpine}
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    image: ${API_IMAGE:-complex-eeg-api:local}
     restart: unless-stopped
     user: "${APP_UID:-1000}:${APP_GID:-1000}"
     working_dir: /app
-    command: ["python", "-m", "http.server", "8000", "--directory", "/srv/complex_eeg/upload_tmp"]
+    command: ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
     environment:
       APP_ENV: ${APP_ENV:-local}
+      ENABLE_LOCAL_UPLOAD_ENDPOINT: ${ENABLE_LOCAL_UPLOAD_ENDPOINT:-false}
+      AUTH_SECRET: ${AUTH_SECRET:-change_me}
+      SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-complex_eeg_session}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-12}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-complex_eeg}
+      POSTGRES_USER: ${POSTGRES_USER:-complex_eeg}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-change_me}
+      MINIO_BUCKET_BRONZE: ${MINIO_BUCKET_BRONZE:-lakehouse-bronze}
+      MINIO_BUCKET_SILVER: ${MINIO_BUCKET_SILVER:-lakehouse-silver}
+      MINIO_BUCKET_GOLD: ${MINIO_BUCKET_GOLD:-lakehouse-gold}
+      MINIO_BUCKET_DERIVED: ${MINIO_BUCKET_DERIVED:-lakehouse-derived}
       EXPERIMENTS_DIR: /srv/complex_eeg/experiments
       PIPELINE_RESULTS_DIR: /srv/complex_eeg/pipeline_results
       UPLOAD_TMP_DIR: /srv/complex_eeg/upload_tmp
+      UPLOAD_SESSION_TTL_HOURS: ${UPLOAD_SESSION_TTL_HOURS:-24}
+      UPLOAD_MAX_SIZE: ${UPLOAD_MAX_SIZE:-10737418240}
       LOG_DIR: /var/log/complex_eeg/app
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      REQUEST_ID_HEADER: ${REQUEST_ID_HEADER:-X-Request-ID}
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:
@@ -28,8 +50,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      minio:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000').read()"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health').read()"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -62,6 +86,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
     volumes:
       - ${POSTGRES_DATA_DIR:-/srv/complex_eeg/postgres}:/var/lib/postgresql/data
+      - ./scripts/db_scripts:/docker-entrypoint-initdb.d:ro
     networks:
       - internal_net
       - monitoring_net
@@ -70,6 +95,47 @@ services:
       interval: 30s
       timeout: 5s
       retries: 5
+
+  minio:
+    image: ${MINIO_IMAGE:-minio/minio:RELEASE.2025-04-22T22-12-26Z}
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-change_me}
+    ports:
+      - "127.0.0.1:${MINIO_API_PORT:-9000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - ${MINIO_DATA_DIR:-/srv/complex_eeg/minio}:/data
+    networks:
+      - internal_net
+      - monitoring_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  minio-init:
+    image: ${MINIO_CLIENT_IMAGE:-minio/mc:RELEASE.2025-04-16T18-13-26Z}
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "/scripts/minio/010_init_buckets.sh"]
+    environment:
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-change_me}
+      MINIO_BUCKET_BRONZE: ${MINIO_BUCKET_BRONZE:-lakehouse-bronze}
+      MINIO_BUCKET_SILVER: ${MINIO_BUCKET_SILVER:-lakehouse-silver}
+      MINIO_BUCKET_GOLD: ${MINIO_BUCKET_GOLD:-lakehouse-gold}
+      MINIO_BUCKET_DERIVED: ${MINIO_BUCKET_DERIVED:-lakehouse-derived}
+    volumes:
+      - ./scripts/minio:/scripts/minio:ro
+    networks:
+      - internal_net
 
   validator:
     image: busybox:1.36

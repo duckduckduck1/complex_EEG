@@ -60,11 +60,15 @@ exp1/
 /srv/complex_eeg/upload_tmp/{upload_session_id}/
 ```
 
-После успешной валидации исходный пакет переносится в постоянное хранилище:
+После успешной валидации исходный пакет загружается в MinIO bronze:
 
 ```text
-/srv/complex_eeg/experiments/{experiment_id}/source/
+s3://lakehouse-bronze/eeg/{experiment_id}/signal.bin
+s3://lakehouse-bronze/eeg/{experiment_id}/experiment.json
 ```
+
+PostgreSQL получает `metadata_json` из `experiment.json` и ссылки
+(`storage_bucket`, `storage_prefix`, `source_files.bucket/object_key`).
 
 Если валидация не прошла, временный пакет сохраняется на ограниченное время для
 диагностики или удаляется по cleanup policy. Решение фиксируется в настройке
@@ -154,6 +158,25 @@ client_id = web_ui
 Если позже появится прямой upload из Flutter, эта колонка может стать
 идентификатором конкретного клиента или установки приложения.
 
+Текущий implementation status:
+
+- реализованы `POST /api/v1/uploads`, `GET /api/v1/uploads/{id}`,
+  `DELETE /api/v1/uploads/{id}`;
+- реализованы `PUT /api/v1/uploads/{id}/files/{file_name}` и
+  `POST /api/v1/uploads/{id}/complete`;
+- session создаётся со статусом `uploading`;
+- сервер генерирует ULID и создаёт временную директорию upload session;
+- TTL берётся из `UPLOAD_SESSION_TTL_HOURS`;
+- размер одного upload-файла ограничивается `UPLOAD_MAX_SIZE`;
+- complete синхронно запускает validation и возвращает `accepted` или `failed`;
+- accepted upload записывает metadata в PostgreSQL и ссылки на объекты MinIO
+  bronze; promotion в object storage подключается отдельным шагом;
+- `display_name` пока не сохраняется, потому что это требует решения DB owner
+  по месту хранения: `experiments` или расширение `upload_sessions`;
+- production endpoints требуют web-auth session cookie;
+- `client_id` временно фиксируется как `web_ui`, потому что схема ещё не хранит
+  явную связь upload session с `users.id`.
+
 ---
 
 ## Загрузка файлов
@@ -167,6 +190,8 @@ client_id = web_ui
 - размер файла проверяется до записи или во время streaming;
 - файл пишется во временный путь с suffix `.part`;
 - после успешной записи `.part` атомарно переименовывается в финальное имя;
+- если Windows/dev sandbox запрещает rename/delete, implementation использует
+  best-effort fallback; production Linux path остаётся atomic rename;
 - checksum можно добавить позже, если приложение начнёт его передавать.
 
 Разрешённые файлы первого этапа:
@@ -189,7 +214,7 @@ experiment.json
 
 ## Завершение upload
 
-Endpoint `complete` переводит session в состояние `completed` только если:
+Endpoint `complete` запускает validation/promotion только если:
 
 - session существует;
 - session принадлежит аутентифицированному клиенту;
@@ -197,18 +222,18 @@ Endpoint `complete` переводит session в состояние `completed`
 - файлы не находятся в состоянии `.part`;
 - upload не expired.
 
-После этого сервер запускает validation job.
+В текущей реализации validation выполняется синхронно внутри API процесса.
+Успешный пакет сразу получает `accepted`, неуспешный — `failed` с validation
+report в `upload_tmp`.
 
 Повторный `complete` идемпотентен:
 
-- `completed` или `validating` возвращает `200` с текущим статусом;
-- новый validation job не создаётся;
 - `accepted` возвращает `200`;
 - `cancelled`, `expired` или `failed` возвращает `409`.
 
-Для первого стенда validation можно выполнить синхронно внутри API процесса, если
-пакет небольшой. Целевое решение — вынести в service/worker, чтобы долгие
-проверки не блокировали HTTP worker.
+Целевое решение — вынести validation/promotion в service/worker, чтобы долгие
+проверки не блокировали HTTP worker. API contract при этом должен остаться
+совместимым: status check продолжит показывать актуальное состояние session.
 
 ---
 
@@ -264,7 +289,7 @@ Cancel переводит session в `cancelled`, эксперимент в `upl
 
 Cleanup не удаляет:
 
-- permanent source files;
+- объекты MinIO bronze для accepted experiments;
 - accepted experiments;
 - pipeline results;
 - записи истории в PostgreSQL.
@@ -280,6 +305,8 @@ Cleanup не удаляет:
 - можно загрузить обязательные файлы;
 - `complete` без `signal.bin` возвращает ошибку;
 - path traversal в имени файла отклоняется;
+- path traversal внутри zip-архива отклоняется;
+- некорректный `upload_session_id` отклоняется до распаковки zip-архива;
 - повторный `complete` идемпотентен;
 - `GET /uploads/{upload_session_id}` возвращает состояние после рестарта app;
 - `DELETE /uploads/{upload_session_id}` переводит session в `cancelled`;
