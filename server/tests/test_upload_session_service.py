@@ -10,10 +10,15 @@ from uuid import uuid4
 
 import pytest
 
-from app.db.models import Experiment, UploadSession
+from app.core.config import settings
+from app.db.models import Experiment, ExperimentEvent, PipelineRun, UploadSession
+from app.features.upload.file_inventory import SourceFileInfo
 from app.features.upload.promotion import UploadPromotionResult
 from app.features.upload.session_service import (
     ACTIVE_UPLOAD_SESSION_STATUSES,
+    PIPELINE_RUN_STATUS_QUEUED,
+    PRIMARY_PIPELINE_TRIGGER_TYPE,
+    SqlAlchemyUploadSessionRepository,
     UploadSessionAlreadyExistsError,
     UploadSessionIncompleteError,
     UploadSessionNotFoundError,
@@ -27,6 +32,7 @@ from app.features.upload.staging import UPLOAD_SESSION_ID_PATTERN
 
 
 FIXED_NOW = datetime(2026, 6, 20, 12, 0, tzinfo=UTC)
+VALID_UPLOAD_SESSION_ID = "01HX7M8M9RF2K0Z6GNZ6D7Q7AP"
 
 
 @pytest.fixture()
@@ -47,15 +53,14 @@ class FakeUploadSessionRepository:
 
     def __init__(self) -> None:
         self.experiments: list[Experiment] = []
+        self.experiment_events: list[ExperimentEvent] = []
+        self.pipeline_runs: list[PipelineRun] = []
         self.upload_sessions: dict[str, UploadSession] = {}
         self.source_files: list[object] = []
         self.commits = 0
 
-    def has_accepted_experiment(self, experiment_id: str) -> bool:
-        return any(
-            experiment.experiment_id == experiment_id and experiment.status == "accepted"
-            for experiment in self.experiments
-        )
+    def has_registered_experiment(self, experiment_id: str) -> bool:
+        return any(experiment.experiment_id == experiment_id for experiment in self.experiments)
 
     def find_active_session_by_experiment_id(self, experiment_id: str) -> UploadSession | None:
         for upload_session in self.upload_sessions.values():
@@ -93,9 +98,43 @@ class FakeUploadSessionRepository:
             )
         )
         self.source_files.extend(promotion_result.source_files)
+        primary_pipeline_run_id = generate_ulid(now=accepted_at)
+        self.pipeline_runs.append(
+            PipelineRun(
+                id=primary_pipeline_run_id,
+                experiment_id=promotion_result.experiment_id,
+                status=PIPELINE_RUN_STATUS_QUEUED,
+                trigger_type=PRIMARY_PIPELINE_TRIGGER_TYPE,
+                pipeline_version=settings.pipeline_version,
+                params_json={},
+            )
+        )
+        self.experiment_events.append(
+            ExperimentEvent(
+                experiment_id=promotion_result.experiment_id,
+                event_type="pipeline_primary_queued",
+                from_status="accepted",
+                to_status="accepted",
+                message="Primary pipeline run queued after upload acceptance",
+                details={
+                    "pipeline_run_id": primary_pipeline_run_id,
+                    "trigger_type": PRIMARY_PIPELINE_TRIGGER_TYPE,
+                },
+            )
+        )
 
     def commit(self) -> None:
         self.commits += 1
+
+
+class FakeSqlAlchemySession:
+    """Минимальная fake session: собирает ORM-объекты, которые repository хочет записать."""
+
+    def __init__(self) -> None:
+        self.added: list[object] = []
+
+    def add(self, item: object) -> None:
+        self.added.append(item)
 
 
 def _service(
@@ -215,6 +254,26 @@ def test_create_session_rejects_already_accepted_experiment(
             experiment_id="exp_01",
             display_name="exp_01",
             status="accepted",
+        )
+    )
+
+    service = _service(repository, workspace_tmp_path)
+
+    with pytest.raises(UploadSessionAlreadyExistsError):
+        service.create_session(experiment_id="exp_01")
+
+
+def test_create_session_rejects_existing_experiment_in_processing_status(
+    workspace_tmp_path: Path,
+) -> None:
+    """После старта worker experiment_id всё равно остаётся занятым для новых загрузок."""
+
+    repository = FakeUploadSessionRepository()
+    repository.experiments.append(
+        Experiment(
+            experiment_id="exp_01",
+            display_name="exp_01",
+            status="processing",
         )
     )
 
@@ -378,6 +437,69 @@ def test_complete_session_accepts_valid_uploaded_package(workspace_tmp_path: Pat
     assert repository.upload_sessions[created.upload_session_id].status == "accepted"
     assert repository.experiments[0].experiment_id == "exp_01"
     assert len(repository.source_files) == 2
+    assert len(repository.pipeline_runs) == 1
+    assert repository.pipeline_runs[0].experiment_id == "exp_01"
+    assert repository.pipeline_runs[0].status == PIPELINE_RUN_STATUS_QUEUED
+    assert repository.pipeline_runs[0].trigger_type == PRIMARY_PIPELINE_TRIGGER_TYPE
+    assert repository.pipeline_runs[0].pipeline_version == settings.pipeline_version
+    assert repository.experiment_events[0].event_type == "pipeline_primary_queued"
+
+
+def test_sqlalchemy_repository_records_primary_pipeline_run() -> None:
+    """Реальный repository создаёт primary run в одной unit-of-work с accepted experiment."""
+
+    fake_db = FakeSqlAlchemySession()
+    repository = SqlAlchemyUploadSessionRepository(fake_db)  # type: ignore[arg-type]
+    accepted_at = FIXED_NOW
+
+    repository.record_accepted_experiment(
+        upload_session=UploadSession(
+            id=VALID_UPLOAD_SESSION_ID,
+            experiment_id="exp_01",
+            status="accepted",
+            tmp_path="upload_tmp/session",
+            client_id="web_ui",
+            expected_files={"files": ["signal.bin", "experiment.json"]},
+            uploaded_files={"files": ["signal.bin", "experiment.json"]},
+            created_at=FIXED_NOW,
+            completed_at=accepted_at,
+            expires_at=FIXED_NOW + timedelta(hours=24),
+        ),
+        promotion_result=UploadPromotionResult(
+            experiment_id="exp_01",
+            experiment_dir=Path("experiments/exp_01"),
+            source_dir=Path("experiments/exp_01/source"),
+            validation_dir=Path("experiments/exp_01/validation"),
+            validation_report_path=Path("experiments/exp_01/validation/validation_report.json"),
+            source_files=(
+                SourceFileInfo(
+                    name="signal.bin",
+                    relative_path="signal.bin",
+                    size_bytes=4000,
+                    sha256="0" * 64,
+                ),
+            ),
+        ),
+        validation_result=ValidationResult(
+            status="accepted",
+            experiment_id="exp_01",
+            metadata={"animal_id": "mouse_1"},
+            signal_size_bytes=4000,
+            sample_count=1000,
+            errors=[],
+        ),
+        accepted_at=accepted_at,
+    )
+
+    pipeline_runs = [item for item in fake_db.added if isinstance(item, PipelineRun)]
+    events = [item for item in fake_db.added if isinstance(item, ExperimentEvent)]
+
+    assert len(pipeline_runs) == 1
+    assert pipeline_runs[0].experiment_id == "exp_01"
+    assert pipeline_runs[0].status == PIPELINE_RUN_STATUS_QUEUED
+    assert pipeline_runs[0].trigger_type == PRIMARY_PIPELINE_TRIGGER_TYPE
+    assert pipeline_runs[0].pipeline_version == settings.pipeline_version
+    assert events[0].event_type == "pipeline_primary_queued"
 
 
 def test_complete_session_writes_failed_report_for_invalid_package(
@@ -434,3 +556,4 @@ def test_complete_session_is_idempotent_for_accepted(workspace_tmp_path: Path) -
     assert second_result.status == "accepted"
     assert second_result.validation_result is None
     assert len(repository.experiments) == 1
+    assert len(repository.pipeline_runs) == 1

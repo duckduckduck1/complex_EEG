@@ -133,7 +133,7 @@ UPLOAD_SESSION_TTL_HOURS=24
 2. проверяет payload;
 3. проверяет `experiment_id` по regex `^[a-zA-Z0-9_-]{1,64}$`;
 4. определяет пользователя, выполняющего загрузку;
-5. проверяет, нет ли уже `accepted` эксперимента с таким `experiment_id`;
+5. проверяет, нет ли уже серверной карточки эксперимента с таким `experiment_id`;
 6. проверяет, нет ли активной session для того же `experiment_id`;
 7. создаёт запись в PostgreSQL;
 8. создаёт временную директорию;
@@ -171,6 +171,7 @@ client_id = web_ui
 - complete синхронно запускает validation и возвращает `accepted` или `failed`;
 - accepted upload записывает metadata в PostgreSQL и ссылки на объекты MinIO
   bronze; promotion в object storage подключается отдельным шагом;
+- accepted upload создаёт `pipeline_runs(status = queued, trigger_type = auto_primary)`;
 - `display_name` пока не сохраняется, потому что это требует решения DB owner
   по месту хранения: `experiments` или расширение `upload_sessions`;
 - production endpoints требуют web-auth session cookie;
@@ -239,10 +240,10 @@ report в `upload_tmp`.
 
 ## Повторная загрузка
 
-Если эксперимент уже `accepted`, сервер возвращает:
+Если experiment_id уже зарегистрирован на сервере, сервер возвращает:
 
 ```text
-409 experiment.already_accepted
+409 experiment.already_exists
 ```
 
 Если предыдущая session была неполной или failed, Web UI может создать новую
@@ -250,7 +251,7 @@ session для того же `experiment_id`, если серверная пол
 
 Правило первого стенда:
 
-- `accepted` нельзя перезаписать через upload;
+- зарегистрированный эксперимент нельзя перезаписать через upload;
 - `validation_failed` можно загрузить заново только новой session;
 - старая failed session остаётся в истории.
 
@@ -312,4 +313,4 @@ Cleanup не удаляет:
 - `DELETE /uploads/{upload_session_id}` переводит session в `cancelled`;
 - expired session переводит experiment в `upload_expired`;
 - failed upload не создаёт `accepted`;
-- успешный upload запускает validation.
+- успешный upload запускает validation и создаёт primary pipeline run.

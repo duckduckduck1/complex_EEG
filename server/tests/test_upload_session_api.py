@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from app.api.deps_auth import require_current_user
 from app.api.routes_upload_sessions import get_upload_session_service
 from app.core.config import settings
-from app.db.models import UploadSession
+from app.db.models import Experiment, UploadSession
 from app.features.auth import CurrentUser
 from app.features.upload.session_service import UploadSessionService
 from app.main import app
@@ -153,6 +153,28 @@ def test_create_upload_session_rejects_second_active_session(
 
     assert second_response.status_code == 409
     assert second_response.json()["detail"]["code"] == "upload.session_already_active"
+
+
+def test_create_upload_session_rejects_registered_experiment(
+    upload_session_service: UploadSessionService,
+) -> None:
+    """Если карточка experiment уже есть, API возвращает отдельный machine-readable код."""
+
+    upload_session_service._repository.experiments.append(
+        Experiment(
+            experiment_id="exp_01",
+            display_name="exp_01",
+            status="processing",
+        )
+    )
+
+    response = client.post(
+        UPLOAD_SESSIONS_ENDPOINT,
+        json={"experiment_id": "exp_01"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "experiment.already_exists"
 
 
 def test_get_upload_session_returns_status(

@@ -21,11 +21,13 @@ from app.db.session import get_db_session
 from app.features.upload.dto import UploadSourceFileDto, UploadValidationErrorDto
 from app.features.auth import CurrentUser
 from app.features.upload.session_service import (
+    ActiveUploadSessionAlreadyExistsError,
     DEFAULT_UPLOAD_FILES,
+    ExperimentAlreadyRegisteredError,
     UploadCompletionResult,
     UploadFileTarget,
-    UploadSessionIncompleteError,
     UploadSessionAlreadyExistsError,
+    UploadSessionIncompleteError,
     UploadSessionNotFoundError,
     UploadSessionService,
     UploadSessionServiceError,
@@ -120,11 +122,27 @@ def create_upload_session(
             expected_files=request.expected_files,
             client_id="web_ui",
         )
-    except UploadSessionAlreadyExistsError as exc:
+    except ExperimentAlreadyRegisteredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "experiment.already_exists",
+                "message": str(exc),
+            },
+        ) from exc
+    except ActiveUploadSessionAlreadyExistsError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
                 "code": "upload.session_already_active",
+                "message": str(exc),
+            },
+        ) from exc
+    except UploadSessionAlreadyExistsError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "upload.session_conflict",
                 "message": str(exc),
             },
         ) from exc

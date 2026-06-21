@@ -19,7 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.db.models import Experiment, SourceFile, UploadSession
+from app.db.models import Experiment, ExperimentEvent, PipelineRun, SourceFile, UploadSession
 from app.features.upload.promotion import (
     UploadPromotionError,
     UploadPromotionResult,
@@ -42,6 +42,8 @@ ACTIVE_UPLOAD_SESSION_STATUSES = frozenset({"created", "uploading", "completed",
 FINAL_UPLOAD_SESSION_STATUSES = frozenset({"accepted", "failed", "expired", "cancelled"})
 UPLOAD_SOURCE_DIR_NAME = "source"
 VALIDATION_REPORT_FILE_NAME = "validation_report.json"
+PRIMARY_PIPELINE_TRIGGER_TYPE = "auto_primary"
+PIPELINE_RUN_STATUS_QUEUED = "queued"
 
 
 class UploadSessionServiceError(ValueError):
@@ -49,7 +51,15 @@ class UploadSessionServiceError(ValueError):
 
 
 class UploadSessionAlreadyExistsError(UploadSessionServiceError):
-    """Для experiment_id уже есть accepted experiment или активная upload session."""
+    """Для experiment_id уже есть зарегистрированный experiment или активная upload session."""
+
+
+class ExperimentAlreadyRegisteredError(UploadSessionAlreadyExistsError):
+    """experiment_id уже зарегистрирован в серверной карточке эксперимента."""
+
+
+class ActiveUploadSessionAlreadyExistsError(UploadSessionAlreadyExistsError):
+    """Для experiment_id уже есть активная upload session."""
 
 
 class UploadSessionNotFoundError(UploadSessionServiceError):
@@ -104,8 +114,8 @@ class UploadCompletionResult:
 class UploadSessionRepository(Protocol):
     """Минимальный контракт хранилища, который нужен service-слою."""
 
-    def has_accepted_experiment(self, experiment_id: str) -> bool:
-        """True, если experiment_id уже принят сервером."""
+    def has_registered_experiment(self, experiment_id: str) -> bool:
+        """True, если experiment_id уже зарегистрирован сервером."""
 
     def find_active_session_by_experiment_id(self, experiment_id: str) -> UploadSession | None:
         """Возвращает активную session для experiment_id, если она есть."""
@@ -141,11 +151,8 @@ class SqlAlchemyUploadSessionRepository:
     def __init__(self, db: Session) -> None:
         self._db = db
 
-    def has_accepted_experiment(self, experiment_id: str) -> bool:
-        statement = select(Experiment.id).where(
-            Experiment.experiment_id == experiment_id,
-            Experiment.status == "accepted",
-        )
+    def has_registered_experiment(self, experiment_id: str) -> bool:
+        statement = select(Experiment.id).where(Experiment.experiment_id == experiment_id)
         return self._db.execute(statement).first() is not None
 
     def find_active_session_by_experiment_id(self, experiment_id: str) -> UploadSession | None:
@@ -201,6 +208,33 @@ class SqlAlchemyUploadSessionRepository:
                 )
             )
 
+        # Первичный run создаётся вместе с accepted experiment: так worker не потеряет задачу,
+        # если API-процесс упадёт сразу после commit.
+        primary_pipeline_run_id = generate_ulid(now=accepted_at)
+        self._db.add(
+            PipelineRun(
+                id=primary_pipeline_run_id,
+                experiment_id=promotion_result.experiment_id,
+                status=PIPELINE_RUN_STATUS_QUEUED,
+                trigger_type=PRIMARY_PIPELINE_TRIGGER_TYPE,
+                pipeline_version=settings.pipeline_version,
+                params_json={},
+            )
+        )
+        self._db.add(
+            ExperimentEvent(
+                experiment_id=promotion_result.experiment_id,
+                event_type="pipeline_primary_queued",
+                from_status="accepted",
+                to_status="accepted",
+                message="Primary pipeline run queued after upload acceptance",
+                details={
+                    "pipeline_run_id": primary_pipeline_run_id,
+                    "trigger_type": PRIMARY_PIPELINE_TRIGGER_TYPE,
+                },
+            )
+        )
+
     def commit(self) -> None:
         self._db.commit()
 
@@ -235,12 +269,12 @@ class UploadSessionService:
         self._validate_experiment_id(experiment_id)
         normalized_expected_files = _normalize_expected_files(expected_files)
 
-        if self._repository.has_accepted_experiment(experiment_id):
-            raise UploadSessionAlreadyExistsError("experiment_id is already accepted")
+        if self._repository.has_registered_experiment(experiment_id):
+            raise ExperimentAlreadyRegisteredError("experiment_id is already registered")
 
         active_session = self._repository.find_active_session_by_experiment_id(experiment_id)
         if active_session is not None:
-            raise UploadSessionAlreadyExistsError(
+            raise ActiveUploadSessionAlreadyExistsError(
                 "active upload session already exists for experiment_id"
             )
 

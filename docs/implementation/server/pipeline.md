@@ -88,8 +88,8 @@ cancelled
 
 1. experiment переходит в `accepted`;
 2. server создаёт `pipeline_runs(trigger_type = auto_primary)`;
-3. experiment переходит в `processing`;
-4. worker берёт run;
+3. experiment остаётся в `accepted`, пока задача только ожидает worker;
+4. worker берёт run и переводит experiment в `processing`;
 5. worker сохраняет результаты;
 6. server/repository обновляет статус.
 
