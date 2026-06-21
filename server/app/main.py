@@ -11,6 +11,7 @@ from app.api.routes_upload import router as upload_router
 from app.api.routes_upload_sessions import router as upload_sessions_router
 from app.api.routes_web_auth import router as web_auth_router
 from app.api.routes_web_experiments import router as web_experiments_router
+from app.api.routes_web_pipeline import router as web_pipeline_router
 from app.core.config import settings
 from app.core.logging import RequestLoggingMiddleware, configure_logging
 
@@ -26,5 +27,6 @@ app.add_middleware(
 app.include_router(health_router)
 app.include_router(web_auth_router)
 app.include_router(web_experiments_router)
+app.include_router(web_pipeline_router)
 app.include_router(upload_sessions_router)
 app.include_router(upload_router)

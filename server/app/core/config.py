@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     experiments_dir: str = "/srv/complex_eeg/experiments"
     upload_tmp_dir: str = "/srv/complex_eeg/upload_tmp"
     pipeline_results_dir: str = "/srv/complex_eeg/pipeline_results"
+    pipeline_version: str = "dev"
+    pipeline_poll_interval_seconds: int = 5
+    pipeline_max_run_duration_hours: int = 6
+    pipeline_stuck_heartbeat_minutes: int = 15
     upload_session_ttl_hours: int = 24
     upload_max_size: int = 1024 * 1024 * 1024
 
