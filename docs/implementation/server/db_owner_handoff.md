@@ -42,6 +42,8 @@ PostgreSQL stores:
 - users;
 - experiment metadata;
 - upload sessions;
+- upload storage events;
+- orphan object records for failed accepted commits;
 - source file records;
 - validation status and errors;
 - pipeline run status;
@@ -49,13 +51,21 @@ PostgreSQL stores:
 - experiment events;
 - audit events.
 
-Filesystem stores:
+MinIO bronze stores accepted source package files:
 
 - `signal.bin`;
 - `experiment.json`;
 - source logs and journals;
+
+Filesystem stores only staging/cache and derived local outputs:
+
 - validation reports;
 - pipeline outputs and logs.
+
+After accepted MinIO upload and successful PostgreSQL commit,
+`experiments/{experiment_id}/source/` is deleted. If PostgreSQL commit fails
+after MinIO upload, local source remains for retry/audit and uploaded MinIO
+objects are logged best-effort in `upload_orphan_objects`.
 
 ## Public DB Contract
 
@@ -65,6 +75,8 @@ Other server layers may rely on these concepts:
 users
 experiments
 upload_sessions
+upload_storage_events
+upload_orphan_objects
 source_files
 experiment_events
 pipeline_runs
@@ -84,6 +96,15 @@ upload_sessions.experiment_id
 pipeline_runs.id
 pipeline_runs.experiment_id
 ```
+
+Upload consistency rules:
+
+- `experiments.experiment_id` is unique.
+- Active `upload_sessions(experiment_id)` are unique by partial unique index.
+- `complete` uses row-level lock on upload session via `SELECT ... FOR UPDATE`.
+- Accepted metadata is committed only after MinIO upload and object readability
+  checks.
+- `source_files(bucket, object_key)` is unique.
 
 `experiment_id` is the external stable identifier for an EEG experiment. It is
 generated before upload and is checked by the server for uniqueness.
@@ -108,7 +129,6 @@ The DB owner may change:
 The DB owner must not add without a new architecture decision:
 
 - microscopy entities;
-- MinIO/S3 storage;
 - Airflow fields;
 - lakehouse layers;
 - universal file catalog;
@@ -118,11 +138,13 @@ The DB owner must not add without a new architecture decision:
 The schema source of truth for this service is:
 
 ```text
-SQLAlchemy models -> Alembic migrations -> PostgreSQL
+scripts/db_scripts/010_schema.sql -> PostgreSQL
+server/app/db/models.py           -> ORM mirror
+scripts/minio/010_init_buckets.sh -> MinIO buckets
 ```
 
-Raw SQL scripts may be used for diagnostics or seed data, but not as the primary
-schema definition.
+Alembic remains for future incremental migrations after the first stand. Raw SQL
+init scripts are the primary schema definition for the first stand.
 
 ## Immediate DB Tasks
 

@@ -50,6 +50,50 @@ CREATE TABLE upload_sessions (
 
 CREATE INDEX ix_upload_sessions_experiment_id ON upload_sessions (experiment_id);
 CREATE INDEX ix_upload_sessions_status ON upload_sessions (status);
+CREATE UNIQUE INDEX uq_upload_sessions_one_active_per_experiment
+    ON upload_sessions (experiment_id)
+    WHERE status IN ('created', 'uploading', 'completed', 'validating');
+
+CREATE TABLE upload_storage_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    upload_session_id VARCHAR(26) NOT NULL,
+    experiment_id VARCHAR(64) NOT NULL,
+    event_type VARCHAR(128) NOT NULL,
+    status VARCHAR(64) NOT NULL,
+    bucket VARCHAR(63),
+    storage_prefix TEXT,
+    object_key TEXT,
+    message TEXT,
+    details JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX ix_upload_storage_events_upload_session_id_created_at
+    ON upload_storage_events (upload_session_id, created_at);
+CREATE INDEX ix_upload_storage_events_experiment_id_created_at
+    ON upload_storage_events (experiment_id, created_at);
+
+CREATE TABLE upload_orphan_objects (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    upload_session_id VARCHAR(26) NOT NULL,
+    experiment_id VARCHAR(64) NOT NULL,
+    bucket VARCHAR(63) NOT NULL,
+    storage_prefix TEXT NOT NULL,
+    object_key TEXT NOT NULL,
+    relative_path TEXT NOT NULL,
+    size_bytes BIGINT NOT NULL,
+    sha256 VARCHAR(64),
+    reason VARCHAR(128) NOT NULL,
+    status VARCHAR(64) NOT NULL DEFAULT 'pending_cleanup',
+    details JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    resolved_at TIMESTAMPTZ
+);
+
+CREATE INDEX ix_upload_orphan_objects_status_created_at
+    ON upload_orphan_objects (status, created_at);
+CREATE INDEX ix_upload_orphan_objects_experiment_id_created_at
+    ON upload_orphan_objects (experiment_id, created_at);
 
 CREATE TABLE experiment_events (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

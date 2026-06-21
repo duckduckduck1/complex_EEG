@@ -26,6 +26,7 @@ class FakeMinioClient:
 
     def __init__(self) -> None:
         self.uploads: list[dict[str, str]] = []
+        self.stats: list[dict[str, str]] = []
 
     def fput_object(
         self,
@@ -41,6 +42,19 @@ class FakeMinioClient:
                 "object_name": object_name,
                 "file_path": file_path,
                 "content_type": content_type,
+            }
+        )
+
+    def stat_object(
+        self,
+        *,
+        bucket_name: str,
+        object_name: str,
+    ) -> None:
+        self.stats.append(
+            {
+                "bucket_name": bucket_name,
+                "object_name": object_name,
             }
         )
 
@@ -118,6 +132,10 @@ def test_minio_bronze_storage_uploads_each_source_file(workspace_tmp_path: Path)
         "eeg/exp_01/experiment.json",
         "eeg/exp_01/signal.bin",
     ]
+    assert [stat["object_name"] for stat in client.stats] == [
+        "eeg/exp_01/experiment.json",
+        "eeg/exp_01/signal.bin",
+    ]
     assert client.uploads[0]["content_type"] == "application/json"
     assert client.uploads[1]["content_type"] == "application/octet-stream"
 
@@ -133,6 +151,38 @@ def test_minio_bronze_storage_wraps_client_errors(workspace_tmp_path: Path) -> N
     source_dir.mkdir()
     (source_dir / "signal.bin").write_bytes(b"\x00\x00\x00\x00")
     storage = MinioBronzeObjectStorage(client=FailingMinioClient(), bucket="lakehouse-bronze")
+
+    with pytest.raises(BronzeStorageError):
+        storage.upload_source_package(
+            experiment_id="exp_01",
+            source_dir=source_dir,
+            source_files=(
+                SourceFileInfo(
+                    name="signal.bin",
+                    relative_path="signal.bin",
+                    size_bytes=4,
+                    sha256="0" * 64,
+                ),
+            ),
+        )
+
+
+def test_minio_bronze_storage_requires_uploaded_objects_to_be_readable(
+    workspace_tmp_path: Path,
+) -> None:
+    """Accepted upload нельзя строить на object keys, которые MinIO не отдаёт обратно."""
+
+    class MissingAfterUploadClient:
+        def fput_object(self, **kwargs: object) -> None:
+            return None
+
+        def stat_object(self, **kwargs: object) -> None:
+            raise RuntimeError("object not found")
+
+    source_dir = workspace_tmp_path / "source"
+    source_dir.mkdir()
+    (source_dir / "signal.bin").write_bytes(b"\x00\x00\x00\x00")
+    storage = MinioBronzeObjectStorage(client=MissingAfterUploadClient(), bucket="lakehouse-bronze")
 
     with pytest.raises(BronzeStorageError):
         storage.upload_source_package(

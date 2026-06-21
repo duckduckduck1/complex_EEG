@@ -309,6 +309,17 @@ validation report и возвращает `status = accepted`. Если паке
 возвращается `status = failed`, `accepted = false`,
 `validation_report_scope = upload_tmp` и список validation errors.
 
+Accepted upload считается committed только после успешной загрузки source-файлов
+в MinIO bronze, проверки читаемости объектов, одной PostgreSQL transaction с
+row-level lock на `upload_sessions` и успешного commit. В этой transaction
+пишутся `upload_sessions`, `experiments`, `source_files`,
+`upload_storage_events`, `pipeline_runs` и `experiment_events`.
+
+Если PostgreSQL commit падает после successful MinIO upload, сервер best-effort
+записывает MinIO objects в `upload_orphan_objects` со статусом
+`pending_cleanup`. Повторный `complete` выполняет retry из
+`upload_tmp/{upload_session_id}/source`.
+
 Идемпотентность:
 
 - если session уже `accepted`, сервер возвращает `200` со статусом `accepted`;

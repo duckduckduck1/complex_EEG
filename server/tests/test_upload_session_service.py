@@ -11,7 +11,15 @@ from uuid import uuid4
 import pytest
 
 from app.core.config import settings
-from app.db.models import Experiment, ExperimentEvent, PipelineRun, SourceFile, UploadSession
+from app.db.models import (
+    Experiment,
+    ExperimentEvent,
+    PipelineRun,
+    SourceFile,
+    UploadSession,
+    UploadOrphanObject,
+    UploadStorageEvent,
+)
 from app.features.upload.bronze_storage import (
     BronzeStorageError,
     BronzeUploadResult,
@@ -24,6 +32,7 @@ from app.features.upload.session_service import (
     PIPELINE_RUN_STATUS_QUEUED,
     PRIMARY_PIPELINE_TRIGGER_TYPE,
     SqlAlchemyUploadSessionRepository,
+    UploadDatabaseCommitError,
     UploadObjectStorageUnavailableError,
     UploadSessionAlreadyExistsError,
     UploadSessionIncompleteError,
@@ -63,7 +72,14 @@ class FakeUploadSessionRepository:
         self.pipeline_runs: list[PipelineRun] = []
         self.upload_sessions: dict[str, UploadSession] = {}
         self.source_files: list[SourceFile] = []
+        self.upload_storage_events: list[UploadStorageEvent] = []
+        self.upload_orphan_objects: list[UploadOrphanObject] = []
+        self.locked_session_ids: list[str] = []
         self.commits = 0
+        self.rollbacks = 0
+        self.fail_next_commit = False
+        self._last_accept_upload_session_id: str | None = None
+        self._last_accept_experiment_id: str | None = None
 
     def has_registered_experiment(self, experiment_id: str) -> bool:
         return any(experiment.experiment_id == experiment_id for experiment in self.experiments)
@@ -80,6 +96,10 @@ class FakeUploadSessionRepository:
     def get_by_id(self, upload_session_id: str) -> UploadSession | None:
         return self.upload_sessions.get(upload_session_id)
 
+    def get_by_id_for_update(self, upload_session_id: str) -> UploadSession | None:
+        self.locked_session_ids.append(upload_session_id)
+        return self.upload_sessions.get(upload_session_id)
+
     def add(self, upload_session: UploadSession) -> None:
         self.upload_sessions[upload_session.id] = upload_session
 
@@ -92,6 +112,8 @@ class FakeUploadSessionRepository:
         validation_result: ValidationResult,
         accepted_at: datetime,
     ) -> None:
+        self._last_accept_upload_session_id = upload_session.id
+        self._last_accept_experiment_id = promotion_result.experiment_id
         self.experiments.append(
             Experiment(
                 experiment_id=promotion_result.experiment_id,
@@ -115,6 +137,24 @@ class FakeUploadSessionRepository:
                 object_key=source_file.object_key,
                 size_bytes=source_file.size_bytes,
                 sha256=source_file.sha256,
+            )
+            for source_file in bronze_upload_result.source_files
+        )
+        self.upload_storage_events.extend(
+            UploadStorageEvent(
+                upload_session_id=upload_session.id,
+                experiment_id=promotion_result.experiment_id,
+                event_type="minio_object_uploaded",
+                status="succeeded",
+                bucket=source_file.bucket,
+                storage_prefix=bronze_upload_result.storage_prefix,
+                object_key=source_file.object_key,
+                message="Source file uploaded and verified in MinIO bronze",
+                details={
+                    "relative_path": source_file.relative_path,
+                    "size_bytes": source_file.size_bytes,
+                    "sha256": source_file.sha256,
+                },
             )
             for source_file in bronze_upload_result.source_files
         )
@@ -142,9 +182,92 @@ class FakeUploadSessionRepository:
                 },
             )
         )
+        self.upload_storage_events.append(
+            UploadStorageEvent(
+                upload_session_id=upload_session.id,
+                experiment_id=promotion_result.experiment_id,
+                event_type="source_package_accepted",
+                status="succeeded",
+                bucket=bronze_upload_result.bucket,
+                storage_prefix=bronze_upload_result.storage_prefix,
+                message="Accepted source package metadata committed to PostgreSQL",
+                details={
+                    "source_file_count": len(bronze_upload_result.source_files),
+                    "validation_report_path": str(promotion_result.validation_report_path),
+                },
+            )
+        )
+
+    def record_orphan_objects(
+        self,
+        *,
+        upload_session: UploadSession,
+        bronze_upload_result: BronzeUploadResult,
+        reason: str,
+        details: dict[str, object],
+    ) -> None:
+        self.upload_orphan_objects.extend(
+            UploadOrphanObject(
+                upload_session_id=upload_session.id,
+                experiment_id=upload_session.experiment_id,
+                bucket=source_file.bucket,
+                storage_prefix=bronze_upload_result.storage_prefix,
+                object_key=source_file.object_key,
+                relative_path=source_file.relative_path,
+                size_bytes=source_file.size_bytes,
+                sha256=source_file.sha256,
+                reason=reason,
+                details=details,
+            )
+            for source_file in bronze_upload_result.source_files
+        )
+
+    def refresh_upload_session(self, upload_session: UploadSession) -> None:
+        stored_session = self.upload_sessions[upload_session.id]
+        upload_session.status = stored_session.status
+        upload_session.completed_at = stored_session.completed_at
 
     def commit(self) -> None:
+        if self.fail_next_commit:
+            self.fail_next_commit = False
+            raise RuntimeError("commit failed")
         self.commits += 1
+
+    def rollback(self) -> None:
+        self.rollbacks += 1
+        if self._last_accept_experiment_id is not None:
+            experiment_id = self._last_accept_experiment_id
+            self.experiments = [
+                experiment
+                for experiment in self.experiments
+                if experiment.experiment_id != experiment_id
+            ]
+            self.source_files = [
+                source_file
+                for source_file in self.source_files
+                if source_file.experiment_id != experiment_id
+            ]
+            self.pipeline_runs = [
+                pipeline_run
+                for pipeline_run in self.pipeline_runs
+                if pipeline_run.experiment_id != experiment_id
+            ]
+            self.experiment_events = [
+                event
+                for event in self.experiment_events
+                if event.experiment_id != experiment_id
+            ]
+            self.upload_storage_events = [
+                event
+                for event in self.upload_storage_events
+                if event.experiment_id != experiment_id
+            ]
+        if self._last_accept_upload_session_id is not None:
+            upload_session = self.upload_sessions[self._last_accept_upload_session_id]
+            upload_session.status = "uploading"
+            upload_session.completed_at = None
+        self._last_accept_experiment_id = None
+        self._last_accept_upload_session_id = None
 
 
 class FakeSqlAlchemySession:
@@ -152,9 +275,17 @@ class FakeSqlAlchemySession:
 
     def __init__(self) -> None:
         self.added: list[object] = []
+        self.commits = 0
+        self.rollbacks = 0
 
     def add(self, item: object) -> None:
         self.added.append(item)
+
+    def commit(self) -> None:
+        self.commits += 1
+
+    def rollback(self) -> None:
+        self.rollbacks += 1
 
 
 class RecordingBronzeObjectStorage:
@@ -375,6 +506,7 @@ def test_get_session_returns_status_view(workspace_tmp_path: Path) -> None:
     assert result.upload_session_id == created.upload_session_id
     assert result.status == "uploading"
     assert result.expected_files == created.expected_files
+    assert repository.locked_session_ids == []
 
 
 def test_get_session_expires_active_session_after_ttl(workspace_tmp_path: Path) -> None:
@@ -490,8 +622,8 @@ def test_complete_session_accepts_valid_uploaded_package(workspace_tmp_path: Pat
     permanent_source = workspace_tmp_path / "experiments" / "exp_01" / "source"
     assert result.status == "accepted"
     assert result.accepted is True
-    assert (permanent_source / "signal.bin").is_file()
-    assert (permanent_source / "experiment.json").is_file()
+    assert repository.locked_session_ids == [created.upload_session_id]
+    assert not permanent_source.exists()
     assert repository.upload_sessions[created.upload_session_id].status == "accepted"
     assert repository.experiments[0].experiment_id == "exp_01"
     assert repository.experiments[0].storage_bucket == "test-bronze"
@@ -512,6 +644,10 @@ def test_complete_session_accepts_valid_uploaded_package(workspace_tmp_path: Pat
     assert repository.pipeline_runs[0].trigger_type == PRIMARY_PIPELINE_TRIGGER_TYPE
     assert repository.pipeline_runs[0].pipeline_version == settings.pipeline_version
     assert repository.experiment_events[0].event_type == "pipeline_primary_queued"
+    assert {event.event_type for event in repository.upload_storage_events} == {
+        "minio_object_uploaded",
+        "source_package_accepted",
+    }
 
 
 def test_sqlalchemy_repository_records_primary_pipeline_run() -> None:
@@ -576,11 +712,16 @@ def test_sqlalchemy_repository_records_primary_pipeline_run() -> None:
     events = [item for item in fake_db.added if isinstance(item, ExperimentEvent)]
     experiments = [item for item in fake_db.added if isinstance(item, Experiment)]
     source_files = [item for item in fake_db.added if isinstance(item, SourceFile)]
+    storage_events = [item for item in fake_db.added if isinstance(item, UploadStorageEvent)]
 
     assert experiments[0].storage_bucket == "test-bronze"
     assert experiments[0].storage_prefix == "eeg/exp_01/"
     assert experiments[0].source_path is None
     assert source_files[0].object_key == "eeg/exp_01/signal.bin"
+    assert {event.event_type for event in storage_events} == {
+        "minio_object_uploaded",
+        "source_package_accepted",
+    }
     assert len(pipeline_runs) == 1
     assert pipeline_runs[0].experiment_id == "exp_01"
     assert pipeline_runs[0].status == PIPELINE_RUN_STATUS_QUEUED
@@ -630,10 +771,90 @@ def test_complete_session_does_not_accept_when_bronze_storage_fails(
     with pytest.raises(UploadObjectStorageUnavailableError):
         service.complete_session(created.upload_session_id)
 
+    assert not (workspace_tmp_path / "experiments" / "exp_01").exists()
+    assert (workspace_tmp_path / created.upload_session_id / "source" / "signal.bin").is_file()
     assert repository.upload_sessions[created.upload_session_id].status == "uploading"
     assert repository.experiments == []
     assert repository.source_files == []
     assert repository.pipeline_runs == []
+
+
+def test_complete_session_can_retry_after_bronze_storage_failure(
+    workspace_tmp_path: Path,
+) -> None:
+    """MinIO failure не должен оставлять local promotion, который ломает retry."""
+
+    repository = FakeUploadSessionRepository()
+    service = _service(
+        repository,
+        workspace_tmp_path,
+        bronze_storage=FailingBronzeObjectStorage(),
+    )
+    created = service.create_session(experiment_id="exp_01")
+    _write_valid_uploaded_package(service, created.upload_session_id)
+
+    with pytest.raises(UploadObjectStorageUnavailableError):
+        service.complete_session(created.upload_session_id)
+
+    retry_storage = RecordingBronzeObjectStorage()
+    service._bronze_storage = retry_storage
+    result = service.complete_session(created.upload_session_id)
+
+    assert result.status == "accepted"
+    assert len(retry_storage.calls) == 1
+    assert repository.experiments[0].experiment_id == "exp_01"
+
+
+def test_complete_session_keeps_local_source_copy_when_db_commit_fails(
+    workspace_tmp_path: Path,
+) -> None:
+    """Если PostgreSQL commit падает после MinIO upload, local source остаётся для разбора."""
+
+    repository = FakeUploadSessionRepository()
+    bronze_storage = RecordingBronzeObjectStorage()
+    service = _service(repository, workspace_tmp_path, bronze_storage=bronze_storage)
+    created = service.create_session(experiment_id="exp_01")
+    _write_valid_uploaded_package(service, created.upload_session_id)
+    repository.fail_next_commit = True
+
+    with pytest.raises(UploadDatabaseCommitError):
+        service.complete_session(created.upload_session_id)
+
+    permanent_source = workspace_tmp_path / "experiments" / "exp_01" / "source"
+    assert permanent_source.exists()
+    assert (permanent_source / "signal.bin").is_file()
+    assert repository.rollbacks == 1
+    assert len(bronze_storage.calls) == 1
+    assert repository.upload_sessions[created.upload_session_id].status == "uploading"
+    assert repository.experiments == []
+    assert repository.pipeline_runs == []
+    assert {item.object_key for item in repository.upload_orphan_objects} == {
+        "eeg/exp_01/experiment.json",
+        "eeg/exp_01/signal.bin",
+    }
+
+
+def test_complete_session_can_retry_after_db_commit_failure(
+    workspace_tmp_path: Path,
+) -> None:
+    """Retry после failed DB commit удаляет old local promotion и принимает пакет заново."""
+
+    repository = FakeUploadSessionRepository()
+    bronze_storage = RecordingBronzeObjectStorage()
+    service = _service(repository, workspace_tmp_path, bronze_storage=bronze_storage)
+    created = service.create_session(experiment_id="exp_01")
+    _write_valid_uploaded_package(service, created.upload_session_id)
+    repository.fail_next_commit = True
+
+    with pytest.raises(UploadDatabaseCommitError):
+        service.complete_session(created.upload_session_id)
+
+    result = service.complete_session(created.upload_session_id)
+
+    assert result.status == "accepted"
+    assert len(bronze_storage.calls) == 2
+    assert len(repository.experiments) == 1
+    assert repository.upload_sessions[created.upload_session_id].status == "accepted"
 
 
 def test_complete_session_rejects_missing_required_files(workspace_tmp_path: Path) -> None:

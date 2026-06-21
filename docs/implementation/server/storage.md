@@ -15,7 +15,7 @@ Draft.
 
 1. PostgreSQL — метаданные, статусы, события, ссылки на объекты MinIO.
 2. MinIO bronze — immutable source-пакет после `accepted`.
-3. Локальная файловая система — staging (`upload_tmp`), validation reports,
+3. Локальная файловая система — staging/cache (`upload_tmp`), validation reports,
    pipeline results.
 
 PostgreSQL не хранит основной бинарный сигнал.
@@ -64,6 +64,8 @@ Buckets создаёт `scripts/minio/010_init_buckets.sh` через серви
 
 - `upload_tmp` — только до успешной валидации;
 - после `accepted` source-файлы живут в MinIO bronze;
+- локальная копия `experiments/{experiment_id}/source/` удаляется сразу после
+  успешной загрузки в MinIO bronze и успешного PostgreSQL commit;
 - pipeline writes only в `pipeline_results`;
 - временные файлы имеют suffix `.part`.
 
@@ -110,11 +112,77 @@ completed_at timestamptz null
 expires_at timestamptz not null
 ```
 
+Для защиты от race conditions в PostgreSQL есть partial unique index:
+
+```text
+unique upload_sessions(experiment_id)
+where status in ('created', 'uploading', 'completed', 'validating')
+```
+
+Он запрещает две активные upload sessions для одного `experiment_id` даже если
+два API-процесса одновременно прошли application-level precheck.
+
 `client_id` — логический идентификатор upload-клиента, полученный auth layer.
 Для MVP ручной загрузки через Web UI используется `web_ui`. Это не raw token,
 не cookie и не `AUTH_SECRET`. Когда DB owner добавит поля владения
 экспериментом, пользовательская принадлежность должна храниться явно, например
 через `uploaded_by_user_id` / `owner_user_id`.
+
+### `upload_storage_events`
+
+Журнал границы между upload session, MinIO и accepted metadata transaction.
+Записи создаются в той же PostgreSQL transaction, что и `experiments`,
+`source_files`, `pipeline_runs` и `experiment_events` для accepted upload.
+
+```text
+id UUID primary key
+upload_session_id text not null
+experiment_id text not null
+event_type text not null
+status text not null
+bucket text null
+storage_prefix text null
+object_key text null
+message text null
+details jsonb null
+created_at timestamptz not null
+```
+
+Минимальные события:
+
+```text
+minio_object_uploaded
+source_package_accepted
+```
+
+### `upload_orphan_objects`
+
+Best-effort журнал MinIO objects, которые были загружены до PostgreSQL commit,
+но основной accepted commit упал и был откатан. Таблица нужна для cleanup/manual
+audit и пишется отдельной transaction после rollback основной transaction.
+
+```text
+id UUID primary key
+upload_session_id text not null
+experiment_id text not null
+bucket text not null
+storage_prefix text not null
+object_key text not null
+relative_path text not null
+size_bytes bigint not null
+sha256 text null
+reason text not null
+status text not null
+details jsonb null
+created_at timestamptz not null
+resolved_at timestamptz null
+```
+
+Начальный статус:
+
+```text
+pending_cleanup
+```
 
 ### `experiment_events`
 
@@ -304,17 +372,33 @@ Alembic skeleton остаётся в `server/alembic`, но не заменяе�
 
 Порядок commit для successful validation:
 
-1. проверить временный пакет в `upload_tmp`;
-2. проверить отсутствие accepted эксперимента с тем же `experiment_id`;
-3. загрузить файлы в MinIO bronze;
-4. открыть DB transaction;
-5. обновить `experiments`;
-6. записать `source_files` с `bucket` + `object_key`;
-7. записать `experiment_events`;
-8. commit.
+1. открыть PostgreSQL transaction;
+2. заблокировать строку `upload_sessions` через `SELECT ... FOR UPDATE`;
+3. проверить временный пакет в `upload_tmp`;
+4. проверить отсутствие accepted эксперимента с тем же `experiment_id`;
+5. удалить uncommitted локальную `experiments/{experiment_id}/`, если это retry
+   после failed commit;
+6. загрузить файлы в MinIO bronze;
+7. проверить, что загруженные объекты читаются из MinIO;
+8. обновить `upload_sessions.status = accepted`;
+9. записать `experiments`;
+10. записать `source_files` с `bucket` + `object_key`;
+11. записать `upload_storage_events`;
+12. записать `pipeline_runs` и `experiment_events`;
+13. commit;
+14. удалить локальную `experiments/{experiment_id}/source/`.
 
-Если шаг 3 успешен, а DB commit падает, cleanup должен пометить orphan objects
-в MinIO для ручного разбора.
+`SELECT ... FOR UPDATE` держит lock до PostgreSQL commit/rollback и защищает от
+параллельного `complete` одной upload session.
+
+Если MinIO upload или проверка читаемости объекта падает, PostgreSQL не получает
+accepted-записей, локальная promoted-директория удаляется, а canonical retry
+source остаётся в `upload_tmp/{upload_session_id}/source`. Если MinIO upload
+успешен, а PostgreSQL commit падает, PostgreSQL transaction откатывается,
+локальная source-копия не удаляется, а MinIO objects считаются orphan candidates
+для последующего cleanup/manual audit. После rollback сервер best-effort пишет
+эти объекты в `upload_orphan_objects`; если и этот лог не записался, исходное
+правило retry сохраняется через `upload_tmp` и локальную source-копию.
 
 ---
 
@@ -328,6 +412,11 @@ experiments(status)
 experiments(uploaded_at)
 upload_sessions(experiment_id)
 upload_sessions(status)
+upload_sessions(experiment_id) unique where status is active
+upload_storage_events(upload_session_id, created_at)
+upload_storage_events(experiment_id, created_at)
+upload_orphan_objects(status, created_at)
+upload_orphan_objects(experiment_id, created_at)
 source_files(experiment_id)
 source_files(bucket, object_key) unique
 experiment_events(experiment_id, created_at)

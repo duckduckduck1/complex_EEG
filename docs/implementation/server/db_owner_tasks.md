@@ -68,9 +68,11 @@ Web UI загружает этот пакет на сервер. Сервер в
 - проверка уникальности `experiment_id`;
 - хранение метаданных эксперимента;
 - MinIO bronze для source-файлов;
+- ACID-boundary upload flow: MinIO upload before accepted DB commit;
 - SQL init scripts и Docker init для PostgreSQL/MinIO;
 - хранение статусов upload, validation и pipeline;
 - история событий по эксперименту;
+- журнал upload storage boundary и orphan MinIO objects;
 - audit-события web UI;
 - индексы и ограничения, нужные для текущих server flow.
 
@@ -96,6 +98,8 @@ PostgreSQL хранит:
 - пользователей;
 - карточки экспериментов;
 - upload sessions;
+- upload storage events;
+- orphan object records for failed accepted commits;
 - список исходных файлов с `bucket` + `object_key`;
 - validation errors;
 - pipeline runs;
@@ -103,9 +107,13 @@ PostgreSQL хранит:
 - experiment events;
 - audit events;
 
-MinIO bronze хранит immutable source-пакет после `accepted`.
+MinIO bronze хранит immutable source-пакет после `accepted`. Accepted metadata
+появляется в PostgreSQL только после успешного upload в MinIO и проверки
+читаемости объектов.
 
-Локальная файловая система — staging (`upload_tmp`) и pipeline results.
+Локальная файловая система — staging/cache (`upload_tmp`), validation reports и
+pipeline results. Локальная `experiments/{experiment_id}/source/` удаляется
+после successful MinIO upload и PostgreSQL commit.
 
 PostgreSQL не хранит бинарный EEG-сигнал.
 
@@ -119,6 +127,8 @@ PostgreSQL не хранит бинарный EEG-сигнал.
 users
 experiments
 upload_sessions
+upload_storage_events
+upload_orphan_objects
 source_files
 experiment_events
 pipeline_runs
@@ -179,6 +189,51 @@ storage_prefix = eeg/{experiment_id}/
 
 Полная ссылка на объект в MinIO. Пара `(bucket, object_key)` уникальна и
 используется как дополнительная защита от дублей объектов.
+
+### `upload_sessions.experiment_id` для active sessions
+
+Для active statuses:
+
+```text
+created
+uploading
+completed
+validating
+```
+
+должен существовать partial unique index:
+
+```text
+unique upload_sessions(experiment_id) where status is active
+```
+
+Он закрывает race condition, когда два API-процесса одновременно создают upload
+session для одного `experiment_id`.
+
+### `upload_storage_events`
+
+Журнал событий связки upload session с MinIO object storage. Для accepted upload
+пишется в той же PostgreSQL transaction, что и `experiments`, `source_files`,
+`pipeline_runs` и `experiment_events`.
+
+Минимальные события:
+
+```text
+minio_object_uploaded
+source_package_accepted
+```
+
+### `upload_orphan_objects`
+
+Best-effort журнал MinIO objects, загруженных до failed PostgreSQL commit. Если
+accepted DB transaction откатилась после успешного MinIO upload, эти объекты
+получают статус:
+
+```text
+pending_cleanup
+```
+
+Таблица нужна для cleanup/manual audit.
 
 ### `pipeline_artifacts.relative_path`
 
@@ -309,6 +364,15 @@ experiments.experiment_id unique not null
 БД не обязана проверять regex-формат, если это уже делает API/validator, но
 unique constraint обязателен.
 
+Нужно также подтвердить DB-level защиту active upload sessions:
+
+```text
+upload_sessions(experiment_id) unique where status in active statuses
+```
+
+Application-level precheck недостаточен, потому что два API-процесса могут
+одновременно пройти `find_active_session_by_experiment_id`.
+
 ---
 
 ### 4. Уточнить enum-подобные статусы
@@ -342,6 +406,8 @@ String + Python constants + tests
 Нужно рассмотреть связи:
 
 ```text
+upload_storage_events.upload_session_id -> upload_sessions.id
+upload_orphan_objects.upload_session_id -> upload_sessions.id
 source_files.experiment_id -> experiments.experiment_id
 experiment_events.experiment_id -> experiments.experiment_id
 pipeline_runs.experiment_id -> experiments.experiment_id
@@ -406,6 +472,8 @@ alembic upgrade head
 - `experiment_id` уникален;
 - `username` уникален;
 - индексы существуют на ключевых полях;
+- partial unique index active upload session существует;
+- таблицы `upload_storage_events` и `upload_orphan_objects` есть в ORM и SQL;
 - Alembic видит metadata;
 - migration upgrade/downgrade проверены вручную или автоматизированы.
 
@@ -421,10 +489,12 @@ alembic upgrade head
 1. Какие таблицы изменены?
 2. Какие constraints добавлены?
 3. Какие indexes добавлены?
-4. Как теперь хранится ownership эксперимента?
-5. Как проверялась migration?
-6. Какие решения оставлены на будущий этап?
-7. Какие документы обновлены?
+4. Как закрываются race conditions upload flow?
+5. Как логируются orphan MinIO objects после failed DB commit?
+6. Как теперь хранится ownership эксперимента?
+7. Как проверялась migration?
+8. Какие решения оставлены на будущий этап?
+9. Какие документы обновлены?
 
 ---
 
@@ -436,7 +506,10 @@ alembic upgrade head
 - нет Airflow / microscopy / universal lakehouse catalog;
 - accepted source-файлы ссылаются на MinIO bronze;
 - `experiment_id` уникален;
+- две active upload sessions для одного `experiment_id` запрещены на уровне БД;
+- `complete` использует row-level lock upload session;
 - `source_files (bucket, object_key)` уникален;
+- orphan MinIO objects после failed DB commit имеют стратегию cleanup/audit;
 - ownership пользователя явно определён;
 - Alembic migration обратима там, где это разумно;
 - `pytest` проходит;

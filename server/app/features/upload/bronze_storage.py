@@ -154,6 +154,17 @@ class MinioBronzeObjectStorage:
                     f"failed to upload {source_file.relative_path} to bronze object storage"
                 ) from exc
 
+        for source_file in result.source_files:
+            try:
+                self._client.stat_object(
+                    bucket_name=source_file.bucket,
+                    object_name=source_file.object_key,
+                )
+            except Exception as exc:
+                raise BronzeStorageError(
+                    f"uploaded object is not readable in bronze object storage: {source_file.relative_path}"
+                ) from exc
+
         return result
 
 

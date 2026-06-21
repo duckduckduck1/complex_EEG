@@ -144,7 +144,7 @@ Failed result:
 
 ### Duplicate protection
 
-Валидатор выполняет повторную защитную проверку:
+Валидатор и upload service выполняют повторную защитную проверку:
 
 - нет already accepted experiment with same `experiment_id`;
 - upload session still belongs to this `experiment_id`;
@@ -152,6 +152,14 @@ Failed result:
 
 Основная проверка дублей выполняется при создании upload session, но повторная
 проверка защищает от гонок и ручных повреждений состояния.
+
+DB-level защита:
+
+- `experiments.experiment_id` unique защищает accepted experiments;
+- partial unique index на active `upload_sessions(experiment_id)` запрещает две
+  активные upload sessions для одного experiment;
+- `complete` берёт row-level lock на строку `upload_sessions` через
+  `SELECT ... FOR UPDATE`.
 
 ### Binary signal
 
@@ -264,10 +272,17 @@ validating -> validation_failed
 
 При `accepted` сервер:
 
-- переносит source files в permanent storage;
-- обновляет `experiments`;
-- пишет `experiment_events`;
+- загружает source files в MinIO bronze;
+- проверяет, что MinIO отдаёт загруженные объекты;
+- одной PostgreSQL transaction обновляет `upload_sessions`, `experiments`,
+  `source_files`, `upload_storage_events`, `pipeline_runs` и
+  `experiment_events`;
+- после commit удаляет локальную `experiments/{experiment_id}/source/`;
 - запускает primary pipeline run.
+
+Если PostgreSQL commit падает после successful MinIO upload, объекты MinIO
+логируются best-effort в `upload_orphan_objects` как `pending_cleanup`, а retry
+`complete` снова использует source package из `upload_tmp`.
 
 При `validation_failed` сервер:
 

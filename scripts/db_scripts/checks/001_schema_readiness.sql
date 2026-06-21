@@ -8,6 +8,8 @@ WHERE table_schema = 'public'
       'users',
       'experiments',
       'upload_sessions',
+      'upload_storage_events',
+      'upload_orphan_objects',
       'experiment_events',
       'source_files',
       'pipeline_runs',
