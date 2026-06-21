@@ -85,3 +85,19 @@ def test_logging_settings_use_environment_values(monkeypatch) -> None:
 
     assert settings.log_level == "DEBUG"
     assert settings.request_id_header == "X-Correlation-ID"
+
+
+def test_pipeline_settings_use_environment_values(monkeypatch) -> None:
+    """Pipeline-настройки должны приходить из env для API и будущего worker."""
+
+    monkeypatch.setenv("PIPELINE_VERSION", "2026.06.21-test")
+    monkeypatch.setenv("PIPELINE_POLL_INTERVAL_SECONDS", "3")
+    monkeypatch.setenv("PIPELINE_MAX_RUN_DURATION_HOURS", "8")
+    monkeypatch.setenv("PIPELINE_STUCK_HEARTBEAT_MINUTES", "20")
+
+    settings = Settings()
+
+    assert settings.pipeline_version == "2026.06.21-test"
+    assert settings.pipeline_poll_interval_seconds == 3
+    assert settings.pipeline_max_run_duration_hours == 8
+    assert settings.pipeline_stuck_heartbeat_minutes == 20
