@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import shutil
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
@@ -33,6 +34,7 @@ from app.features.upload.session_service import (
     PRIMARY_PIPELINE_TRIGGER_TYPE,
     SqlAlchemyUploadSessionRepository,
     UploadDatabaseCommitError,
+    UploadLocalCleanupError,
     UploadObjectStorageUnavailableError,
     UploadSessionAlreadyExistsError,
     UploadSessionIncompleteError,
@@ -321,6 +323,36 @@ class FailingBronzeObjectStorage:
         source_files: tuple[SourceFileInfo, ...],
     ) -> BronzeUploadResult:
         raise BronzeStorageError("minio is unavailable")
+
+
+class PartiallyFailingBronzeObjectStorage:
+    """Загружает часть объектов в MinIO, затем падает.
+
+    Несёт уже загруженные объекты в `BronzeStorageError.uploaded`, как это делает
+    production-адаптер при сбое на втором файле.
+    """
+
+    def __init__(self, *, bucket: str = "test-bronze") -> None:
+        self.bucket = bucket
+
+    def upload_source_package(
+        self,
+        *,
+        experiment_id: str,
+        source_dir: Path,
+        source_files: tuple[SourceFileInfo, ...],
+    ) -> BronzeUploadResult:
+        full = build_bronze_upload_result(
+            experiment_id=experiment_id,
+            bucket=self.bucket,
+            source_files=source_files,
+        )
+        partial = BronzeUploadResult(
+            bucket=full.bucket,
+            storage_prefix=full.storage_prefix,
+            source_files=full.source_files[:1],
+        )
+        raise BronzeStorageError("second object upload failed", uploaded=partial)
 
 
 def _service(
@@ -855,6 +887,102 @@ def test_complete_session_can_retry_after_db_commit_failure(
     assert len(bronze_storage.calls) == 2
     assert len(repository.experiments) == 1
     assert repository.upload_sessions[created.upload_session_id].status == "accepted"
+
+
+def test_complete_session_accepts_even_when_local_cleanup_fails(
+    workspace_tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Сбой удаления локальной копии после commit не должен ломать accepted-ответ."""
+
+    repository = FakeUploadSessionRepository()
+    bronze_storage = RecordingBronzeObjectStorage()
+    service = _service(repository, workspace_tmp_path, bronze_storage=bronze_storage)
+    created = service.create_session(experiment_id="exp_01")
+    _write_valid_uploaded_package(service, created.upload_session_id)
+
+    monkeypatch.setattr(
+        "app.features.upload.session_service._remove_permanent_source_dir",
+        lambda source_dir: False,
+    )
+
+    with caplog.at_level(logging.WARNING):
+        result = service.complete_session(created.upload_session_id)
+
+    assert result.status == "accepted"
+    assert result.accepted is True
+    assert repository.experiments[0].experiment_id == "exp_01"
+    assert len(repository.pipeline_runs) == 1
+    # Локальную копию намеренно оставили (cleanup "не смог"), но приёмка прошла.
+    permanent_source = workspace_tmp_path / "experiments" / "exp_01" / "source"
+    assert permanent_source.exists()
+    assert any(
+        "failed to remove local source copy" in message for message in caplog.messages
+    )
+
+
+def test_complete_session_surfaces_clear_error_when_stale_dir_cannot_be_removed(
+    workspace_tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Неудаляемый остаток промо-папки даёт понятную ошибку, а не promotion-конфликт."""
+
+    repository = FakeUploadSessionRepository()
+    service = _service(
+        repository,
+        workspace_tmp_path,
+        bronze_storage=RecordingBronzeObjectStorage(),
+    )
+    created = service.create_session(experiment_id="exp_01")
+    _write_valid_uploaded_package(service, created.upload_session_id)
+
+    stale_dir = workspace_tmp_path / "experiments" / "exp_01"
+    (stale_dir / "source").mkdir(parents=True)
+
+    def _raise_oserror(path: object, *args: object, **kwargs: object) -> None:
+        raise OSError("directory is locked")
+
+    monkeypatch.setattr(
+        "app.features.upload.session_service.shutil.rmtree", _raise_oserror
+    )
+
+    with pytest.raises(UploadLocalCleanupError):
+        service.complete_session(created.upload_session_id)
+
+    assert repository.experiments == []
+    assert repository.upload_sessions[created.upload_session_id].status == "uploading"
+
+
+def test_complete_session_records_orphans_for_partial_bronze_upload(
+    workspace_tmp_path: Path,
+) -> None:
+    """Частично загруженные в MinIO объекты учитываются как orphan для cleanup."""
+
+    repository = FakeUploadSessionRepository()
+    service = _service(
+        repository,
+        workspace_tmp_path,
+        bronze_storage=PartiallyFailingBronzeObjectStorage(),
+    )
+    created = service.create_session(experiment_id="exp_01")
+    _write_valid_uploaded_package(service, created.upload_session_id)
+
+    with pytest.raises(UploadObjectStorageUnavailableError):
+        service.complete_session(created.upload_session_id)
+
+    # Accepted не записан, local promotion удалён, но "висящий" объект зафиксирован.
+    assert not (workspace_tmp_path / "experiments" / "exp_01").exists()
+    assert repository.experiments == []
+    assert repository.pipeline_runs == []
+    assert len(repository.upload_orphan_objects) == 1
+    orphan = repository.upload_orphan_objects[0]
+    assert orphan.reason == "bronze_upload_partial_failure"
+    assert orphan.object_key in {
+        "eeg/exp_01/experiment.json",
+        "eeg/exp_01/signal.bin",
+    }
+    assert repository.upload_sessions[created.upload_session_id].status == "uploading"
 
 
 def test_complete_session_rejects_missing_required_files(workspace_tmp_path: Path) -> None:

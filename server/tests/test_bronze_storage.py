@@ -199,6 +199,94 @@ def test_minio_bronze_storage_requires_uploaded_objects_to_be_readable(
         )
 
 
+def test_minio_bronze_storage_reports_uploaded_objects_on_partial_failure(
+    workspace_tmp_path: Path,
+) -> None:
+    """Если второй объект упал, уже загруженный первый попадает в error.uploaded."""
+
+    class FailSecondUploadClient:
+        def __init__(self) -> None:
+            self.uploaded_objects: list[str] = []
+
+        def fput_object(
+            self,
+            *,
+            bucket_name: str,
+            object_name: str,
+            file_path: str,
+            content_type: str,
+        ) -> None:
+            if self.uploaded_objects:
+                raise RuntimeError("network failed on second object")
+            self.uploaded_objects.append(object_name)
+
+        def stat_object(self, **kwargs: object) -> None:
+            return None
+
+    source_dir = workspace_tmp_path / "source"
+    source_dir.mkdir()
+    (source_dir / "experiment.json").write_text("{}", encoding="utf-8")
+    (source_dir / "signal.bin").write_bytes(b"\x00\x00\x00\x00")
+    storage = MinioBronzeObjectStorage(client=FailSecondUploadClient(), bucket="lakehouse-bronze")
+
+    with pytest.raises(BronzeStorageError) as exc_info:
+        storage.upload_source_package(
+            experiment_id="exp_01",
+            source_dir=source_dir,
+            source_files=(
+                SourceFileInfo(
+                    name="experiment.json",
+                    relative_path="experiment.json",
+                    size_bytes=2,
+                    sha256="1" * 64,
+                ),
+                SourceFileInfo(
+                    name="signal.bin",
+                    relative_path="signal.bin",
+                    size_bytes=4,
+                    sha256="0" * 64,
+                ),
+            ),
+        )
+
+    uploaded = exc_info.value.uploaded
+    assert uploaded is not None
+    assert [stored.object_key for stored in uploaded.source_files] == [
+        "eeg/exp_01/experiment.json",
+    ]
+
+
+def test_minio_bronze_storage_first_file_failure_has_no_uploaded_objects(
+    workspace_tmp_path: Path,
+) -> None:
+    """Сбой на первом файле не оставляет orphan: в bucket ничего не попало."""
+
+    class FailingMinioClient:
+        def fput_object(self, **kwargs: object) -> None:
+            raise RuntimeError("network failed")
+
+    source_dir = workspace_tmp_path / "source"
+    source_dir.mkdir()
+    (source_dir / "signal.bin").write_bytes(b"\x00\x00\x00\x00")
+    storage = MinioBronzeObjectStorage(client=FailingMinioClient(), bucket="lakehouse-bronze")
+
+    with pytest.raises(BronzeStorageError) as exc_info:
+        storage.upload_source_package(
+            experiment_id="exp_01",
+            source_dir=source_dir,
+            source_files=(
+                SourceFileInfo(
+                    name="signal.bin",
+                    relative_path="signal.bin",
+                    size_bytes=4,
+                    sha256="0" * 64,
+                ),
+            ),
+        )
+
+    assert exc_info.value.uploaded is None
+
+
 def test_object_key_helpers_reject_path_traversal() -> None:
     """experiment_id и relative_path не должны превращаться в произвольный object key."""
 

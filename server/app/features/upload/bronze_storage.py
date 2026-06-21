@@ -22,7 +22,16 @@ DEFAULT_STORAGE_PREFIX_ROOT = "eeg"
 
 
 class BronzeStorageError(RuntimeError):
-    """Object storage не смог сохранить accepted source package."""
+    """Object storage не смог сохранить accepted source package.
+
+    При частичном сбое часть объектов уже могла попасть в bucket. Атрибут
+    `uploaded` несёт уже загруженные объекты, чтобы upload flow мог записать их
+    как orphan для последующего cleanup и не оставлять "висящие" объекты в MinIO.
+    """
+
+    def __init__(self, message: str, *, uploaded: "BronzeUploadResult | None" = None) -> None:
+        super().__init__(message)
+        self.uploaded = uploaded
 
 
 @dataclass(frozen=True)
@@ -137,10 +146,18 @@ class MinioBronzeObjectStorage:
             prefix_root=self._prefix_root,
         )
 
+        # Накапливаем уже загруженные объекты: если upload или последующая
+        # проверка упадёт, эти объекты остаются в bucket и должны уехать в
+        # orphan-учёт, а не "потеряться" в MinIO.
+        uploaded: list[BronzeStoredSourceFile] = []
+
         for source_file in result.source_files:
             file_path = source_dir / source_file.relative_path
             if not file_path.is_file():
-                raise BronzeStorageError(f"source file is missing before bronze upload: {file_path}")
+                raise BronzeStorageError(
+                    f"source file is missing before bronze upload: {file_path}",
+                    uploaded=_partial_bronze_result(result, uploaded),
+                )
 
             try:
                 self._client.fput_object(
@@ -151,8 +168,11 @@ class MinioBronzeObjectStorage:
                 )
             except Exception as exc:
                 raise BronzeStorageError(
-                    f"failed to upload {source_file.relative_path} to bronze object storage"
+                    f"failed to upload {source_file.relative_path} to bronze object storage",
+                    uploaded=_partial_bronze_result(result, uploaded),
                 ) from exc
+
+            uploaded.append(source_file)
 
         for source_file in result.source_files:
             try:
@@ -162,7 +182,8 @@ class MinioBronzeObjectStorage:
                 )
             except Exception as exc:
                 raise BronzeStorageError(
-                    f"uploaded object is not readable in bronze object storage: {source_file.relative_path}"
+                    f"uploaded object is not readable in bronze object storage: {source_file.relative_path}",
+                    uploaded=_partial_bronze_result(result, uploaded),
                 ) from exc
 
         return result
@@ -271,3 +292,19 @@ def _ensure_source_files_exist(
         file_path = source_dir / source_file.relative_path
         if not file_path.is_file():
             raise BronzeStorageError(f"source file is missing before bronze upload: {file_path}")
+
+
+def _partial_bronze_result(
+    result: BronzeUploadResult,
+    uploaded: list[BronzeStoredSourceFile],
+) -> BronzeUploadResult | None:
+    """Строит результат из уже загруженных объектов для orphan-учёта при сбое."""
+
+    if not uploaded:
+        return None
+
+    return BronzeUploadResult(
+        bucket=result.bucket,
+        storage_prefix=result.storage_prefix,
+        source_files=tuple(uploaded),
+    )

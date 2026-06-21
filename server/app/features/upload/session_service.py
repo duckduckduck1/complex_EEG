@@ -9,6 +9,7 @@ repository-объект с маленьким набором методов. П�
 
 from __future__ import annotations
 
+import logging
 import secrets
 import shutil
 from dataclasses import dataclass
@@ -39,6 +40,7 @@ from app.features.upload.bronze_storage import (
 from app.features.upload.promotion import (
     UploadPromotionError,
     UploadPromotionResult,
+    build_experiment_dir,
     promote_staged_upload,
 )
 from app.features.upload.staging import UploadStagingResult, build_upload_session_dir
@@ -60,6 +62,8 @@ UPLOAD_SOURCE_DIR_NAME = "source"
 VALIDATION_REPORT_FILE_NAME = "validation_report.json"
 PRIMARY_PIPELINE_TRIGGER_TYPE = "auto_primary"
 PIPELINE_RUN_STATUS_QUEUED = "queued"
+
+logger = logging.getLogger(__name__)
 
 
 class UploadSessionServiceError(ValueError):
@@ -557,7 +561,13 @@ class UploadSessionService:
         if self._repository.has_registered_experiment(upload_session.experiment_id):
             raise ExperimentAlreadyRegisteredError("experiment_id is already registered")
 
-        _remove_uncommitted_experiment_dir(self._experiments_root / upload_session.experiment_id)
+        # Удаляем остаток промо-папки от прошлой неудачной попытки. Раньше это
+        # делалось с ignore_errors=True, поэтому реальный сбой удаления скрывался,
+        # а retry падал на promotion с невнятным "experiment directory already
+        # exists". Теперь, если папку не удалить, поднимаем понятную ошибку.
+        _ensure_experiment_dir_absent(
+            build_experiment_dir(self._experiments_root, upload_session.experiment_id)
+        )
 
         try:
             promotion_result = promote_staged_upload(
@@ -575,6 +585,10 @@ class UploadSessionService:
             )
         except BronzeStorageError as exc:
             _remove_uncommitted_experiment_dir(promotion_result.experiment_dir)
+            self._record_orphan_objects_after_partial_bronze_upload(
+                upload_session=upload_session,
+                error=exc,
+            )
             raise UploadObjectStorageUnavailableError(str(exc)) from exc
 
         upload_session.status = "accepted"
@@ -590,7 +604,7 @@ class UploadSessionService:
         except Exception as exc:
             self._repository.rollback()
             self._refresh_after_failed_accept(upload_session)
-            self._record_orphan_objects_after_failed_commit(
+            self._safely_record_orphan_objects(
                 upload_session=upload_session,
                 bronze_upload_result=bronze_upload_result,
                 reason="postgres_commit_failed",
@@ -603,7 +617,16 @@ class UploadSessionService:
                 "failed to commit accepted upload metadata transaction"
             ) from exc
 
-        _remove_permanent_source_dir(promotion_result.source_dir)
+        # Эксперимент уже принят (objects в MinIO, pipeline run создан, commit
+        # прошёл). Неудача удаления локальной копии не должна превращать
+        # успешную приёмку в 500 — логируем и оставляем папку для cleanup.
+        if not _remove_permanent_source_dir(promotion_result.source_dir):
+            logger.warning(
+                "accepted upload %s: failed to remove local source copy %s; "
+                "experiment is accepted, leaving local copy for later cleanup",
+                upload_session.id,
+                promotion_result.source_dir,
+            )
 
         return UploadCompletionResult(
             upload_session_id=upload_session.id,
@@ -658,7 +681,33 @@ class UploadSessionService:
             # this in-memory object. Avoid masking the original commit failure.
             return
 
-    def _record_orphan_objects_after_failed_commit(
+    def _record_orphan_objects_after_partial_bronze_upload(
+        self,
+        *,
+        upload_session: UploadSession,
+        error: BronzeStorageError,
+    ) -> None:
+        """Учитывает объекты, успевшие попасть в MinIO до сбоя bronze upload.
+
+        Без этого частично загруженные объекты остаются в bucket и нигде не
+        зафиксированы: cleanup-worker про них не узнает.
+        """
+
+        partial_result = error.uploaded
+        if partial_result is None or not partial_result.source_files:
+            return
+
+        self._safely_record_orphan_objects(
+            upload_session=upload_session,
+            bronze_upload_result=partial_result,
+            reason="bronze_upload_partial_failure",
+            details={
+                "error_type": type(error).__name__,
+                "error_message": str(error),
+            },
+        )
+
+    def _safely_record_orphan_objects(
         self,
         *,
         upload_session: UploadSession,
@@ -753,23 +802,60 @@ def _has_unfinished_part_files(source_dir: Path) -> bool:
     return False
 
 
-def _remove_permanent_source_dir(source_dir: Path) -> None:
-    """Удаляет локальную source-копию после MinIO upload и DB commit."""
+def _remove_permanent_source_dir(source_dir: Path) -> bool:
+    """Best-effort удаление локальной source-копии после MinIO upload и DB commit.
+
+    Возвращает True, если копии больше нет. На этом этапе эксперимент уже принят,
+    поэтому сбой удаления не должен ронять ответ — вызывающий код его логирует.
+    """
 
     try:
         shutil.rmtree(source_dir)
+        return True
     except FileNotFoundError:
-        return
+        return True
+    except OSError:
+        return False
+
+
+def _ensure_experiment_dir_absent(experiment_dir: Path) -> None:
+    """Гарантирует отсутствие промо-папки перед promotion.
+
+    Удаляет остаток от прошлой неудачной попытки. Если папку реально не удалить,
+    поднимает понятную ошибку вместо того, чтобы дать promotion упасть позже с
+    невнятным "experiment directory already exists".
+    """
+
+    try:
+        shutil.rmtree(experiment_dir)
+    except FileNotFoundError:
+        pass
     except OSError as exc:
         raise UploadLocalCleanupError(
-            f"failed to remove local source copy after accepted upload: {source_dir}"
+            f"stale local experiment directory could not be removed before retry: {experiment_dir}"
         ) from exc
+
+    if experiment_dir.exists():
+        raise UploadLocalCleanupError(
+            f"stale local experiment directory still present after cleanup: {experiment_dir}"
+        )
 
 
 def _remove_uncommitted_experiment_dir(experiment_dir: Path) -> None:
-    """Удаляет local promotion, если MinIO upload не дошёл до accepted transaction."""
+    """Best-effort удаление local promotion, если upload не дошёл до accepted commit.
 
-    shutil.rmtree(experiment_dir, ignore_errors=True)
+    Сбой удаления здесь не критичен: следующая попытка пройдёт через
+    `_ensure_experiment_dir_absent`, который при реальной проблеме поднимет ошибку.
+    """
+
+    try:
+        shutil.rmtree(experiment_dir)
+    except FileNotFoundError:
+        return
+    except OSError:
+        logger.warning(
+            "failed to remove uncommitted local experiment directory: %s", experiment_dir
+        )
 
 
 def _files_from_json(value: dict[str, object] | None) -> list[str]:
