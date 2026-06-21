@@ -192,7 +192,7 @@ Response:
 
 - `auth.required`;
 - `auth.forbidden`;
-- `experiment.already_accepted`;
+- `experiment.already_exists`;
 - `upload.session_already_active`;
 - `request.invalid_payload`.
 
@@ -304,8 +304,8 @@ Response:
 ```
 
 В текущей реализации первого стенда `complete` синхронно запускает validation.
-Если пакет валиден, сервер переносит source-файлы и validation report в
-permanent storage и возвращает `status = accepted`. Если пакет невалиден,
+Если пакет валиден, сервер загружает source-файлы в MinIO bronze, сохраняет
+validation report и возвращает `status = accepted`. Если пакет невалиден,
 возвращается `status = failed`, `accepted = false`,
 `validation_report_scope = upload_tmp` и список validation errors.
 
@@ -313,6 +313,12 @@ permanent storage и возвращает `status = accepted`. Если паке
 
 - если session уже `accepted`, сервер возвращает `200` со статусом `accepted`;
 - если session `cancelled`, `expired` или `failed`, сервер возвращает `409`.
+
+Ошибки:
+
+- `upload.incomplete`;
+- `upload.session_state_conflict`;
+- `object_storage.unavailable`.
 
 ### Dev/test upload bridge
 

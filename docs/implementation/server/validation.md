@@ -104,7 +104,8 @@ Successful result:
   "status": "accepted",
   "experiment_id": "exp_2026_001",
   "metadata": {},
-  "source_path": "/srv/complex_eeg/experiments/exp_2026_001/source"
+  "storage_bucket": "lakehouse-bronze",
+  "storage_prefix": "eeg/exp_2026_001/"
 }
 ```
 

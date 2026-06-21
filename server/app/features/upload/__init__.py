@@ -4,6 +4,14 @@ from app.features.upload.archive import (
     UploadArchiveError,
     extract_experiment_zip,
 )
+from app.features.upload.bronze_storage import (
+    BronzeObjectStorage,
+    BronzeStorageError,
+    BronzeStoredSourceFile,
+    BronzeUploadResult,
+    MinioBronzeObjectStorage,
+    NoopBronzeObjectStorage,
+)
 from app.features.upload.dto import (
     UploadProcessingResponseDto,
     UploadSourceFileDto,
@@ -35,6 +43,12 @@ from app.features.upload.staging import (
 __all__ = [
     "SourceFileInfo",
     "SourceFileInventoryError",
+    "BronzeObjectStorage",
+    "BronzeStorageError",
+    "BronzeStoredSourceFile",
+    "BronzeUploadResult",
+    "MinioBronzeObjectStorage",
+    "NoopBronzeObjectStorage",
     "UploadArchiveError",
     "UploadPromotionError",
     "UploadPromotionResult",

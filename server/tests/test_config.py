@@ -101,3 +101,19 @@ def test_pipeline_settings_use_environment_values(monkeypatch) -> None:
     assert settings.pipeline_poll_interval_seconds == 3
     assert settings.pipeline_max_run_duration_hours == 8
     assert settings.pipeline_stuck_heartbeat_minutes == 20
+
+
+def test_minio_settings_use_environment_values(monkeypatch) -> None:
+    """MinIO-настройки должны задаваться через env для Docker/VM runtime."""
+
+    monkeypatch.setenv("MINIO_ENDPOINT", "https://minio.example.com")
+    monkeypatch.setenv("MINIO_ROOT_USER", "test_minio_user")
+    monkeypatch.setenv("MINIO_ROOT_PASSWORD", "test_minio_password")
+    monkeypatch.setenv("MINIO_BUCKET_BRONZE", "test-bronze")
+
+    settings = Settings()
+
+    assert settings.minio_endpoint == "https://minio.example.com"
+    assert settings.minio_root_user == "test_minio_user"
+    assert settings.minio_root_password.get_secret_value() == "test_minio_password"
+    assert settings.minio_bucket_bronze == "test-bronze"

@@ -18,6 +18,7 @@ from app.features.upload.session_service import UploadSessionService
 from app.main import app
 from tests.test_upload_session_service import (
     FIXED_NOW,
+    FailingBronzeObjectStorage,
     FakeUploadSessionRepository,
     _service,
 )
@@ -314,6 +315,35 @@ def test_complete_upload_session_accepts_valid_package(
         "signal.bin",
     }
     assert "tmp_path" not in body
+
+
+def test_complete_upload_session_returns_503_when_bronze_storage_fails(
+    upload_session_service: UploadSessionService,
+) -> None:
+    """Недоступный MinIO возвращает 503, а не пользовательскую validation/conflict ошибку."""
+
+    upload_session_service._bronze_storage = FailingBronzeObjectStorage()
+    create_response = client.post(
+        UPLOAD_SESSIONS_ENDPOINT,
+        json={"experiment_id": "exp_01"},
+    )
+    upload_session_id = create_response.json()["upload_session_id"]
+
+    client.put(
+        f"{UPLOAD_SESSIONS_ENDPOINT}/{upload_session_id}/files/signal.bin",
+        content=b"\x00\x00\x00\x00" * 1000,
+        headers={"content-type": "application/octet-stream"},
+    )
+    client.put(
+        f"{UPLOAD_SESSIONS_ENDPOINT}/{upload_session_id}/files/experiment.json",
+        content=_valid_experiment_json(),
+        headers={"content-type": "application/octet-stream"},
+    )
+
+    response = client.post(f"{UPLOAD_SESSIONS_ENDPOINT}/{upload_session_id}/complete")
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "object_storage.unavailable"
 
 
 def test_complete_upload_session_returns_failed_for_invalid_package(

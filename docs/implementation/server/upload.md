@@ -169,8 +169,9 @@ client_id = web_ui
 - TTL берётся из `UPLOAD_SESSION_TTL_HOURS`;
 - размер одного upload-файла ограничивается `UPLOAD_MAX_SIZE`;
 - complete синхронно запускает validation и возвращает `accepted` или `failed`;
-- accepted upload записывает metadata в PostgreSQL и ссылки на объекты MinIO
-  bronze; promotion в object storage подключается отдельным шагом;
+- accepted upload загружает source-файлы в MinIO bronze, затем записывает metadata
+  в PostgreSQL и ссылки на объекты (`storage_bucket`, `storage_prefix`,
+  `source_files.bucket/object_key`);
 - accepted upload создаёт `pipeline_runs(status = queued, trigger_type = auto_primary)`;
 - `display_name` пока не сохраняется, потому что это требует решения DB owner
   по месту хранения: `experiments` или расширение `upload_sessions`;
