@@ -20,6 +20,12 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.models import Experiment, ExperimentEvent, PipelineRun, SourceFile, UploadSession
+from app.features.upload.bronze_storage import (
+    BronzeObjectStorage,
+    BronzeStorageError,
+    BronzeUploadResult,
+    NoopBronzeObjectStorage,
+)
 from app.features.upload.promotion import (
     UploadPromotionError,
     UploadPromotionResult,
@@ -74,6 +80,10 @@ class UploadSessionIncompleteError(UploadSessionServiceError):
     """Upload session нельзя завершить, потому что пакет ещё неполный."""
 
 
+class UploadObjectStorageUnavailableError(UploadSessionServiceError):
+    """Accepted package не удалось сохранить в bronze object storage."""
+
+
 @dataclass(frozen=True)
 class UploadSessionView:
     """API-safe представление upload session без внутренних filesystem paths."""
@@ -105,6 +115,7 @@ class UploadCompletionResult:
     status: str
     validation_result: ValidationResult | None
     promotion_result: UploadPromotionResult | None
+    bronze_upload_result: BronzeUploadResult | None
 
     @property
     def accepted(self) -> bool:
@@ -131,6 +142,7 @@ class UploadSessionRepository(Protocol):
         *,
         upload_session: UploadSession,
         promotion_result: UploadPromotionResult,
+        bronze_upload_result: BronzeUploadResult,
         validation_result: ValidationResult,
         accepted_at: datetime,
     ) -> None:
@@ -173,21 +185,19 @@ class SqlAlchemyUploadSessionRepository:
         *,
         upload_session: UploadSession,
         promotion_result: UploadPromotionResult,
+        bronze_upload_result: BronzeUploadResult,
         validation_result: ValidationResult,
         accepted_at: datetime,
     ) -> None:
-        storage_bucket = settings.minio_bucket_bronze
-        storage_prefix = f"eeg/{promotion_result.experiment_id}/"
-
         experiment = Experiment(
             experiment_id=promotion_result.experiment_id,
             # Пока display_name не хранится в upload_sessions. На первом стенде
             # используем experiment_id, чтобы не расширять DB-схему в API-ветке.
             display_name=promotion_result.experiment_id,
             status="accepted",
-            storage_bucket=storage_bucket,
-            storage_prefix=storage_prefix,
-            source_path=str(promotion_result.source_dir),
+            storage_bucket=bronze_upload_result.bucket,
+            storage_prefix=bronze_upload_result.storage_prefix,
+            source_path=None,
             validation_report_path=str(promotion_result.validation_report_path),
             metadata_json=validation_result.metadata,
             uploaded_at=upload_session.created_at,
@@ -195,14 +205,14 @@ class SqlAlchemyUploadSessionRepository:
         )
         self._db.add(experiment)
 
-        for source_file in promotion_result.source_files:
+        for source_file in bronze_upload_result.source_files:
             self._db.add(
                 SourceFile(
                     experiment_id=promotion_result.experiment_id,
                     name=source_file.name,
                     relative_path=source_file.relative_path,
-                    bucket=storage_bucket,
-                    object_key=f"{storage_prefix}{source_file.relative_path}",
+                    bucket=source_file.bucket,
+                    object_key=source_file.object_key,
                     size_bytes=source_file.size_bytes,
                     sha256=source_file.sha256,
                 )
@@ -249,12 +259,16 @@ class UploadSessionService:
         upload_tmp_root: str | Path,
         experiments_root: str | Path,
         ttl_hours: int,
+        bronze_storage: BronzeObjectStorage | None = None,
         now: datetime | None = None,
     ) -> None:
         self._repository = repository
         self._upload_tmp_root = Path(upload_tmp_root)
         self._experiments_root = Path(experiments_root)
         self._ttl_hours = ttl_hours
+        self._bronze_storage = bronze_storage or NoopBronzeObjectStorage(
+            bucket=settings.minio_bucket_bronze
+        )
         self._now = now
 
     def create_session(
@@ -374,6 +388,7 @@ class UploadSessionService:
                 status=upload_session.status,
                 validation_result=None,
                 promotion_result=None,
+                bronze_upload_result=None,
             )
 
         if upload_session.status != "uploading":
@@ -422,6 +437,7 @@ class UploadSessionService:
                 status=upload_session.status,
                 validation_result=validation_result,
                 promotion_result=None,
+                bronze_upload_result=None,
             )
 
         try:
@@ -432,10 +448,20 @@ class UploadSessionService:
         except UploadPromotionError as exc:
             raise UploadSessionStateConflictError(str(exc)) from exc
 
+        try:
+            bronze_upload_result = self._bronze_storage.upload_source_package(
+                experiment_id=promotion_result.experiment_id,
+                source_dir=promotion_result.source_dir,
+                source_files=promotion_result.source_files,
+            )
+        except BronzeStorageError as exc:
+            raise UploadObjectStorageUnavailableError(str(exc)) from exc
+
         upload_session.status = "accepted"
         self._repository.record_accepted_experiment(
             upload_session=upload_session,
             promotion_result=promotion_result,
+            bronze_upload_result=bronze_upload_result,
             validation_result=validation_result,
             accepted_at=now,
         )
@@ -447,6 +473,7 @@ class UploadSessionService:
             status=upload_session.status,
             validation_result=validation_result,
             promotion_result=promotion_result,
+            bronze_upload_result=bronze_upload_result,
         )
 
     def _get_existing_session(self, upload_session_id: str) -> UploadSession:

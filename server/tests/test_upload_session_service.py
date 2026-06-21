@@ -11,7 +11,12 @@ from uuid import uuid4
 import pytest
 
 from app.core.config import settings
-from app.db.models import Experiment, ExperimentEvent, PipelineRun, UploadSession
+from app.db.models import Experiment, ExperimentEvent, PipelineRun, SourceFile, UploadSession
+from app.features.upload.bronze_storage import (
+    BronzeStorageError,
+    BronzeUploadResult,
+    build_bronze_upload_result,
+)
 from app.features.upload.file_inventory import SourceFileInfo
 from app.features.upload.promotion import UploadPromotionResult
 from app.features.upload.session_service import (
@@ -19,6 +24,7 @@ from app.features.upload.session_service import (
     PIPELINE_RUN_STATUS_QUEUED,
     PRIMARY_PIPELINE_TRIGGER_TYPE,
     SqlAlchemyUploadSessionRepository,
+    UploadObjectStorageUnavailableError,
     UploadSessionAlreadyExistsError,
     UploadSessionIncompleteError,
     UploadSessionNotFoundError,
@@ -56,7 +62,7 @@ class FakeUploadSessionRepository:
         self.experiment_events: list[ExperimentEvent] = []
         self.pipeline_runs: list[PipelineRun] = []
         self.upload_sessions: dict[str, UploadSession] = {}
-        self.source_files: list[object] = []
+        self.source_files: list[SourceFile] = []
         self.commits = 0
 
     def has_registered_experiment(self, experiment_id: str) -> bool:
@@ -82,6 +88,7 @@ class FakeUploadSessionRepository:
         *,
         upload_session: UploadSession,
         promotion_result: UploadPromotionResult,
+        bronze_upload_result: BronzeUploadResult,
         validation_result: ValidationResult,
         accepted_at: datetime,
     ) -> None:
@@ -90,14 +97,27 @@ class FakeUploadSessionRepository:
                 experiment_id=promotion_result.experiment_id,
                 display_name=promotion_result.experiment_id,
                 status="accepted",
-                source_path=str(promotion_result.source_dir),
+                storage_bucket=bronze_upload_result.bucket,
+                storage_prefix=bronze_upload_result.storage_prefix,
+                source_path=None,
                 validation_report_path=str(promotion_result.validation_report_path),
                 metadata_json=validation_result.metadata,
                 uploaded_at=upload_session.created_at,
                 accepted_at=accepted_at,
             )
         )
-        self.source_files.extend(promotion_result.source_files)
+        self.source_files.extend(
+            SourceFile(
+                experiment_id=promotion_result.experiment_id,
+                name=source_file.name,
+                relative_path=source_file.relative_path,
+                bucket=source_file.bucket,
+                object_key=source_file.object_key,
+                size_bytes=source_file.size_bytes,
+                sha256=source_file.sha256,
+            )
+            for source_file in bronze_upload_result.source_files
+        )
         primary_pipeline_run_id = generate_ulid(now=accepted_at)
         self.pipeline_runs.append(
             PipelineRun(
@@ -137,10 +157,46 @@ class FakeSqlAlchemySession:
         self.added.append(item)
 
 
+class RecordingBronzeObjectStorage:
+    """Запоминает факт upload в bronze storage без сетевого MinIO."""
+
+    def __init__(self, *, bucket: str = "test-bronze") -> None:
+        self.bucket = bucket
+        self.calls: list[tuple[str, Path, tuple[SourceFileInfo, ...]]] = []
+
+    def upload_source_package(
+        self,
+        *,
+        experiment_id: str,
+        source_dir: Path,
+        source_files: tuple[SourceFileInfo, ...],
+    ) -> BronzeUploadResult:
+        self.calls.append((experiment_id, source_dir, source_files))
+        return build_bronze_upload_result(
+            experiment_id=experiment_id,
+            bucket=self.bucket,
+            source_files=source_files,
+        )
+
+
+class FailingBronzeObjectStorage:
+    """Имитирует недоступный MinIO во время complete upload."""
+
+    def upload_source_package(
+        self,
+        *,
+        experiment_id: str,
+        source_dir: Path,
+        source_files: tuple[SourceFileInfo, ...],
+    ) -> BronzeUploadResult:
+        raise BronzeStorageError("minio is unavailable")
+
+
 def _service(
     repository: FakeUploadSessionRepository,
     upload_tmp_root: Path,
     *,
+    bronze_storage: RecordingBronzeObjectStorage | FailingBronzeObjectStorage | None = None,
     now: datetime = FIXED_NOW,
 ) -> UploadSessionService:
     return UploadSessionService(
@@ -148,6 +204,7 @@ def _service(
         upload_tmp_root=upload_tmp_root,
         experiments_root=upload_tmp_root / "experiments",
         ttl_hours=24,
+        bronze_storage=bronze_storage,
         now=now,
     )
 
@@ -423,7 +480,8 @@ def test_complete_session_accepts_valid_uploaded_package(workspace_tmp_path: Pat
     """Complete валидирует пакет, переносит его в permanent storage и пишет accepted."""
 
     repository = FakeUploadSessionRepository()
-    service = _service(repository, workspace_tmp_path)
+    bronze_storage = RecordingBronzeObjectStorage()
+    service = _service(repository, workspace_tmp_path, bronze_storage=bronze_storage)
     created = service.create_session(experiment_id="exp_01")
     _write_valid_uploaded_package(service, created.upload_session_id)
 
@@ -436,7 +494,18 @@ def test_complete_session_accepts_valid_uploaded_package(workspace_tmp_path: Pat
     assert (permanent_source / "experiment.json").is_file()
     assert repository.upload_sessions[created.upload_session_id].status == "accepted"
     assert repository.experiments[0].experiment_id == "exp_01"
+    assert repository.experiments[0].storage_bucket == "test-bronze"
+    assert repository.experiments[0].storage_prefix == "eeg/exp_01/"
+    assert repository.experiments[0].source_path is None
     assert len(repository.source_files) == 2
+    assert {source_file.object_key for source_file in repository.source_files} == {
+        "eeg/exp_01/experiment.json",
+        "eeg/exp_01/signal.bin",
+    }
+    assert result.bronze_upload_result is not None
+    assert result.bronze_upload_result.bucket == "test-bronze"
+    assert len(bronze_storage.calls) == 1
+    assert bronze_storage.calls[0][0] == "exp_01"
     assert len(repository.pipeline_runs) == 1
     assert repository.pipeline_runs[0].experiment_id == "exp_01"
     assert repository.pipeline_runs[0].status == PIPELINE_RUN_STATUS_QUEUED
@@ -480,6 +549,18 @@ def test_sqlalchemy_repository_records_primary_pipeline_run() -> None:
                 ),
             ),
         ),
+        bronze_upload_result=build_bronze_upload_result(
+            experiment_id="exp_01",
+            bucket="test-bronze",
+            source_files=(
+                SourceFileInfo(
+                    name="signal.bin",
+                    relative_path="signal.bin",
+                    size_bytes=4000,
+                    sha256="0" * 64,
+                ),
+            ),
+        ),
         validation_result=ValidationResult(
             status="accepted",
             experiment_id="exp_01",
@@ -493,7 +574,13 @@ def test_sqlalchemy_repository_records_primary_pipeline_run() -> None:
 
     pipeline_runs = [item for item in fake_db.added if isinstance(item, PipelineRun)]
     events = [item for item in fake_db.added if isinstance(item, ExperimentEvent)]
+    experiments = [item for item in fake_db.added if isinstance(item, Experiment)]
+    source_files = [item for item in fake_db.added if isinstance(item, SourceFile)]
 
+    assert experiments[0].storage_bucket == "test-bronze"
+    assert experiments[0].storage_prefix == "eeg/exp_01/"
+    assert experiments[0].source_path is None
+    assert source_files[0].object_key == "eeg/exp_01/signal.bin"
     assert len(pipeline_runs) == 1
     assert pipeline_runs[0].experiment_id == "exp_01"
     assert pipeline_runs[0].status == PIPELINE_RUN_STATUS_QUEUED
@@ -524,6 +611,29 @@ def test_complete_session_writes_failed_report_for_invalid_package(
     assert report_path.is_file()
     assert repository.upload_sessions[created.upload_session_id].status == "failed"
     assert repository.experiments == []
+
+
+def test_complete_session_does_not_accept_when_bronze_storage_fails(
+    workspace_tmp_path: Path,
+) -> None:
+    """Если MinIO недоступен, accepted experiment и pipeline run не создаются."""
+
+    repository = FakeUploadSessionRepository()
+    service = _service(
+        repository,
+        workspace_tmp_path,
+        bronze_storage=FailingBronzeObjectStorage(),
+    )
+    created = service.create_session(experiment_id="exp_01")
+    _write_valid_uploaded_package(service, created.upload_session_id)
+
+    with pytest.raises(UploadObjectStorageUnavailableError):
+        service.complete_session(created.upload_session_id)
+
+    assert repository.upload_sessions[created.upload_session_id].status == "uploading"
+    assert repository.experiments == []
+    assert repository.source_files == []
+    assert repository.pipeline_runs == []
 
 
 def test_complete_session_rejects_missing_required_files(workspace_tmp_path: Path) -> None:

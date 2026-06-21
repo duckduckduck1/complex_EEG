@@ -26,6 +26,7 @@ from app.features.upload.session_service import (
     ExperimentAlreadyRegisteredError,
     UploadCompletionResult,
     UploadFileTarget,
+    UploadObjectStorageUnavailableError,
     UploadSessionAlreadyExistsError,
     UploadSessionIncompleteError,
     UploadSessionNotFoundError,
@@ -35,6 +36,7 @@ from app.features.upload.session_service import (
     UploadSessionView,
     SqlAlchemyUploadSessionRepository,
 )
+from app.features.upload.bronze_storage import MinioBronzeObjectStorage
 
 
 router = APIRouter(prefix="/api/v1/uploads", tags=["uploads"])
@@ -105,6 +107,7 @@ def get_upload_session_service(
         upload_tmp_root=settings.upload_tmp_dir,
         experiments_root=settings.experiments_dir,
         ttl_hours=settings.upload_session_ttl_hours,
+        bronze_storage=MinioBronzeObjectStorage.from_settings(settings),
     )
 
 
@@ -241,6 +244,14 @@ def complete_upload_session(
             status_code=status.HTTP_409_CONFLICT,
             detail={
                 "code": "upload.incomplete",
+                "message": str(exc),
+            },
+        ) from exc
+    except UploadObjectStorageUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "object_storage.unavailable",
                 "message": str(exc),
             },
         ) from exc
