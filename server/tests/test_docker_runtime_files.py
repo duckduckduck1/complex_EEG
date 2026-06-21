@@ -37,6 +37,22 @@ def test_server_dockerfile_installs_app_package() -> None:
     assert 'CMD ["python", "-m", "uvicorn"' in dockerfile
 
 
+def test_pipeline_worker_compose_service_runs_real_worker() -> None:
+    """pipeline-worker service должен запускать CLI worker, а не placeholder sleep."""
+
+    compose = (REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    pipeline_worker_block = compose.split("  pipeline-worker:", maxsplit=1)[1].split(
+        "  prometheus:",
+        maxsplit=1,
+    )[0]
+
+    assert "pipeline-worker:" in compose
+    assert 'command: ["complex-eeg", "pipeline-worker", "run"]' in compose
+    assert "PIPELINE_POLL_INTERVAL_SECONDS" in compose
+    assert "PIPELINE_STUCK_HEARTBEAT_MINUTES" in compose
+    assert 'command: ["sh", "-c", "while true; do sleep 3600; done"]' not in pipeline_worker_block
+
+
 def test_nginx_preserves_api_prefix() -> None:
     """Nginx не должен срезать `/api` перед проксированием в FastAPI."""
 
