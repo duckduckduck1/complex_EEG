@@ -14,6 +14,8 @@ def test_schema_sql_declares_core_tables() -> None:
         "users",
         "experiments",
         "upload_sessions",
+        "upload_storage_events",
+        "upload_orphan_objects",
         "experiment_events",
         "source_files",
         "pipeline_runs",
@@ -31,6 +33,10 @@ def test_schema_sql_declares_duplicate_protection() -> None:
     assert "storage_bucket VARCHAR(63)" in sql
     assert "bucket VARCHAR(63) NOT NULL" in sql
     assert "object_key TEXT NOT NULL" in sql
+    assert "CREATE TABLE upload_storage_events" in sql
+    assert "CREATE TABLE upload_orphan_objects" in sql
+    assert "ix_upload_storage_events_upload_session_id_created_at" in sql
+    assert "uq_upload_sessions_one_active_per_experiment" in sql
 
 
 def test_compose_mounts_db_init_scripts() -> None:

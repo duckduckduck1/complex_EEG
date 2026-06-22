@@ -9,17 +9,28 @@ repository-объект с маленьким набором методов. П�
 
 from __future__ import annotations
 
+import logging
 import secrets
+import shutil
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Protocol
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.db.models import Experiment, ExperimentEvent, PipelineRun, SourceFile, UploadSession
+from app.db.models import (
+    Experiment,
+    ExperimentEvent,
+    PipelineRun,
+    SourceFile,
+    UploadSession,
+    UploadOrphanObject,
+    UploadStorageEvent,
+)
 from app.features.upload.bronze_storage import (
     BronzeObjectStorage,
     BronzeStorageError,
@@ -29,6 +40,7 @@ from app.features.upload.bronze_storage import (
 from app.features.upload.promotion import (
     UploadPromotionError,
     UploadPromotionResult,
+    build_experiment_dir,
     promote_staged_upload,
 )
 from app.features.upload.staging import UploadStagingResult, build_upload_session_dir
@@ -50,6 +62,8 @@ UPLOAD_SOURCE_DIR_NAME = "source"
 VALIDATION_REPORT_FILE_NAME = "validation_report.json"
 PRIMARY_PIPELINE_TRIGGER_TYPE = "auto_primary"
 PIPELINE_RUN_STATUS_QUEUED = "queued"
+
+logger = logging.getLogger(__name__)
 
 
 class UploadSessionServiceError(ValueError):
@@ -82,6 +96,14 @@ class UploadSessionIncompleteError(UploadSessionServiceError):
 
 class UploadObjectStorageUnavailableError(UploadSessionServiceError):
     """Accepted package не удалось сохранить в bronze object storage."""
+
+
+class UploadDatabaseCommitError(UploadSessionServiceError):
+    """PostgreSQL transaction не смогла зафиксировать accepted upload."""
+
+
+class UploadLocalCleanupError(UploadSessionServiceError):
+    """Сервер не смог удалить локальную source-копию после accepted commit."""
 
 
 @dataclass(frozen=True)
@@ -134,6 +156,9 @@ class UploadSessionRepository(Protocol):
     def get_by_id(self, upload_session_id: str) -> UploadSession | None:
         """Возвращает upload session по ULID."""
 
+    def get_by_id_for_update(self, upload_session_id: str) -> UploadSession | None:
+        """Возвращает upload session и блокирует строку до commit/rollback."""
+
     def add(self, upload_session: UploadSession) -> None:
         """Добавляет новую upload session в unit of work."""
 
@@ -148,8 +173,24 @@ class UploadSessionRepository(Protocol):
     ) -> None:
         """Сохраняет accepted experiment и source file inventory."""
 
+    def record_orphan_objects(
+        self,
+        *,
+        upload_session: UploadSession,
+        bronze_upload_result: BronzeUploadResult,
+        reason: str,
+        details: dict[str, object],
+    ) -> None:
+        """Логирует MinIO objects, оставшиеся после failed accepted transaction."""
+
+    def refresh_upload_session(self, upload_session: UploadSession) -> None:
+        """Синхронизирует ORM object с PostgreSQL после rollback."""
+
     def commit(self) -> None:
         """Фиксирует изменения."""
+
+    def rollback(self) -> None:
+        """Откатывает текущую unit of work после ошибки commit."""
 
 
 class SqlAlchemyUploadSessionRepository:
@@ -176,6 +217,14 @@ class SqlAlchemyUploadSessionRepository:
 
     def get_by_id(self, upload_session_id: str) -> UploadSession | None:
         return self._db.get(UploadSession, upload_session_id)
+
+    def get_by_id_for_update(self, upload_session_id: str) -> UploadSession | None:
+        statement = (
+            select(UploadSession)
+            .where(UploadSession.id == upload_session_id)
+            .with_for_update()
+        )
+        return self._db.execute(statement).scalars().first()
 
     def add(self, upload_session: UploadSession) -> None:
         self._db.add(upload_session)
@@ -217,6 +266,23 @@ class SqlAlchemyUploadSessionRepository:
                     sha256=source_file.sha256,
                 )
             )
+            self._db.add(
+                UploadStorageEvent(
+                    upload_session_id=upload_session.id,
+                    experiment_id=promotion_result.experiment_id,
+                    event_type="minio_object_uploaded",
+                    status="succeeded",
+                    bucket=source_file.bucket,
+                    storage_prefix=bronze_upload_result.storage_prefix,
+                    object_key=source_file.object_key,
+                    message="Source file uploaded and verified in MinIO bronze",
+                    details={
+                        "relative_path": source_file.relative_path,
+                        "size_bytes": source_file.size_bytes,
+                        "sha256": source_file.sha256,
+                    },
+                )
+            )
 
         # Первичный run создаётся вместе с accepted experiment: так worker не потеряет задачу,
         # если API-процесс упадёт сразу после commit.
@@ -244,9 +310,54 @@ class SqlAlchemyUploadSessionRepository:
                 },
             )
         )
+        self._db.add(
+            UploadStorageEvent(
+                upload_session_id=upload_session.id,
+                experiment_id=promotion_result.experiment_id,
+                event_type="source_package_accepted",
+                status="succeeded",
+                bucket=bronze_upload_result.bucket,
+                storage_prefix=bronze_upload_result.storage_prefix,
+                message="Accepted source package metadata committed to PostgreSQL",
+                details={
+                    "source_file_count": len(bronze_upload_result.source_files),
+                    "validation_report_path": str(promotion_result.validation_report_path),
+                },
+            )
+        )
+
+    def record_orphan_objects(
+        self,
+        *,
+        upload_session: UploadSession,
+        bronze_upload_result: BronzeUploadResult,
+        reason: str,
+        details: dict[str, object],
+    ) -> None:
+        for source_file in bronze_upload_result.source_files:
+            self._db.add(
+                UploadOrphanObject(
+                    upload_session_id=upload_session.id,
+                    experiment_id=upload_session.experiment_id,
+                    bucket=source_file.bucket,
+                    storage_prefix=bronze_upload_result.storage_prefix,
+                    object_key=source_file.object_key,
+                    relative_path=source_file.relative_path,
+                    size_bytes=source_file.size_bytes,
+                    sha256=source_file.sha256,
+                    reason=reason,
+                    details=details,
+                )
+            )
+
+    def refresh_upload_session(self, upload_session: UploadSession) -> None:
+        self._db.refresh(upload_session)
 
     def commit(self) -> None:
         self._db.commit()
+
+    def rollback(self) -> None:
+        self._db.rollback()
 
 
 class UploadSessionService:
@@ -309,7 +420,14 @@ class UploadSessionService:
         )
 
         self._repository.add(upload_session)
-        self._repository.commit()
+        try:
+            self._repository.commit()
+        except IntegrityError as exc:
+            self._repository.rollback()
+            shutil.rmtree(session_dir, ignore_errors=True)
+            raise ActiveUploadSessionAlreadyExistsError(
+                "active upload session already exists for experiment_id"
+            ) from exc
 
         return _to_view(upload_session)
 
@@ -378,7 +496,7 @@ class UploadSessionService:
     def complete_session(self, upload_session_id: str) -> UploadCompletionResult:
         """Завершает upload, синхронно валидирует пакет и делает promotion."""
 
-        upload_session = self._get_existing_session(upload_session_id)
+        upload_session = self._get_existing_session_for_complete(upload_session_id)
         self._expire_if_needed(upload_session)
 
         if upload_session.status == "accepted":
@@ -440,6 +558,17 @@ class UploadSessionService:
                 bronze_upload_result=None,
             )
 
+        if self._repository.has_registered_experiment(upload_session.experiment_id):
+            raise ExperimentAlreadyRegisteredError("experiment_id is already registered")
+
+        # Удаляем остаток промо-папки от прошлой неудачной попытки. Раньше это
+        # делалось с ignore_errors=True, поэтому реальный сбой удаления скрывался,
+        # а retry падал на promotion с невнятным "experiment directory already
+        # exists". Теперь, если папку не удалить, поднимаем понятную ошибку.
+        _ensure_experiment_dir_absent(
+            build_experiment_dir(self._experiments_root, upload_session.experiment_id)
+        )
+
         try:
             promotion_result = promote_staged_upload(
                 staging_result=staging_result,
@@ -455,6 +584,11 @@ class UploadSessionService:
                 source_files=promotion_result.source_files,
             )
         except BronzeStorageError as exc:
+            _remove_uncommitted_experiment_dir(promotion_result.experiment_dir)
+            self._record_orphan_objects_after_partial_bronze_upload(
+                upload_session=upload_session,
+                error=exc,
+            )
             raise UploadObjectStorageUnavailableError(str(exc)) from exc
 
         upload_session.status = "accepted"
@@ -465,7 +599,34 @@ class UploadSessionService:
             validation_result=validation_result,
             accepted_at=now,
         )
-        self._repository.commit()
+        try:
+            self._repository.commit()
+        except Exception as exc:
+            self._repository.rollback()
+            self._refresh_after_failed_accept(upload_session)
+            self._safely_record_orphan_objects(
+                upload_session=upload_session,
+                bronze_upload_result=bronze_upload_result,
+                reason="postgres_commit_failed",
+                details={
+                    "error_type": type(exc).__name__,
+                    "error_message": str(exc),
+                },
+            )
+            raise UploadDatabaseCommitError(
+                "failed to commit accepted upload metadata transaction"
+            ) from exc
+
+        # Эксперимент уже принят (objects в MinIO, pipeline run создан, commit
+        # прошёл). Неудача удаления локальной копии не должна превращать
+        # успешную приёмку в 500 — логируем и оставляем папку для cleanup.
+        if not _remove_permanent_source_dir(promotion_result.source_dir):
+            logger.warning(
+                "accepted upload %s: failed to remove local source copy %s; "
+                "experiment is accepted, leaving local copy for later cleanup",
+                upload_session.id,
+                promotion_result.source_dir,
+            )
 
         return UploadCompletionResult(
             upload_session_id=upload_session.id,
@@ -478,6 +639,12 @@ class UploadSessionService:
 
     def _get_existing_session(self, upload_session_id: str) -> UploadSession:
         upload_session = self._repository.get_by_id(upload_session_id)
+        if upload_session is None:
+            raise UploadSessionNotFoundError("upload session was not found")
+        return upload_session
+
+    def _get_existing_session_for_complete(self, upload_session_id: str) -> UploadSession:
+        upload_session = self._repository.get_by_id_for_update(upload_session_id)
         if upload_session is None:
             raise UploadSessionNotFoundError("upload session was not found")
         return upload_session
@@ -505,6 +672,59 @@ class UploadSessionService:
 
     def _current_time(self) -> datetime:
         return self._now or datetime.now(UTC)
+
+    def _refresh_after_failed_accept(self, upload_session: UploadSession) -> None:
+        try:
+            self._repository.refresh_upload_session(upload_session)
+        except Exception:
+            # After rollback, retry semantics depend on the database state, not
+            # this in-memory object. Avoid masking the original commit failure.
+            return
+
+    def _record_orphan_objects_after_partial_bronze_upload(
+        self,
+        *,
+        upload_session: UploadSession,
+        error: BronzeStorageError,
+    ) -> None:
+        """Учитывает объекты, успевшие попасть в MinIO до сбоя bronze upload.
+
+        Без этого частично загруженные объекты остаются в bucket и нигде не
+        зафиксированы: cleanup-worker про них не узнает.
+        """
+
+        partial_result = error.uploaded
+        if partial_result is None or not partial_result.source_files:
+            return
+
+        self._safely_record_orphan_objects(
+            upload_session=upload_session,
+            bronze_upload_result=partial_result,
+            reason="bronze_upload_partial_failure",
+            details={
+                "error_type": type(error).__name__,
+                "error_message": str(error),
+            },
+        )
+
+    def _safely_record_orphan_objects(
+        self,
+        *,
+        upload_session: UploadSession,
+        bronze_upload_result: BronzeUploadResult,
+        reason: str,
+        details: dict[str, object],
+    ) -> None:
+        try:
+            self._repository.record_orphan_objects(
+                upload_session=upload_session,
+                bronze_upload_result=bronze_upload_result,
+                reason=reason,
+                details=details,
+            )
+            self._repository.commit()
+        except Exception:
+            self._repository.rollback()
 
     @staticmethod
     def _validate_experiment_id(experiment_id: str) -> None:
@@ -580,6 +800,62 @@ def _has_unfinished_part_files(source_dir: Path) -> bool:
             return True
 
     return False
+
+
+def _remove_permanent_source_dir(source_dir: Path) -> bool:
+    """Best-effort удаление локальной source-копии после MinIO upload и DB commit.
+
+    Возвращает True, если копии больше нет. На этом этапе эксперимент уже принят,
+    поэтому сбой удаления не должен ронять ответ — вызывающий код его логирует.
+    """
+
+    try:
+        shutil.rmtree(source_dir)
+        return True
+    except FileNotFoundError:
+        return True
+    except OSError:
+        return False
+
+
+def _ensure_experiment_dir_absent(experiment_dir: Path) -> None:
+    """Гарантирует отсутствие промо-папки перед promotion.
+
+    Удаляет остаток от прошлой неудачной попытки. Если папку реально не удалить,
+    поднимает понятную ошибку вместо того, чтобы дать promotion упасть позже с
+    невнятным "experiment directory already exists".
+    """
+
+    try:
+        shutil.rmtree(experiment_dir)
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        raise UploadLocalCleanupError(
+            f"stale local experiment directory could not be removed before retry: {experiment_dir}"
+        ) from exc
+
+    if experiment_dir.exists():
+        raise UploadLocalCleanupError(
+            f"stale local experiment directory still present after cleanup: {experiment_dir}"
+        )
+
+
+def _remove_uncommitted_experiment_dir(experiment_dir: Path) -> None:
+    """Best-effort удаление local promotion, если upload не дошёл до accepted commit.
+
+    Сбой удаления здесь не критичен: следующая попытка пройдёт через
+    `_ensure_experiment_dir_absent`, который при реальной проблеме поднимет ошибку.
+    """
+
+    try:
+        shutil.rmtree(experiment_dir)
+    except FileNotFoundError:
+        return
+    except OSError:
+        logger.warning(
+            "failed to remove uncommitted local experiment directory: %s", experiment_dir
+        )
 
 
 def _files_from_json(value: dict[str, object] | None) -> list[str]:

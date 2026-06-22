@@ -4,7 +4,7 @@
 """
 
 from app.db.base import Base
-from app.db.models import Experiment, SourceFile, UploadSession
+from app.db.models import Experiment, SourceFile, UploadOrphanObject, UploadSession, UploadStorageEvent
 
 
 def test_all_expected_tables_are_registered() -> None:
@@ -13,6 +13,8 @@ def test_all_expected_tables_are_registered() -> None:
     assert set(Base.metadata.tables) == {
         "experiments",
         "upload_sessions",
+        "upload_storage_events",
+        "upload_orphan_objects",
         "experiment_events",
         "source_files",
         "pipeline_runs",
@@ -64,6 +66,32 @@ def test_upload_session_model_uses_ulid_primary_key() -> None:
     assert columns.uploaded_files.nullable is False
 
 
+def test_upload_storage_event_model_logs_minio_commit_boundary() -> None:
+    """UploadStorageEvent фиксирует связь upload session с MinIO object keys."""
+
+    columns = UploadStorageEvent.__table__.c
+
+    assert columns.upload_session_id.nullable is False
+    assert columns.experiment_id.nullable is False
+    assert columns.event_type.nullable is False
+    assert columns.status.nullable is False
+    assert columns.bucket.nullable is True
+    assert columns.object_key.nullable is True
+
+
+def test_upload_orphan_object_model_tracks_failed_commit_objects() -> None:
+    """UploadOrphanObject хранит MinIO objects, оставшиеся после failed DB commit."""
+
+    columns = UploadOrphanObject.__table__.c
+
+    assert columns.upload_session_id.nullable is False
+    assert columns.experiment_id.nullable is False
+    assert columns.bucket.nullable is False
+    assert columns.object_key.nullable is False
+    assert columns.reason.nullable is False
+    assert columns.status.nullable is False
+
+
 def test_required_indexes_exist() -> None:
     """Минимальные индексы из storage.md должны быть объявлены в моделях."""
 
@@ -75,5 +103,8 @@ def test_required_indexes_exist() -> None:
 
     assert "ix_experiments_status" in index_names
     assert "ix_upload_sessions_status" in index_names
+    assert "uq_upload_sessions_one_active_per_experiment" in index_names
+    assert "ix_upload_storage_events_upload_session_id_created_at" in index_names
+    assert "ix_upload_orphan_objects_status_created_at" in index_names
     assert "ix_pipeline_runs_status" in index_names
     assert "ix_audit_events_created_at" in index_names

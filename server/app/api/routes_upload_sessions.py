@@ -26,6 +26,7 @@ from app.features.upload.session_service import (
     ExperimentAlreadyRegisteredError,
     UploadCompletionResult,
     UploadFileTarget,
+    UploadLocalCleanupError,
     UploadObjectStorageUnavailableError,
     UploadSessionAlreadyExistsError,
     UploadSessionIncompleteError,
@@ -252,6 +253,16 @@ def complete_upload_session(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={
                 "code": "object_storage.unavailable",
+                "message": str(exc),
+            },
+        ) from exc
+    except UploadLocalCleanupError as exc:
+        # Остаток локальной промо-папки от прошлой неудачной попытки не дали
+        # удалить: приёмка ещё не состоялась, нужна ручная/async очистка стенда.
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "code": "upload.local_storage_cleanup_failed",
                 "message": str(exc),
             },
         ) from exc

@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Index, String, Text, UniqueConstraint, func
+from sqlalchemy import BigInteger, Boolean, DateTime, Index, String, Text, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -74,6 +74,12 @@ class UploadSession(Base):
     __table_args__ = (
         Index("ix_upload_sessions_experiment_id", "experiment_id"),
         Index("ix_upload_sessions_status", "status"),
+        Index(
+            "uq_upload_sessions_one_active_per_experiment",
+            "experiment_id",
+            unique=True,
+            postgresql_where=text("status IN ('created', 'uploading', 'completed', 'validating')"),
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(26), primary_key=True)
@@ -88,6 +94,69 @@ class UploadSession(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class UploadStorageEvent(Base):
+    """Журнал связки upload session с object storage.
+
+    Записи создаются в той же PostgreSQL transaction, что и accepted experiment:
+    если transaction не закоммитилась, сервер не считает MinIO upload принятым.
+    """
+
+    __tablename__ = "upload_storage_events"
+    __table_args__ = (
+        Index(
+            "ix_upload_storage_events_upload_session_id_created_at",
+            "upload_session_id",
+            "created_at",
+        ),
+        Index(
+            "ix_upload_storage_events_experiment_id_created_at",
+            "experiment_id",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    upload_session_id: Mapped[str] = mapped_column(String(26), nullable=False)
+    experiment_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(64), nullable=False)
+    bucket: Mapped[str | None] = mapped_column(String(63), nullable=True)
+    storage_prefix: Mapped[str | None] = mapped_column(Text, nullable=True)
+    object_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    details: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class UploadOrphanObject(Base):
+    """MinIO object, загруженный до failed PostgreSQL commit.
+
+    Эти записи создаются best-effort после rollback основной accepted transaction
+    и служат входом для cleanup/manual audit.
+    """
+
+    __tablename__ = "upload_orphan_objects"
+    __table_args__ = (
+        Index("ix_upload_orphan_objects_status_created_at", "status", "created_at"),
+        Index("ix_upload_orphan_objects_experiment_id_created_at", "experiment_id", "created_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    upload_session_id: Mapped[str] = mapped_column(String(26), nullable=False)
+    experiment_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    bucket: Mapped[str] = mapped_column(String(63), nullable=False)
+    storage_prefix: Mapped[str] = mapped_column(Text, nullable=False)
+    object_key: Mapped[str] = mapped_column(Text, nullable=False)
+    relative_path: Mapped[str] = mapped_column(Text, nullable=False)
+    size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reason: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(64), server_default="pending_cleanup", nullable=False)
+    details: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class ExperimentEvent(Base):

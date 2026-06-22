@@ -168,6 +168,14 @@ client_id = web_ui
 - accepted upload загружает source-файлы в MinIO bronze, затем записывает metadata
   в PostgreSQL и ссылки на объекты (`storage_bucket`, `storage_prefix`,
   `source_files.bucket/object_key`);
+- accepted metadata пишется одной PostgreSQL transaction только после успешной
+  загрузки и проверки source-файлов в MinIO bronze;
+- в той же transaction пишутся `upload_storage_events`;
+- `complete` берёт row-level lock на `upload_sessions` через `SELECT ... FOR UPDATE`;
+- две активные upload sessions для одного `experiment_id` дополнительно запрещены
+  partial unique index в PostgreSQL;
+- локальная permanent-копия source-файлов удаляется после успешного PostgreSQL
+  commit; при commit failure она остаётся для разбора;
 - accepted upload создаёт `pipeline_runs(status = queued, trigger_type = auto_primary)`;
 - `display_name` пока не сохраняется, потому что это требует решения DB owner
   по месту хранения: `experiments` или расширение `upload_sessions`;
@@ -223,6 +231,23 @@ Endpoint `complete` запускает validation/promotion только есл�
 В текущей реализации validation выполняется синхронно внутри API процесса.
 Успешный пакет сразу получает `accepted`, неуспешный — `failed` с validation
 report в `upload_tmp`.
+
+Accepted upload считается committed только после того, как:
+
+1. source-файлы загружены в MinIO bronze;
+2. сервер проверил, что MinIO отдаёт загруженные объекты;
+3. одна PostgreSQL transaction с row-level lock записала `upload_sessions`, `experiments`,
+   `source_files`, `upload_storage_events`, `pipeline_runs` и
+   `experiment_events`;
+4. transaction успешно выполнила commit.
+
+Локальная `experiments/{experiment_id}/source/` не является долговременным
+хранилищем. После successful MinIO upload и PostgreSQL commit она удаляется.
+Если PostgreSQL commit падает после успешного MinIO upload, локальная копия
+сохраняется, а MinIO objects записываются best-effort в `upload_orphan_objects`
+как `pending_cleanup`. Повторный `complete` удаляет uncommitted локальную
+`experiments/{experiment_id}/` и заново выполняет promotion/upload/commit из
+`upload_tmp/{upload_session_id}/source`.
 
 Повторный `complete` идемпотентен:
 
