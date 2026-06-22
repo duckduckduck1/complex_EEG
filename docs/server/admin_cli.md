@@ -1,4 +1,4 @@
-# admin_cli.md
+# Admin CLI
 
 ## Статус
 

@@ -1,4 +1,4 @@
-# storage.md
+# Хранение: MinIO bronze и ссылки в PostgreSQL
 
 ## Статус
 
