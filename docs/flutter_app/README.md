@@ -31,7 +31,6 @@ bloc.md               - правила BLoC, события, состояния,
 ble.md                - BLE discovery/connection/data stream
 recording.md          - запись сигнала, буферы, сегменты, ФБМ, качество
 storage.md            - локальное файловое хранилище и индекс экспериментов
-experiment_format.md  - signal.bin, experiment.json, journal.ndjson, app.log
 experiments.md        - список сохранённых экспериментов, просмотр, удаление
 annotation.md         - разметка, справочник меток, доразметка
 visualization.md      - график live/saved сигнала
@@ -41,6 +40,9 @@ recovery.md           - восстановление после краша пр�
 settings.md           - настройки приложения, метаданные, справочники
 testing.md            - тестовая стратегия Flutter-приложения
 ```
+
+Формат пакета эксперимента (`signal.bin`, `experiment.json`, …) вынесен в общий
+контракт: [reference/experiment_package.md](../reference/experiment_package.md).
 
 `server_sync.md` сохраняет старое имя файла, но в MVP не описывает прямую
 сетевую синхронизацию. Реальная feature в коде должна называться
