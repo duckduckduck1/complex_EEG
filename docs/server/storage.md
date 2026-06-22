@@ -1,9 +1,5 @@
 # Хранение: MinIO bronze и ссылки в PostgreSQL
 
-## Статус
-
-Draft.
-
 Документ описывает реализацию хранилища серверной части: PostgreSQL, MinIO,
 локальный staging, SQL init scripts и правила консистентности.
 
