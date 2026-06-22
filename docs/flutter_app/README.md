@@ -1,4 +1,4 @@
-# Flutter app implementation
+# Flutter-приложение оператора
 
 ## Статус
 
