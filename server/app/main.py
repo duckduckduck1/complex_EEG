@@ -4,7 +4,10 @@ Uvicorn будет запускать объект `app` из этого фай�
 uvicorn app.main:app --reload
 """
 
+from pathlib import Path
+
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from app.api.routes_health import router as health_router
 from app.api.routes_upload import router as upload_router
@@ -13,6 +16,7 @@ from app.api.routes_web_artifacts import router as web_artifacts_router
 from app.api.routes_web_auth import router as web_auth_router
 from app.api.routes_web_experiments import router as web_experiments_router
 from app.api.routes_web_pipeline import router as web_pipeline_router
+from app.api.routes_web_ui import router as web_ui_router
 from app.core.config import settings
 from app.core.logging import RequestLoggingMiddleware, configure_logging
 
@@ -32,3 +36,9 @@ app.include_router(web_pipeline_router)
 app.include_router(web_artifacts_router)
 app.include_router(upload_sessions_router)
 app.include_router(upload_router)
+
+# Server-rendered веб-кабинет и его статика. Подключаем после API-роутеров;
+# JSON API остаётся каноническим контрактом, страницы — презентационный слой.
+_STATIC_DIR = Path(__file__).resolve().parent / "web" / "static"
+app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
+app.include_router(web_ui_router)
