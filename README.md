@@ -47,9 +47,11 @@ python -m pytest
 
 ## Документация
 
+- [Карта документации](docs/README.md) — полный индекс.
 - [Продуктовое видение](docs/vision.md)
 - [Архитектурные решения (ADR)](docs/decisions/)
-- Остальные документы — в `docs/` (структура сейчас приводится в порядок).
+- Контракты — в [docs/reference/](docs/reference/); дизайн по компонентам — в
+  `docs/server/`, `docs/flutter_app/`, `docs/infra/`.
 
 ## Команда
 
