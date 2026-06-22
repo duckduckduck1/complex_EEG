@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}{{ experiment_id }} — Лаборатория «Умного сна»{% endblock %}
+{% block content %}
+<p><a href="/experiments">← К списку</a></p>
+
+{% if detail is none %}
+<section class="card">
+  <h1>Эксперимент не найден</h1>
+  <p class="muted">{{ experiment_id }}</p>
+</section>
+{% else %}
+<div class="page-head">
+  <h1>{{ detail.display_name }}</h1>
+  <span class="badge">{{ detail.status }}</span>
+</div>
+<p class="muted">{{ detail.experiment_id }}</p>
+
+<section class="card">
+  <h2>Сведения</h2>
+  <dl>
+    <dt>Загружен</dt>
+    <dd>{{ detail.uploaded_at.strftime('%Y-%m-%d %H:%M') if detail.uploaded_at else '—' }}</dd>
+    <dt>Принят</dt>
+    <dd>{{ detail.accepted_at.strftime('%Y-%m-%d %H:%M') if detail.accepted_at else '—' }}</dd>
+    <dt>Валидация</dt>
+    <dd>{{ detail.validation.status }}</dd>
+  </dl>
+</section>
+
+<section class="card">
+  <h2>Исходные файлы</h2>
+  {% if detail.source_files %}
+  <ul class="files">
+    {% for f in detail.source_files %}
+    <li>{{ f.name }} · {{ f.size_bytes }} Б</li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted">—</p>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

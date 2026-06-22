@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Эксперименты — Лаборатория «Умного сна»{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Эксперименты</h1>
+  <span class="muted">всего: {{ page.total }}</span>
+</div>
+
+{% if page.items %}
+<table class="grid">
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Название</th>
+      <th>Статус</th>
+      <th>Загружен</th>
+      <th>Pipeline</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in page.items %}
+    <tr>
+      <td><a href="/experiments/{{ item.experiment_id }}">{{ item.experiment_id }}</a></td>
+      <td>{{ item.display_name }}</td>
+      <td><span class="badge">{{ item.status }}</span></td>
+      <td>{{ item.uploaded_at.strftime('%Y-%m-%d %H:%M') if item.uploaded_at else '—' }}</td>
+      <td>{{ item.last_pipeline_status or '—' }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted empty">Пока нет экспериментов.</p>
+{% endif %}
+{% endblock %}
