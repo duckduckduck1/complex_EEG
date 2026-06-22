@@ -72,7 +72,7 @@ pytest
 
 ## Модульная структура
 
-Целевая структура server-кода:
+Фактическая структура server-кода (feature-based):
 
 ```text
 server/
@@ -82,50 +82,50 @@ server/
     core/
       config.py
       logging.py
-      security.py
-      errors.py
-    api/
-      deps.py
-      routes_auth.py
-      routes_upload_sessions.py
+    api/                       # тонкие HTTP-роуты
+      deps_auth.py
+      routes_health.py
       routes_upload.py
-      routes_experiments.py
+      routes_upload_sessions.py
       routes_web_auth.py
       routes_web_experiments.py
-      routes_web_artifacts.py
       routes_web_pipeline.py
-      routes_health.py
-    domain/
-      statuses.py
-      errors.py
-      schemas.py
-    services/
-      auth_service.py
-      user_admin_service.py
-      upload_service.py
-      validation_service.py
-      experiment_service.py
-      pipeline_service.py
-      file_storage.py
-    repositories/
-      experiments.py
-      upload_sessions.py
-      events.py
-      pipeline_runs.py
+      routes_web_artifacts.py
     db/
-      session.py
+      base.py
       models.py
-      migrations/
-    workers/
+      session.py
+    features/                  # бизнес-логика по доменам
+      auth.py
+      readiness.py
+      user_admin.py
       pipeline_worker.py
-    tests/
+      web_experiments.py
+      web_pipeline_runs.py
+      web_artifacts.py
+      upload/
+        session_service.py     # + SqlAlchemyUploadSessionRepository
+        orchestration.py
+        promotion.py
+        staging.py
+        archive.py
+        bronze_storage.py
+        file_inventory.py
+        dto.py
+      validation/
+        package_validator.py
+        report_writer.py
+  tests/
+  alembic/
 ```
 
 ### Правило
 
-HTTP handlers не содержат бизнес-логику. Они валидируют вход, вызывают service
-layer и возвращают DTO. Работа с PostgreSQL идёт через repositories. Работа с
-файлами идёт через `file_storage`.
+HTTP-роуты в `api/` не содержат бизнес-логику: валидируют вход, вызывают
+feature-слой и возвращают DTO. Логика живёт в `features/<домен>/`. Доступ к
+PostgreSQL — через ORM-модели (`db/models.py`) и repository-объекты внутри
+features (например, `SqlAlchemyUploadSessionRepository` в `session_service.py`).
+Object storage — через `features/upload/bronze_storage.py`.
 
 ---
 
