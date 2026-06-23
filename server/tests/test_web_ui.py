@@ -16,10 +16,55 @@ from tests.test_auth_service import AUTH_SECRET, FIXED_NOW, FakeAuthRepository, 
 
 
 class _FakeWebExperimentService:
-    """Возвращает пустую страницу экспериментов без обращения к PostgreSQL."""
+    """Возвращает фиксированные данные экспериментов без обращения к PostgreSQL."""
 
     def list_experiments(self, _filters: object) -> object:
         return types.SimpleNamespace(items=[], limit=50, offset=0, total=0)
+
+    def get_experiment_detail(self, experiment_id: str) -> object:
+        return types.SimpleNamespace(
+            experiment_id=experiment_id,
+            display_name=experiment_id,
+            status="accepted",
+            metadata={"animal_id": "mouse_1"},
+            uploaded_at=FIXED_NOW,
+            accepted_at=FIXED_NOW,
+            updated_at=FIXED_NOW,
+            validation=types.SimpleNamespace(status="accepted", error=None),
+            source_files=[
+                types.SimpleNamespace(name="signal.bin", size_bytes=4000, download_allowed=False)
+            ],
+            pipeline_runs=[
+                types.SimpleNamespace(
+                    pipeline_run_id="01RUN",
+                    status="queued",
+                    trigger_type="auto_primary",
+                    pipeline_version="dev",
+                    started_at=None,
+                    finished_at=None,
+                    error_code=None,
+                    error_message=None,
+                    artifacts=[
+                        types.SimpleNamespace(
+                            artifact_id="01ART",
+                            name="report.json",
+                            kind="report",
+                            size_bytes=120,
+                            media_type="application/json",
+                        )
+                    ],
+                )
+            ],
+            events=[
+                types.SimpleNamespace(
+                    event_type="pipeline_primary_queued",
+                    from_status="accepted",
+                    to_status="accepted",
+                    message="Primary pipeline run queued",
+                    created_at=FIXED_NOW,
+                )
+            ],
+        )
 
 
 @pytest.fixture()
@@ -146,3 +191,24 @@ def test_viewer_does_not_see_upload_link(viewer_client: TestClient) -> None:
 
     assert response.status_code == 200
     assert 'href="/uploads/new"' not in response.text
+
+
+def test_detail_page_requires_login(client: TestClient) -> None:
+    response = client.get("/experiments/exp_01", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/login"
+
+
+def test_detail_page_shows_runs_artifacts_and_events(client: TestClient) -> None:
+    _login(client)
+
+    response = client.get("/experiments/exp_01")
+
+    assert response.status_code == 200
+    assert "Обработка" in response.text
+    assert "auto_primary" in response.text
+    assert "/api/v1/web/experiments/exp_01/artifacts/01ART" in response.text
+    assert "report.json" in response.text
+    assert "События" in response.text
+    assert "pipeline_primary_queued" in response.text
