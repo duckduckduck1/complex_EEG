@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
-from app.api.deps_auth import get_auth_service
+from app.api.deps_auth import build_csrf_token, get_auth_service
 from app.api.routes_web_experiments import get_web_experiment_service
 from app.core.config import settings
 from app.features.auth import (
@@ -28,12 +28,19 @@ from app.features.web_experiments import (
     WebExperimentNotFoundError,
     WebExperimentService,
 )
+from app.features.upload.session_service import DEFAULT_UPLOAD_FILES
 
 
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "web" / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 router = APIRouter(tags=["web-ui"], include_in_schema=False)
+UPLOAD_OPERATOR_ROLES = frozenset({"operator", "admin"})
+REQUIRED_UPLOAD_FILES = ("signal.bin", "experiment.json")
+
+
+def _can_upload(user: CurrentUser) -> bool:
+    return user.role in UPLOAD_OPERATOR_ROLES
 
 
 def _current_user_or_none(request: Request, auth_service: AuthService) -> CurrentUser | None:
@@ -140,7 +147,32 @@ def experiments_page(
     return templates.TemplateResponse(
         request,
         "experiments.html",
-        {"user": user, "page": page},
+        {"user": user, "page": page, "can_upload": _can_upload(user)},
+    )
+
+
+@router.get("/uploads/new", response_class=HTMLResponse)
+def upload_page(
+    request: Request,
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+) -> Response:
+    user = _current_user_or_none(request, auth_service)
+    if user is None:
+        return _redirect("/login")
+
+    can_upload = _can_upload(user)
+    session_token = request.cookies.get(settings.session_cookie_name)
+    return templates.TemplateResponse(
+        request,
+        "upload.html",
+        {
+            "user": user,
+            "can_upload": can_upload,
+            "upload_files": sorted(DEFAULT_UPLOAD_FILES),
+            "required_upload_files": REQUIRED_UPLOAD_FILES,
+            "csrf_token": build_csrf_token(session_token) if session_token else "",
+        },
+        status_code=status.HTTP_200_OK if can_upload else status.HTTP_403_FORBIDDEN,
     )
 
 
@@ -161,12 +193,22 @@ def experiment_detail_page(
         return templates.TemplateResponse(
             request,
             "experiment_detail.html",
-            {"user": user, "detail": None, "experiment_id": experiment_id},
+            {
+                "user": user,
+                "detail": None,
+                "experiment_id": experiment_id,
+                "can_upload": _can_upload(user),
+            },
             status_code=status.HTTP_404_NOT_FOUND,
         )
 
     return templates.TemplateResponse(
         request,
         "experiment_detail.html",
-        {"user": user, "detail": detail, "experiment_id": experiment_id},
+        {
+            "user": user,
+            "detail": detail,
+            "experiment_id": experiment_id,
+            "can_upload": _can_upload(user),
+        },
     )

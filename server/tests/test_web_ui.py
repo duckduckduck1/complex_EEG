@@ -24,8 +24,19 @@ class _FakeWebExperimentService:
 
 @pytest.fixture()
 def client() -> Iterator[TestClient]:
+    yield from _client_for_role("operator")
+
+
+@pytest.fixture()
+def viewer_client() -> Iterator[TestClient]:
+    yield from _client_for_role("viewer")
+
+
+def _client_for_role(role: str) -> Iterator[TestClient]:
+    user = _user()
+    user.role = role
     auth_service = AuthService(
-        repository=FakeAuthRepository([_user()]),
+        repository=FakeAuthRepository([user]),
         auth_secret=AUTH_SECRET,
         session_ttl_hours=12,
         now=FIXED_NOW,
@@ -35,6 +46,15 @@ def client() -> Iterator[TestClient]:
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+
+
+def _login(test_client: TestClient) -> None:
+    response = test_client.post(
+        "/login",
+        data={"username": "lab_user", "password": "correct-password"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
 
 
 def test_login_page_renders(client: TestClient) -> None:
@@ -86,3 +106,43 @@ def test_login_then_view_experiments(client: TestClient) -> None:
     assert page.status_code == 200
     assert "Эксперименты" in page.text
     assert "всего: 0" in page.text
+    assert 'href="/uploads/new"' in page.text
+
+
+def test_upload_page_requires_login(client: TestClient) -> None:
+    response = client.get("/uploads/new", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/login"
+
+
+def test_operator_can_open_upload_page(client: TestClient) -> None:
+    _login(client)
+
+    response = client.get("/uploads/new")
+
+    assert response.status_code == 200
+    assert "Загрузка эксперимента" in response.text
+    assert "data-upload-form" in response.text
+    assert "data-csrf-token=" in response.text
+    assert "signal.bin,experiment.json" in response.text
+    assert "webkitdirectory" in response.text
+    assert 'src="/static/upload.js"' in response.text
+
+
+def test_viewer_cannot_open_upload_page(viewer_client: TestClient) -> None:
+    _login(viewer_client)
+
+    response = viewer_client.get("/uploads/new")
+
+    assert response.status_code == 403
+    assert "Недостаточно прав" in response.text
+
+
+def test_viewer_does_not_see_upload_link(viewer_client: TestClient) -> None:
+    _login(viewer_client)
+
+    response = viewer_client.get("/experiments")
+
+    assert response.status_code == 200
+    assert 'href="/uploads/new"' not in response.text

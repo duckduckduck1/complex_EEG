@@ -2,8 +2,13 @@
 {% block title %}Эксперименты — Лаборатория «Умного сна»{% endblock %}
 {% block content %}
 <div class="page-head">
-  <h1>Эксперименты</h1>
-  <span class="muted">всего: {{ page.total }}</span>
+  <div>
+    <h1>Эксперименты</h1>
+    <span class="muted">всего: {{ page.total }}</span>
+  </div>
+  {% if can_upload %}
+  <a class="button" href="/uploads/new">Загрузить пакет</a>
+  {% endif %}
 </div>
 
 {% if page.items %}

@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Загрузка эксперимента — Лаборатория «Умного сна»{% endblock %}
+{% block content %}
+<p><a href="/experiments">← К списку</a></p>
+
+<div class="page-head">
+  <div>
+    <h1>Загрузка эксперимента</h1>
+    <p class="muted">Пакет: signal.bin, experiment.json, опционально journal.ndjson и app.log.</p>
+  </div>
+</div>
+
+{% if not can_upload %}
+<section class="card">
+  <h2>Недостаточно прав</h2>
+  <p class="muted">Загрузка доступна пользователям с ролью operator или admin.</p>
+</section>
+{% else %}
+<section class="card">
+  <form
+    class="upload-form"
+    data-upload-form
+    data-allowed-files="{{ upload_files|join(',') }}"
+    data-required-files="{{ required_upload_files|join(',') }}"
+    data-csrf-token="{{ csrf_token }}"
+  >
+    <div class="form-grid">
+      <label>Experiment ID
+        <input name="experiment_id" data-experiment-id maxlength="64" autocomplete="off">
+      </label>
+    </div>
+
+    <div class="file-pickers">
+      <label class="file-picker">Папка пакета
+        <input type="file" data-folder-input webkitdirectory directory multiple>
+      </label>
+      <label class="file-picker">Файлы пакета
+        <input type="file" data-files-input multiple>
+      </label>
+    </div>
+
+    <div class="selected-files" data-selected-files>Файлы не выбраны.</div>
+
+    <div class="upload-actions">
+      <button type="submit" data-submit-upload>Загрузить</button>
+      <button type="button" class="secondary" data-cancel-upload hidden>Отменить session</button>
+      <button type="button" class="secondary" data-reset-upload>Очистить</button>
+    </div>
+  </form>
+</section>
+
+<section class="card upload-status" data-upload-status hidden>
+  <h2 data-upload-status-title>Статус</h2>
+  <ol data-upload-steps></ol>
+  <div data-upload-result></div>
+</section>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if can_upload %}
+<script src="/static/upload.js" defer></script>
+{% endif %}
+{% endblock %}
