@@ -163,6 +163,22 @@ dt { color: var(--muted); }
 .timeline li:last-child { border-bottom: none; }
 .event-message { flex-basis: 100%; color: var(--muted); }
 
+.filters { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
+.filters input[type="text"] {
+  flex: 1 1 16rem; padding: 0.45rem 0.6rem;
+  border: 1px solid var(--line); border-radius: 8px; font: inherit;
+}
+.filters select {
+  padding: 0.45rem 0.6rem; border: 1px solid var(--line);
+  border-radius: 8px; font: inherit; background: #fff;
+}
+.pagination {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 1rem; margin-top: 1rem;
+}
+.pager { display: flex; gap: 1rem; }
+.pager a { color: var(--accent); text-decoration: none; }
+
 @media (max-width: 720px) {
   .page-head,
   .form-grid,

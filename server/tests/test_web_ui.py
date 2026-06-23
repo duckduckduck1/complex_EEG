@@ -212,3 +212,53 @@ def test_detail_page_shows_runs_artifacts_and_events(client: TestClient) -> None
     assert "report.json" in response.text
     assert "События" in response.text
     assert "pipeline_primary_queued" in response.text
+
+
+def test_experiments_filters_round_trip(client: TestClient) -> None:
+    _login(client)
+
+    response = client.get("/experiments?search=mouse&status=accepted&sort=display_name_asc")
+
+    assert response.status_code == 200
+    assert 'value="mouse"' in response.text
+    assert '<option value="accepted" selected>' in response.text
+    assert '<option value="display_name_asc" selected>' in response.text
+    assert "Ничего не найдено по фильтрам" in response.text
+
+
+class _PaginatedFakeWebExperimentService:
+    """Фейк с total больше размера страницы — для проверки пагинации."""
+
+    def list_experiments(self, filters: object) -> object:
+        total = 45
+        items = [
+            types.SimpleNamespace(
+                experiment_id=f"exp_{index:02d}",
+                display_name=f"exp_{index:02d}",
+                status="accepted",
+                uploaded_at=FIXED_NOW,
+                last_pipeline_status=None,
+                last_error=None,
+            )
+            for index in range(filters.offset, min(filters.offset + filters.limit, total))
+        ]
+        return types.SimpleNamespace(
+            items=items, limit=filters.limit, offset=filters.offset, total=total
+        )
+
+
+def test_experiments_pagination(client: TestClient) -> None:
+    _login(client)
+    app.dependency_overrides[get_web_experiment_service] = _PaginatedFakeWebExperimentService
+
+    first = client.get("/experiments")
+    assert first.status_code == 200
+    assert "показано 1-20 из 45" in first.text
+    assert "Вперёд" in first.text
+    assert "Назад" not in first.text
+
+    last = client.get("/experiments?page=3")
+    assert last.status_code == 200
+    assert "показано 41-45 из 45" in last.text
+    assert "Назад" in last.text
+    assert "Вперёд" not in last.text
