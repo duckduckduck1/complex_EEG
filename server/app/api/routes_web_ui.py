@@ -9,8 +9,9 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Annotated
+from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Form, Request, status
+from fastapi import APIRouter, Depends, Form, Query, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
@@ -37,6 +38,25 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 router = APIRouter(tags=["web-ui"], include_in_schema=False)
 UPLOAD_OPERATOR_ROLES = frozenset({"operator", "admin"})
 REQUIRED_UPLOAD_FILES = ("signal.bin", "experiment.json")
+
+EXPERIMENTS_PAGE_SIZE = 20
+SORT_OPTIONS = (
+    ("uploaded_at_desc", "Сначала новые"),
+    ("uploaded_at_asc", "Сначала старые"),
+    ("updated_at_desc", "По обновлению"),
+    ("display_name_asc", "По названию"),
+    ("status_asc", "По статусу"),
+)
+_SORT_VALUES = frozenset(value for value, _ in SORT_OPTIONS)
+STATUS_OPTIONS = (
+    ("", "Все статусы"),
+    ("uploading", "uploading"),
+    ("accepted", "accepted"),
+    ("validation_failed", "validation_failed"),
+    ("processing", "processing"),
+    ("processed", "processed"),
+    ("processing_failed", "processing_failed"),
+)
 
 
 def _can_upload(user: CurrentUser) -> bool:
@@ -128,26 +148,61 @@ def experiments_page(
     request: Request,
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
     service: Annotated[WebExperimentService, Depends(get_web_experiment_service)],
+    status_filter: Annotated[str, Query(alias="status", max_length=64)] = "",
+    search: Annotated[str, Query(max_length=128)] = "",
+    sort: Annotated[str, Query(max_length=32)] = "uploaded_at_desc",
+    page_number: Annotated[int, Query(alias="page", ge=1)] = 1,
 ) -> Response:
     user = _current_user_or_none(request, auth_service)
     if user is None:
         return _redirect("/login")
 
+    status_value = status_filter.strip() or None
+    search_value = search.strip() or None
+    sort_value = sort if sort in _SORT_VALUES else "uploaded_at_desc"
+    offset = (page_number - 1) * EXPERIMENTS_PAGE_SIZE
+
     page = service.list_experiments(
         ExperimentListFilters(
-            status=None,
-            date_from=None,
-            date_to=None,
-            search=None,
-            limit=50,
-            offset=0,
-            sort="uploaded_at_desc",
+            status=status_value,
+            search=search_value,
+            limit=EXPERIMENTS_PAGE_SIZE,
+            offset=offset,
+            sort=sort_value,
         )
     )
+
+    base_params: dict[str, str] = {}
+    if status_value:
+        base_params["status"] = status_value
+    if search_value:
+        base_params["search"] = search_value
+    if sort_value != "uploaded_at_desc":
+        base_params["sort"] = sort_value
+
+    def _page_url(number: int) -> str:
+        return "/experiments?" + urlencode({**base_params, "page": number})
+
+    has_next = (page.offset + page.limit) < page.total
+
     return templates.TemplateResponse(
         request,
         "experiments.html",
-        {"user": user, "page": page, "can_upload": _can_upload(user)},
+        {
+            "user": user,
+            "page": page,
+            "can_upload": _can_upload(user),
+            "status_options": STATUS_OPTIONS,
+            "sort_options": SORT_OPTIONS,
+            "current_status": status_value or "",
+            "current_search": search_value or "",
+            "current_sort": sort_value,
+            "has_filters": bool(status_value or search_value),
+            "shown_from": page.offset + 1 if page.total else 0,
+            "shown_to": min(page.offset + page.limit, page.total),
+            "prev_url": _page_url(page_number - 1) if page_number > 1 else None,
+            "next_url": _page_url(page_number + 1) if has_next else None,
+        },
     )
 
 

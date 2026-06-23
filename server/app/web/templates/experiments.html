@@ -11,6 +11,21 @@
   {% endif %}
 </div>
 
+<form class="filters" method="get" action="/experiments">
+  <input type="text" name="search" value="{{ current_search }}" placeholder="Поиск по ID или названию">
+  <select name="status">
+    {% for value, label in status_options %}
+    <option value="{{ value }}"{{ ' selected' if value == current_status else '' }}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <select name="sort">
+    {% for value, label in sort_options %}
+    <option value="{{ value }}"{{ ' selected' if value == current_sort else '' }}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="secondary">Применить</button>
+</form>
+
 {% if page.items %}
 <table class="grid">
   <thead>
@@ -34,7 +49,17 @@
     {% endfor %}
   </tbody>
 </table>
+
+<div class="pagination">
+  <span class="muted">показано {{ shown_from }}-{{ shown_to }} из {{ page.total }}</span>
+  <span class="pager">
+    {% if prev_url %}<a href="{{ prev_url }}">← Назад</a>{% endif %}
+    {% if next_url %}<a href="{{ next_url }}">Вперёд →</a>{% endif %}
+  </span>
+</div>
 {% else %}
-<p class="muted empty">Пока нет экспериментов.</p>
+<p class="muted empty">
+  {% if has_filters %}Ничего не найдено по фильтрам.{% else %}Пока нет экспериментов.{% endif %}
+</p>
 {% endif %}
 {% endblock %}
