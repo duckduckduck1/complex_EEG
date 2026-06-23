@@ -64,6 +64,10 @@ experiment folder
 optional .zip archive
 ```
 
+Current production Web UI upload accepts an experiment folder or selected package
+files. `.zip archive` is a local export/diagnostic format until server-side
+production zip upload is implemented.
+
 The canonical package content is:
 
 ```text

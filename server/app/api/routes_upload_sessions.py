@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.api.deps_auth import require_current_user
+from app.api.deps_auth import require_csrf_token, require_current_user
 from app.core.config import settings
 from app.db.session import get_db_session
 from app.features.upload.dto import UploadSourceFileDto, UploadValidationErrorDto
@@ -24,6 +24,7 @@ from app.features.upload.session_service import (
     ActiveUploadSessionAlreadyExistsError,
     DEFAULT_UPLOAD_FILES,
     ExperimentAlreadyRegisteredError,
+    UploadDatabaseCommitError,
     UploadCompletionResult,
     UploadFileTarget,
     UploadLocalCleanupError,
@@ -41,6 +42,7 @@ from app.features.upload.bronze_storage import MinioBronzeObjectStorage
 
 
 router = APIRouter(prefix="/api/v1/uploads", tags=["uploads"])
+UPLOAD_OPERATOR_ROLES = frozenset({"operator", "admin"})
 
 
 class CreateUploadSessionRequest(BaseModel):
@@ -112,10 +114,28 @@ def get_upload_session_service(
     )
 
 
+def require_upload_operator(
+    current_user: Annotated[CurrentUser, Depends(require_current_user)],
+) -> CurrentUser:
+    """Допускает к mutating upload actions только operator/admin."""
+
+    if current_user.role not in UPLOAD_OPERATOR_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "auth.forbidden",
+                "message": "Current user cannot upload experiments",
+            },
+        )
+
+    return current_user
+
+
 @router.post("", response_model=CreateUploadSessionResponse, status_code=status.HTTP_201_CREATED)
 def create_upload_session(
     request: CreateUploadSessionRequest,
-    _current_user: Annotated[CurrentUser, Depends(require_current_user)],
+    _current_user: Annotated[CurrentUser, Depends(require_upload_operator)],
+    _csrf: Annotated[None, Depends(require_csrf_token)],
     service: Annotated[UploadSessionService, Depends(get_upload_session_service)],
 ) -> CreateUploadSessionResponse:
     """Создаёт upload session для одного experiment_id."""
@@ -173,7 +193,8 @@ async def upload_session_file(
     upload_session_id: Annotated[str, Path(min_length=1)],
     file_name: Annotated[str, Path(min_length=1)],
     request: Request,
-    _current_user: Annotated[CurrentUser, Depends(require_current_user)],
+    _current_user: Annotated[CurrentUser, Depends(require_upload_operator)],
+    _csrf: Annotated[None, Depends(require_csrf_token)],
     service: Annotated[UploadSessionService, Depends(get_upload_session_service)],
 ) -> UploadSessionStatusResponse:
     """Потоково записывает один файл в upload session."""
@@ -231,7 +252,8 @@ def get_upload_session(
 @router.post("/{upload_session_id}/complete", response_model=CompleteUploadSessionResponse)
 def complete_upload_session(
     upload_session_id: Annotated[str, Path(min_length=1)],
-    _current_user: Annotated[CurrentUser, Depends(require_current_user)],
+    _current_user: Annotated[CurrentUser, Depends(require_upload_operator)],
+    _csrf: Annotated[None, Depends(require_csrf_token)],
     service: Annotated[UploadSessionService, Depends(get_upload_session_service)],
 ) -> CompleteUploadSessionResponse:
     """Завершает upload session и синхронно запускает validation/promotion."""
@@ -245,6 +267,14 @@ def complete_upload_session(
             status_code=status.HTTP_409_CONFLICT,
             detail={
                 "code": "upload.incomplete",
+                "message": str(exc),
+            },
+        ) from exc
+    except ExperimentAlreadyRegisteredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "experiment.already_exists",
                 "message": str(exc),
             },
         ) from exc
@@ -263,7 +293,15 @@ def complete_upload_session(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={
                 "code": "upload.local_storage_cleanup_failed",
-                "message": str(exc),
+                "message": "Failed to clean up stale local upload storage",
+            },
+        ) from exc
+    except UploadDatabaseCommitError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "upload.database_commit_failed",
+                "message": "Failed to commit accepted upload metadata",
             },
         ) from exc
     except UploadSessionStateConflictError as exc:
@@ -275,7 +313,8 @@ def complete_upload_session(
 @router.delete("/{upload_session_id}", response_model=UploadSessionStatusResponse)
 def cancel_upload_session(
     upload_session_id: Annotated[str, Path(min_length=1)],
-    _current_user: Annotated[CurrentUser, Depends(require_current_user)],
+    _current_user: Annotated[CurrentUser, Depends(require_upload_operator)],
+    _csrf: Annotated[None, Depends(require_csrf_token)],
     service: Annotated[UploadSessionService, Depends(get_upload_session_service)],
 ) -> UploadSessionStatusResponse:
     """Отменяет upload session по пользовательскому действию."""

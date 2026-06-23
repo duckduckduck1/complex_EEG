@@ -5,6 +5,9 @@ desktop.ini
 .idea/
 .vscode/
 
+# Local agent guide (personal, not shared)
+AGENTS.md
+
 # Logs and temporary files
 *.log
 *.tmp

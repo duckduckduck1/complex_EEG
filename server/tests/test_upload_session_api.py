@@ -9,12 +9,17 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.deps_auth import require_current_user
+from app.api.deps_auth import CSRF_HEADER_NAME, build_csrf_token, require_current_user
 from app.api.routes_upload_sessions import get_upload_session_service
 from app.core.config import settings
 from app.db.models import Experiment, UploadSession
 from app.features.auth import CurrentUser
-from app.features.upload.session_service import UploadSessionService
+from app.features.upload.session_service import (
+    ExperimentAlreadyRegisteredError,
+    UploadDatabaseCommitError,
+    UploadLocalCleanupError,
+    UploadSessionService,
+)
 from app.main import app
 from tests.test_upload_session_service import (
     FIXED_NOW,
@@ -32,6 +37,15 @@ TEST_USER = CurrentUser(
     username="lab_user",
     role="operator",
 )
+TEST_SESSION_TOKEN = "test-session-token"
+
+
+class _FailingCompleteService:
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+
+    def complete_session(self, _upload_session_id: str) -> object:
+        raise self._error
 
 
 def _valid_experiment_json(experiment_id: str = "exp_01") -> bytes:
@@ -44,6 +58,18 @@ def _valid_experiment_json(experiment_id: str = "exp_01") -> bytes:
         '"fbm_events": []'
         "}"
     ).encode("utf-8")
+
+
+def _csrf_headers(session_token: str = TEST_SESSION_TOKEN) -> dict[str, str]:
+    return {CSRF_HEADER_NAME: build_csrf_token(session_token)}
+
+
+def _set_test_session_cookie(session_token: str = TEST_SESSION_TOKEN) -> None:
+    client.cookies.set(settings.session_cookie_name, session_token)
+
+
+def _clear_test_session_cookie() -> None:
+    client.cookies.clear()
 
 
 @pytest.fixture()
@@ -105,6 +131,75 @@ def test_create_upload_session_requires_authentication() -> None:
     assert response.json()["detail"]["code"] == "auth.required"
 
 
+@pytest.mark.parametrize(
+    ("method", "path", "kwargs"),
+    [
+        ("POST", UPLOAD_SESSIONS_ENDPOINT, {"json": {"experiment_id": "exp_01"}}),
+        (
+            "PUT",
+            f"{UPLOAD_SESSIONS_ENDPOINT}/{VALID_UPLOAD_SESSION_ID}/files/signal.bin",
+            {"content": b"1234"},
+        ),
+        ("POST", f"{UPLOAD_SESSIONS_ENDPOINT}/{VALID_UPLOAD_SESSION_ID}/complete", {}),
+        ("DELETE", f"{UPLOAD_SESSIONS_ENDPOINT}/{VALID_UPLOAD_SESSION_ID}", {}),
+    ],
+)
+def test_mutating_upload_endpoints_reject_viewer_role(
+    upload_session_service: UploadSessionService,
+    method: str,
+    path: str,
+    kwargs: dict[str, object],
+) -> None:
+    """Viewer может читать кабинет, но не выполнять mutating upload actions."""
+
+    app.dependency_overrides[require_current_user] = lambda: CurrentUser(
+        id=UUID("00000000-0000-0000-0000-000000000002"),
+        username="viewer_user",
+        role="viewer",
+    )
+
+    response = client.request(method, path, **kwargs)
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "auth.forbidden"
+
+
+def test_create_upload_session_requires_csrf_for_cookie_session(
+    upload_session_service: UploadSessionService,
+) -> None:
+    """Cookie-auth mutating request без CSRF header получает стабильный 403."""
+
+    _set_test_session_cookie()
+    try:
+        response = client.post(
+            UPLOAD_SESSIONS_ENDPOINT,
+            json={"experiment_id": "exp_01"},
+        )
+    finally:
+        _clear_test_session_cookie()
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "auth.csrf_required"
+
+
+def test_create_upload_session_accepts_csrf_header_for_cookie_session(
+    upload_session_service: UploadSessionService,
+) -> None:
+    """CSRF header позволяет browser SPA создать upload session."""
+
+    _set_test_session_cookie()
+    try:
+        response = client.post(
+            UPLOAD_SESSIONS_ENDPOINT,
+            json={"experiment_id": "exp_01"},
+            headers=_csrf_headers(),
+        )
+    finally:
+        _clear_test_session_cookie()
+
+    assert response.status_code == 201
+
+
 def test_create_upload_session_rejects_expected_files_without_required_file(
     upload_session_service: UploadSessionService,
 ) -> None:
@@ -115,6 +210,23 @@ def test_create_upload_session_rejects_expected_files_without_required_file(
         json={
             "experiment_id": "exp_01",
             "expected_files": ["experiment.json"],
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "request.invalid_payload"
+
+
+def test_create_upload_session_rejects_unsupported_expected_file(
+    upload_session_service: UploadSessionService,
+) -> None:
+    """expected_files принимает только allowlist файлов EEG package."""
+
+    response = client.post(
+        UPLOAD_SESSIONS_ENDPOINT,
+        json={
+            "experiment_id": "exp_01",
+            "expected_files": ["signal.bin", "experiment.json", "../x"],
         },
     )
 
@@ -393,6 +505,56 @@ def test_complete_upload_session_rejects_missing_required_files(
 
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "upload.incomplete"
+
+
+def test_complete_upload_session_maps_registered_experiment_conflict(
+    upload_session_service: UploadSessionService,
+) -> None:
+    """Race на уже зарегистрированный experiment_id возвращает стабильный 409."""
+
+    app.dependency_overrides[get_upload_session_service] = lambda: _FailingCompleteService(
+        ExperimentAlreadyRegisteredError("experiment_id is already registered")
+    )
+
+    response = client.post(f"{UPLOAD_SESSIONS_ENDPOINT}/{VALID_UPLOAD_SESSION_ID}/complete")
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "experiment.already_exists"
+
+
+def test_complete_upload_session_hides_local_cleanup_path(
+    upload_session_service: UploadSessionService,
+) -> None:
+    """Local cleanup failure не должен отдавать absolute server path клиенту."""
+
+    app.dependency_overrides[get_upload_session_service] = lambda: _FailingCompleteService(
+        UploadLocalCleanupError(
+            "stale local experiment directory could not be removed: "
+            "/srv/complex_eeg/experiments/exp_01"
+        )
+    )
+
+    response = client.post(f"{UPLOAD_SESSIONS_ENDPOINT}/{VALID_UPLOAD_SESSION_ID}/complete")
+
+    assert response.status_code == 500
+    body = response.json()
+    assert body["detail"]["code"] == "upload.local_storage_cleanup_failed"
+    assert "/srv/complex_eeg" not in body["detail"]["message"]
+
+
+def test_complete_upload_session_maps_database_commit_failure(
+    upload_session_service: UploadSessionService,
+) -> None:
+    """PostgreSQL commit failure получает machine-readable код вместо generic 500."""
+
+    app.dependency_overrides[get_upload_session_service] = lambda: _FailingCompleteService(
+        UploadDatabaseCommitError("failed to commit accepted upload metadata transaction")
+    )
+
+    response = client.post(f"{UPLOAD_SESSIONS_ENDPOINT}/{VALID_UPLOAD_SESSION_ID}/complete")
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "upload.database_commit_failed"
 
 
 def test_cancel_upload_session_returns_cancelled_status(

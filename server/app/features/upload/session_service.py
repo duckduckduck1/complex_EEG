@@ -766,6 +766,11 @@ def _normalize_expected_files(expected_files: list[str] | None) -> list[str]:
     files = expected_files or list(DEFAULT_UPLOAD_FILES)
     normalized = sorted(set(files))
 
+    unsupported_files = set(normalized) - set(DEFAULT_UPLOAD_FILES)
+    if unsupported_files:
+        unsupported = ", ".join(sorted(unsupported_files))
+        raise UploadSessionServiceError(f"expected_files contains unsupported files: {unsupported}")
+
     missing_required = set(REQUIRED_UPLOAD_FILES) - set(normalized)
     if missing_required:
         missing = ", ".join(sorted(missing_required))

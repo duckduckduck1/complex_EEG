@@ -77,6 +77,8 @@ Web UI использует HTTP-only session cookie. Bearer token для web UI
 
 Mutating web endpoints дополнительно защищаются SameSite cookie и CSRF token,
 если web UI работает как browser SPA.
+Browser SPA передаёт CSRF token в header `X-CSRF-Token`; token выдаётся
+server-rendered страницей, которая уже проверила web session cookie.
 
 ### Future Flutter/API clients
 
@@ -145,6 +147,10 @@ HTTP status отражает класс ошибки:
 ---
 
 ## Upload API
+
+Все mutating endpoints upload flow требуют web-auth cookie, CSRF header
+`X-CSRF-Token` для browser SPA и роль `operator` или `admin`. Пользователь с
+ролью `viewer` получает `403 auth.forbidden`.
 
 ### Создать upload session
 
@@ -329,8 +335,8 @@ row-level lock на `upload_sessions` и успешного commit. В этой 
 
 ### Dev/test upload bridge
 
-Пока production Web UI upload ещё не реализован, сервер содержит временные
-endpoint'ы для локальной проверки файлового upload flow:
+Production Web UI использует authenticated upload session API выше. Сервер также
+содержит dev/test endpoint'ы для локальной диагностики файлового upload flow:
 
 ```http
 POST /api/v1/dev/uploads/process-local-folder

@@ -1,8 +1,7 @@
 """Upload endpoint'ы серверного API.
 
-В этом модуле пока живут только dev/test endpoint'ы. Они нужны, чтобы проверять
-backend flow end-to-end до реализации production upload формы с web-auth,
-upload session в БД и лимитами размера запроса.
+В этом модуле живут только dev/test endpoint'ы. Они нужны для локальной
+диагностики файлового upload flow и не используются production Web UI.
 """
 
 from __future__ import annotations
@@ -46,7 +45,7 @@ def process_local_folder_upload(
     """Запускает файловый upload flow для локальной папки на сервере.
 
     Это не production upload endpoint. Production Web UI не должен передавать
-    filesystem path с клиента. Позже появится upload через multipart/archive.
+    filesystem path с клиента и использует authenticated upload sessions.
     """
 
     _ensure_local_upload_endpoint_enabled()
