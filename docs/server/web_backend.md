@@ -99,6 +99,35 @@ complex-eeg users create --username admin --role admin
 
 ---
 
+## Server-rendered кабинет
+
+Кабинет — server-rendered страницы (Jinja) в `routes_web_ui.py`. Они работают
+поверх тех же сервисов, что и JSON-эндпоинты ниже; сами JSON-эндпоинты остаются
+каноническим контрактом, страницы — презентационный слой.
+
+```text
+GET  /                    redirect на /login или /experiments
+GET  /login, POST /login  форма входа, выставляет session cookie
+POST /logout              сбрасывает session cookie
+GET  /experiments         список с поиском, фильтром по статусу, сортировкой и
+                          offset-пагинацией
+GET  /experiments/{id}    карточка: валидация, исходные файлы, pipeline runs с
+                          артефактами и лента событий
+GET  /uploads/new         форма загрузки пакета (только operator/admin)
+```
+
+Правила:
+
+- доступ к страницам требует web session cookie, иначе redirect на `/login`;
+- загрузка (`/uploads/new` и mutating upload-эндпоинты) доступна только ролям
+  `operator`/`admin`; `viewer` получает `403`;
+- mutating-запросы из браузера несут CSRF token в заголовке `X-CSRF-Token`;
+  token выдаёт страница, которая уже проверила session cookie;
+- статику кабинета (`/static/*`) отдаёт FastAPI; nginx проксирует и `/`, и
+  `/api/` в backend.
+
+---
+
 ## Endpoints
 
 ### Login
@@ -340,17 +369,19 @@ Web backend показывает прикладные ошибки:
 
 ## Backend route files
 
-Целевая структура routes для web backend:
+Структура routes для web backend:
 
 ```text
-routes_web_auth.py
-routes_web_experiments.py
-routes_web_artifacts.py
-routes_web_pipeline.py
+routes_web_auth.py         auth endpoints (login/logout/me)
+routes_web_experiments.py  список и карточка (JSON)
+routes_web_artifacts.py    скачивание артефактов pipeline
+routes_web_pipeline.py     pipeline runs
+routes_web_ui.py           server-rendered страницы кабинета (Jinja)
 ```
 
 Один общий `routes_web.py` не используется, чтобы не смешивать auth,
-эксперименты, скачивание файлов и действия с pipeline runs.
+эксперименты, скачивание файлов, действия с pipeline runs и server-rendered
+страницы.
 
 ---
 
