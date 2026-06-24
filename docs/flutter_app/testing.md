@@ -7,60 +7,60 @@
 ## Цель
 
 Проверить не внешний вид сам по себе, а надёжность записи, разметки,
-восстановления и подготовки experiment package.
+восстановления и подготовки пакета эксперимента.
 
 ---
 
-## Test levels
+## Уровни тестов
 
-### Unit tests
+### Модульные тесты
 
-- ID generation;
-- sample decoder;
-- signal writer byte encoding;
-- journal parser/replayer;
-- experiment JSON builder;
-- segment policies;
-- annotation validation;
-- package preflight validation.
+- генерация ID;
+- декодер отсчётов;
+- байтовое кодирование в `SignalWriter`;
+- парсер/проигрыватель журнала;
+- сборщик `experiment.json`;
+- политики сегментов;
+- валидация разметки;
+- предварительная проверка пакета.
 
-### BLoC tests
+### Тесты BLoC
 
 Для каждого BLoC:
 
-- initial state;
-- happy path;
-- failure path;
-- cancellation/dispose;
-- repeated event safety.
+- начальное состояние;
+- успешный сценарий;
+- сбойный сценарий;
+- отмена/освобождение (dispose);
+- безопасность повторных событий.
 
-### Repository tests
+### Тесты репозиториев
 
-- file writes are atomic;
-- index rebuild from folders;
-- package export repository creates safe exports;
-- settings repository does not store server credentials in MVP.
+- запись файлов атомарна;
+- пересборка индекса из папок;
+- репозиторий экспорта пакета создаёт безопасные экспорты;
+- репозиторий настроек не хранит серверные учётные данные в MVP.
 
-### Widget tests
+### Виджет-тесты
 
-- screen reacts to BLoC state;
-- buttons dispatch events;
-- errors render user-safe messages;
-- no widget directly performs file/BLE/HTTP work.
+- экран реагирует на состояние BLoC;
+- кнопки отправляют события;
+- ошибки показываются как безопасные для пользователя сообщения;
+- ни один виджет не выполняет работу с файлами/BLE/HTTP напрямую.
 
-### Integration tests
+### Интеграционные тесты
 
-- start/stop recording with fake BLE stream;
-- disconnect/reconnect creates segments;
-- crash recovery from synthetic journal;
-- package export and validation flow;
-- saved experiment annotation flow.
+- старт/стоп записи с поддельным потоком BLE;
+- обрыв/переподключение создаёт сегменты;
+- восстановление после краша из синтетического журнала;
+- сценарий экспорта и проверки пакета;
+- сценарий разметки сохранённого эксперимента.
 
 ---
 
-## Fakes
+## Поддельные объекты (fakes)
 
-Required fakes:
+Необходимые fake-объекты:
 
 ```text
 FakeBleDevice
@@ -71,39 +71,40 @@ FakeDiskSpaceService
 FakePackageExportService
 ```
 
-Fake clock is required for deterministic segment and gap tests.
+Поддельные часы (`FakeClock`) нужны для детерминированных тестов сегментов и
+разрывов.
 
 ---
 
-## Golden tests
+## Golden-тесты
 
-Golden tests are useful for:
+Golden-тесты полезны для:
 
-- chart with gap;
-- annotation overlays;
-- package status badges;
-- recovery dialog.
+- графика с разрывом;
+- наложений разметки;
+- значков статуса пакета;
+- диалога восстановления.
 
-Golden tests are not a replacement for BLoC and domain tests.
+Golden-тесты не заменяют тесты BLoC и доменной логики.
 
 ---
 
-## Critical scenarios
+## Критические сценарии
 
-Must pass before first field use:
+Должны проходить до первого применения в поле:
 
-- 1 hour fake recording produces expected file size;
-- BLE disconnect closes segment and does not synthesize samples;
-- app restart recovers unfinished experiment;
-- annotation cannot cross segment boundary;
-- package validation/export works after app restart;
-- two fake devices write isolated experiments.
+- поддельная запись на 1 час даёт ожидаемый размер файла;
+- обрыв BLE закрывает сегмент и не достраивает отсчёты;
+- перезапуск приложения восстанавливает незавершённый эксперимент;
+- разметка не может пересечь границу сегмента;
+- проверка/экспорт пакета работают после перезапуска приложения;
+- два поддельных устройства пишут изолированные эксперименты.
 
 ---
 
 ## CI
 
-Future Flutter CI should run:
+Будущий CI для Flutter должен запускать:
 
 ```text
 flutter analyze
@@ -111,4 +112,4 @@ flutter test
 dart format --set-exit-if-changed
 ```
 
-When integration tests become stable, they are added as a separate CI job.
+Когда интеграционные тесты станут стабильными, их добавляют отдельной задачей CI.

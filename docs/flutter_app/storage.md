@@ -4,7 +4,7 @@
 
 ---
 
-## Source of truth
+## Источник истины
 
 Главный источник истины — папка эксперимента.
 
@@ -17,12 +17,12 @@
     app.log
 ```
 
-Local index нужен для быстрого списка экспериментов, но эксперимент должен быть
-восстановим из своей папки.
+Локальный индекс нужен для быстрого списка экспериментов, но эксперимент должен
+быть восстановим из своей папки.
 
 ---
 
-## App data paths
+## Пути данных приложения
 
 Целевые логические директории:
 
@@ -38,27 +38,27 @@ experiments_root/
   exp2/
 ```
 
-Реальные Windows paths выбираются через platform file system service.
+Реальные пути в Windows выбираются через сервис файловой системы платформы.
 
 ---
 
-## Experiment folder naming
+## Имя папки эксперимента
 
-Пользователь задаёт `display_name`. Для папки оно sanitizes:
+Пользователь задаёт `display_name`. Для папки оно нормализуется:
 
-- запрещены path separators;
-- запрещены reserved Windows names;
-- trailing dot/space removed;
-- при конфликте добавляется suffix.
+- запрещены разделители пути;
+- запрещены зарезервированные имена Windows;
+- хвостовые точки и пробелы убираются;
+- при конфликте добавляется суффикс.
 
 Технический `experiment_id` не зависит от имени папки и хранится внутри
 `experiment.json`.
 
 ---
 
-## Local experiment index
+## Локальный индекс экспериментов
 
-Index record:
+Запись индекса:
 
 ```text
 experiment_id
@@ -76,13 +76,13 @@ last_error
 
 Решение первого стенда:
 
-- можно начать с JSON/SQLite-like index;
-- implementation должен быть скрыт за `ExperimentIndexRepository`;
+- можно начать с индекса в JSON или встроенной БД (SQLite);
+- реализация должна быть скрыта за `ExperimentIndexRepository`;
 - UI не зависит от формата индекса.
 
 ---
 
-## Repositories
+## Репозитории
 
 ```text
 ExperimentRepository
@@ -93,26 +93,29 @@ SettingsRepository
 LabelDictionaryRepository
 ```
 
-Repository methods return domain entities or typed failures, not raw exceptions.
+Методы репозиториев возвращают доменные сущности или типизированные ошибки, а не
+сырые исключения.
 
 ---
 
-## File safety
+## Безопасность работы с файлами
 
 Правила:
 
-- `signal.bin` append-only during recording;
-- `journal.ndjson` append-only;
-- final `experiment.json` writes to temp file first;
-- temp file is atomically renamed;
-- never overwrite source files without backup/explicit user action;
-- path traversal is rejected for every user-provided path/name.
+- `signal.bin` — только дозапись (append-only) во время записи;
+- `journal.ndjson` — только дозапись;
+- финальный `experiment.json` сначала пишется во временный файл;
+- временный файл атомарно переименовывается;
+- никогда не перезаписывать исходные файлы без резервной копии или явного
+  действия пользователя;
+- выход за пределы каталога (path traversal) отклоняется для любого пути/имени от
+  пользователя.
 
 ---
 
-## Package handoff status
+## Статус передачи пакета
 
-Local package status values:
+Значения локального статуса пакета:
 
 ```text
 not_ready
@@ -121,18 +124,19 @@ exported
 export_error
 ```
 
-This is the canonical local package handoff status list. Server-side experiment
-status is authoritative in Web UI for the MVP and is not stored as a required
-Flutter index field.
+Это канонический список локального статуса передачи пакета. Серверный статус
+эксперимента является авторитетным в Web UI для MVP и не хранится как
+обязательное поле индекса в приложении.
 
-If direct server sync is added later, it must be an optional extension and must
-not block local recording, local viewing, or local package export.
+Если прямая синхронизация с сервером будет добавлена позже, она должна быть
+опциональным расширением и не должна блокировать локальную запись, локальный
+просмотр или локальный экспорт пакета.
 
 ---
 
-## Settings
+## Настройки
 
-Settings include:
+Настройки включают:
 
 ```text
 experiments_root
@@ -143,15 +147,15 @@ default_adc_model
 label_dictionary_path optional
 ```
 
-Secret values must not be logged.
+Секретные значения не должны попадать в логи.
 
 ---
 
 ## Проверки реализации
 
-- experiment folder can be opened without local index;
-- index can be rebuilt by scanning folders;
-- final JSON write is atomic;
-- folder names are sanitized;
-- package status survives app restart;
-- paths from user input cannot escape experiments root.
+- папку эксперимента можно открыть без локального индекса;
+- индекс можно пересобрать сканированием папок;
+- запись финального JSON атомарна;
+- имена папок нормализуются;
+- статус пакета переживает перезапуск приложения;
+- пути из пользовательского ввода не могут выйти за корень экспериментов.

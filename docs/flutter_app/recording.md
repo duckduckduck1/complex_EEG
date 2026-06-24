@@ -1,7 +1,7 @@
 # Запись сигнала
 
-Документ описывает реализацию записи эксперимента: start/stop, buffer, writer,
-segments, ФБМ events и качество данных.
+Документ описывает реализацию записи эксперимента: старт/стоп, буфер, запись на
+диск, сегменты, события ФБМ и качество данных.
 
 ---
 
@@ -16,12 +16,12 @@ PhotobiomodulationBloc
 DiskSpaceCubit
 ```
 
-`RecordingBloc` управляет lifecycle записи. Остальные BLoC/Cubit отвечают за
-узкие представления состояния.
+`RecordingBloc` управляет жизненным циклом записи. Остальные BLoC/Cubit отвечают
+за узкие представления состояния.
 
 ---
 
-## Recording lifecycle
+## Жизненный цикл записи
 
 ```text
 idle
@@ -49,52 +49,52 @@ recovering -> recording | stopped
 
 ---
 
-## Start recording
+## Старт записи
 
-Start sequence:
+Последовательность старта:
 
-1. пользователь заполняет metadata form;
+1. пользователь заполняет форму метаданных;
 2. приложение генерирует `experiment_id = exp_<ULID>`;
 3. создаёт папку эксперимента;
 4. создаёт пустой `signal.bin`;
 5. создаёт `journal.ndjson`;
 6. пишет событие `experiment_started`;
-7. открывает первый segment;
-8. переводит state в `recording`.
+7. открывает первый сегмент;
+8. переводит состояние в `recording`.
 
 Если любой шаг падает, запись не считается начатой.
 
 ---
 
-## Signal writer
+## Запись сигнала на диск
 
-`signal.bin` содержит последовательность int32 little-endian значений амплитуды в
-мкВ.
+`signal.bin` содержит последовательность значений амплитуды `int32`
+little-endian в мкВ.
 
-Writer policy:
+Политика записи:
 
 ```text
 append-only
-flush interval: 10 seconds
-configurable
+интервал сброса: 10 секунд
+настраивается
 ```
 
-Signal samples:
+Отсчёты сигнала:
 
-1. приходят из BLE decoder;
-2. помещаются в in-memory write buffer;
-3. каждые 10 секунд batch пишется в `signal.bin`;
-4. chart читает из memory buffer, не с диска.
+1. приходят из BLE-декодера;
+2. помещаются в буфер записи в памяти;
+3. каждые 10 секунд пачка пишется в `signal.bin`;
+4. график читает из буфера в памяти, не с диска.
 
-При normal stop writer выполняет final flush.
+При штатной остановке выполняется финальный сброс буфера на диск.
 
 ---
 
-## Journal writer
+## Запись журнала
 
-`journal.ndjson` пишется append-only.
+`journal.ndjson` пишется в режиме append-only.
 
-Critical events sync immediately:
+Критичные события синхронизируются немедленно:
 
 ```text
 experiment_started
@@ -109,15 +109,15 @@ annotation_updated
 annotation_deleted
 ```
 
-Critical boundary events выполняют flush/sync.
+Критичные граничные события выполняют принудительный сброс на диск (flush/sync).
 
 ---
 
-## Segments
+## Сегменты
 
-Segment = непрерывный участок сигнала между BLE disconnects.
+Сегмент — непрерывный участок сигнала между обрывами BLE.
 
-Поля segment:
+Поля сегмента:
 
 ```text
 segment_id
@@ -136,7 +136,7 @@ ended_at_wall_clock optional
 [start_sample, end_sample)
 ```
 
-`start_sample` и `end_sample` — global sample indexes in `signal.bin`.
+`start_sample` и `end_sample` — глобальные индексы отсчётов в `signal.bin`.
 
 Разметка использует:
 
@@ -146,46 +146,47 @@ segment_id + segment_sample_index
 
 ---
 
-## Disconnect handling
+## Обработка обрыва связи
 
-При BLE disconnect:
+При обрыве BLE:
 
-1. writer flushes current buffer;
-2. current segment closes at last saved/buffered sample boundary;
-3. `connection_lost` event writes to journal;
-4. state becomes `paused_by_disconnect`;
-5. ФБМ command disabled;
-6. chart shows explicit gap.
+1. буфер сбрасывается на диск;
+2. текущий сегмент закрывается на границе последнего сохранённого/буферизованного
+   отсчёта;
+3. событие `connection_lost` пишется в журнал;
+4. состояние переходит в `paused_by_disconnect`;
+5. команда ФБМ запрещается;
+6. график показывает явный разрыв.
 
-Signal during disconnect is absent and never synthesized.
-
----
-
-## Manual reconnect
-
-Reconnect is user-triggered.
-
-После reconnect:
-
-1. new segment starts;
-2. approximate gap duration is calculated by wall clock;
-3. `connection_resumed` and `segment_started` events write to journal;
-4. samples append to the same `signal.bin`.
+Сигнал за время обрыва отсутствует и никогда не достраивается.
 
 ---
 
-## Photobiomodulation
+## Ручное переподключение
 
-ФБМ команда доступна только в `recording`.
+Переподключение инициирует пользователь.
 
-When triggered:
+После переподключения:
 
-1. `PhotobiomodulationBloc` validates recording status;
-2. BLE command is sent;
-3. event is written to `journal.ndjson` immediately;
-4. UI shows command result.
+1. открывается новый сегмент;
+2. приблизительная длина разрыва вычисляется по настенным часам;
+3. события `connection_resumed` и `segment_started` пишутся в журнал;
+4. отсчёты дописываются в тот же `signal.bin`.
 
-Event fields:
+---
+
+## Фотобиомодуляция
+
+Команда ФБМ доступна только в состоянии `recording`.
+
+При вызове:
+
+1. `PhotobiomodulationBloc` проверяет статус записи;
+2. отправляется команда по BLE;
+3. событие немедленно пишется в `journal.ndjson`;
+4. UI показывает результат команды.
+
+Поля события:
 
 ```text
 segment_id
@@ -198,74 +199,74 @@ intensity optional
 
 ---
 
-## Quality control
+## Контроль качества
 
-`QualityBloc` computes live indicators from memory buffer:
+`QualityBloc` вычисляет живые индикаторы из буфера в памяти:
 
-- signal present/absent;
-- amplitude range;
-- clipping/saturation suspicion;
-- flatline suspicion;
-- packet decode errors;
-- disconnect state.
+- сигнал есть/нет;
+- диапазон амплитуды;
+- подозрение на клиппинг/насыщение;
+- подозрение на «плоскую линию» (flatline);
+- ошибки декодирования пакетов;
+- состояние обрыва.
 
-Quality warnings do not modify `signal.bin`. If user marks bad region, it is an
-annotation event.
-
----
-
-## Disk space
-
-`DiskSpaceCubit` checks free space:
-
-- before start;
-- periodically during recording;
-- before finalization.
-
-If threshold is low:
-
-- UI warns user;
-- recording may continue until critical threshold;
-- critical threshold prevents new recording start.
+Предупреждения о качестве не изменяют `signal.bin`. Если пользователь отмечает
+бракованный участок — это событие разметки.
 
 ---
 
-## Large files
+## Свободное место на диске
 
-Явного лимита на размер `signal.bin` в приложении не задаётся. При 250 sps и
-int32 размер растёт примерно на 1 KB/s, поэтому многочасовые эксперименты могут
-быть большими.
+`DiskSpaceCubit` проверяет свободное место:
+
+- перед стартом;
+- периодически во время записи;
+- перед финализацией.
+
+Если свободного места мало:
+
+- UI предупреждает пользователя;
+- запись может продолжаться до критического порога;
+- критический порог запрещает старт новой записи.
+
+---
+
+## Большие файлы
+
+Явного лимита на размер `signal.bin` в приложении не задаётся. При 250 отсчётах в
+секунду и `int32` размер растёт примерно на 1 КБ/с, поэтому многочасовые
+эксперименты могут быть большими.
 
 Требования:
 
 - `DiskSpaceCubit` предотвращает заполнение диска;
-- сохранённый эксперимент читается lazy/chunked, не целиком в память;
-- chart reader читает только viewport range;
-- utilities получают выбранное окно, а не весь файл.
+- сохранённый эксперимент читается лениво и кусками, не целиком в память;
+- чтение для графика берёт только видимый диапазон;
+- утилиты получают выбранное окно, а не весь файл.
 
 ---
 
-## Stop recording
+## Остановка записи
 
-Stop sequence:
+Последовательность остановки:
 
-1. stop accepting new samples;
-2. final flush signal buffer;
-3. close active segment;
-4. write `recording_stopped`;
-5. build final `experiment.json`;
-6. update local experiment index;
-7. state becomes `stopped`.
+1. перестать принимать новые отсчёты;
+2. финальный сброс буфера сигнала;
+3. закрыть активный сегмент;
+4. записать `recording_stopped`;
+5. собрать финальный `experiment.json`;
+6. обновить локальный индекс экспериментов;
+7. перевести состояние в `stopped`.
 
 ---
 
 ## Проверки реализации
 
-- samples are written as int32 little-endian;
-- writer flushes every configured interval;
-- journal writes critical events immediately;
-- disconnect closes segment;
-- reconnect opens new segment;
-- ФБМ disabled in `paused_by_disconnect`;
-- stop creates final `experiment.json`;
-- two devices write two independent experiment folders.
+- отсчёты пишутся как `int32` little-endian;
+- буфер сбрасывается каждый настроенный интервал;
+- журнал пишет критичные события немедленно;
+- обрыв закрывает сегмент;
+- переподключение открывает новый сегмент;
+- ФБМ запрещена в `paused_by_disconnect`;
+- остановка создаёт финальный `experiment.json`;
+- два устройства пишут две независимые папки экспериментов.

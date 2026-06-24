@@ -7,7 +7,7 @@
 ## Назначение
 
 BLE-слой ищет устройства, подключается к ним, принимает пакеты сигнала и
-передаёт уже распарсенные значения в recording pipeline.
+передаёт уже распарсенные значения в pipeline записи.
 
 Каждое устройство ведёт независимый эксперимент. Обрыв одного устройства не
 останавливает запись других устройств.
@@ -24,7 +24,7 @@ DeviceConnectionBloc
 
 ### `DeviceDiscoveryBloc`
 
-Events:
+События:
 
 ```text
 DiscoveryStarted
@@ -33,7 +33,7 @@ DeviceFound
 DiscoveryFailed
 ```
 
-State:
+Состояние:
 
 ```text
 idle
@@ -43,7 +43,7 @@ failed
 
 ### `DeviceConnectionBloc`
 
-Events:
+События:
 
 ```text
 ConnectRequested
@@ -54,7 +54,7 @@ ManualReconnectRequested
 ConnectionFailed
 ```
 
-State:
+Состояние:
 
 ```text
 disconnected
@@ -66,15 +66,15 @@ failed
 ```
 
 Автоматическое переподключение не выполняется. После `ConnectionLost`
-пользователь явно нажимает reconnect.
+пользователь явно нажимает переподключение.
 
-Отдельный packet-level BLoC не используется. BLE packets идут через data
-source/decoder в `RecordingBloc` как событие `BlePacketReceived`, потому что
-именно recording session решает, писать sample или игнорировать его.
+Отдельный BLoC уровня пакетов не используется. Пакеты BLE идут через data
+source/декодер в `RecordingBloc` как событие `BlePacketReceived`, потому что
+именно сессия записи решает, писать отсчёт или игнорировать его.
 
 ---
 
-## Remembered devices
+## Запомненные устройства
 
 Приложение хранит список ранее подключённых устройств:
 
@@ -86,11 +86,11 @@ device_model
 firmware_version optional
 ```
 
-Список используется для быстрого подключения без повторного discovery.
+Список используется для быстрого подключения без повторного поиска.
 
 ---
 
-## Packet format
+## Формат пакета
 
 Устройство шлёт notify с потоком отсчётов по 3 байта каждый. Длина payload
 кратна 3; конкретный размер пакета зависит от MTU и не фиксирован. Полный контракт
@@ -109,19 +109,19 @@ EegSample(valueMicrovolts: int)
 
 ---
 
-## Data flow
+## Поток данных
 
 ```text
-BLE characteristic notification
+notify BLE-характеристики
   -> BlePacketDataSource
   -> BleSampleDecoder
   -> RecordingBloc/BlePacketReceived
   -> SignalWriter
-  -> SignalBufferCubit for chart
+  -> SignalBufferCubit для графика
 ```
 
-BLE data source не знает про файлы эксперимента. Recording layer решает, писать
-или игнорировать samples.
+Data source BLE не знает про файлы эксперимента. Слой записи решает, писать или
+игнорировать отсчёты.
 
 ---
 
@@ -131,56 +131,56 @@ BLE data source не знает про файлы эксперимента. Reco
 сигнала. `BlePacketDataSource` предоставляет исходящий метод записи кадра команды;
 формат кадра — в [контракте устройства](../reference/device_packet.md).
 
-Решение «включить/выключить/сменить яркость» принимает не BLE-слой, а
-recording/annotation layer: он вызывает запись через data source и фиксирует
-событие в `journal.ndjson` (и далее в `fbm_events` пакета). Так включение ФБМ
-всегда привязано к активному эксперименту и попадает в его источник истины.
+Решение «включить/выключить/сменить яркость» принимает не BLE-слой, а слой
+записи/разметки: он вызывает запись через data source и фиксирует событие в
+`journal.ndjson` (и далее в `fbm_events` пакета). Так включение ФБМ всегда
+привязано к активному эксперименту и попадает в его источник истины.
 
 ---
 
-## Recording guard
+## Защита записи
 
-Live BLE signal отображается и пишется только при активной записи.
+Живой сигнал BLE отображается и пишется только при активной записи.
 
 Если устройство подключено, но запись не запущена:
 
-- packets can be counted for diagnostics;
-- signal не пишется в `signal.bin`;
-- chart не показывает live stream как запись.
+- пакеты можно считать для диагностики;
+- сигнал не пишется в `signal.bin`;
+- график не показывает живой поток как запись.
 
 Это защищает от иллюзии, что эксперимент записывается.
 
 ---
 
-## Connection loss
+## Обрыв связи
 
 При обрыве:
 
-1. `DeviceConnectionBloc` emits `lost`;
-2. parent coordinator/widget with `BlocListener<DeviceConnectionBloc, ...>`
-   dispatches `BleConnectionLostReceived` в scoped `RecordingBloc`;
+1. `DeviceConnectionBloc` переходит в `lost`;
+2. родительский координатор/виджет с `BlocListener<DeviceConnectionBloc, ...>`
+   отправляет `BleConnectionLostReceived` в scoped `RecordingBloc`;
 3. текущий сегмент закрывается;
-4. event пишется в `journal.ndjson` немедленно;
-5. запись переводится в paused-by-disconnect;
-6. UI показывает ручное reconnect action.
+4. событие немедленно пишется в `journal.ndjson`;
+5. запись переводится в `paused_by_disconnect`;
+6. UI показывает действие ручного переподключения.
 
-После ручного reconnect:
+После ручного переподключения:
 
-1. `BlocListener<DeviceConnectionBloc, ...>` dispatches
+1. `BlocListener<DeviceConnectionBloc, ...>` отправляет
    `BleConnectionResumedReceived` в scoped `RecordingBloc`;
 2. открывается новый сегмент;
-3. wall-clock time reconnect пишется как справочная информация;
+3. настенное время переподключения пишется как справочная информация;
 4. запись продолжается в тот же `signal.bin`.
 
-Inter-BLoC связь реализуется через coordinator/`BlocListener`, а не через прямую
-подписку `RecordingBloc` на stream другого BLoC. Это сохраняет явную композицию
-scoped BLoC per device.
+Связь между BLoC реализуется через координатор/`BlocListener`, а не через прямую
+подписку `RecordingBloc` на поток другого BLoC. Это сохраняет явную композицию
+scoped BLoC на каждое устройство.
 
 ---
 
 ## Ошибки
 
-Ошибки BLE мапятся в `BleFailure`:
+Ошибки BLE сопоставляются с `BleFailure`:
 
 ```text
 adapter_unavailable
@@ -192,16 +192,17 @@ notification_subscribe_failed
 packet_decode_failed
 ```
 
-UI показывает user-safe message. Техническая причина пишется в `app.log`.
+UI показывает безопасное для пользователя сообщение. Техническая причина пишется в
+`app.log`.
 
 ---
 
 ## Проверки реализации
 
-- discovery можно запустить/остановить без записи;
-- remembered device можно подключить без scan;
-- connection lost не удаляет buffered/saved samples;
-- reconnect открывает новый segment;
-- packets ignored when recording is inactive;
-- packet decode failure не крашит приложение;
-- two connected devices produce isolated recording scopes.
+- поиск можно запустить/остановить без записи;
+- запомненное устройство можно подключить без сканирования;
+- обрыв связи не удаляет буферизованные/сохранённые отсчёты;
+- переподключение открывает новый сегмент;
+- пакеты игнорируются, когда запись неактивна;
+- сбой декодирования пакета не крашит приложение;
+- два подключённых устройства дают изолированные области записи.

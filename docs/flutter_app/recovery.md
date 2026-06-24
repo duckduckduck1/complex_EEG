@@ -12,57 +12,59 @@ ExperimentIndexBloc
 RecordingBloc
 ```
 
-Recovery is explicit. User sees recovered sessions and chooses action.
+Восстановление выполняется явно. Пользователь видит найденные незавершённые
+сессии и выбирает действие.
 
 ---
 
-## Startup scan
+## Стартовое сканирование
 
-At app startup:
+При запуске приложения:
 
-1. scan experiments root;
-2. find folders with `journal.ndjson` and missing/incomplete final JSON;
-3. compute `signal.bin` saved sample count;
-4. replay journal up to valid sample count;
-5. build recovery candidate;
-6. show recovery UI.
+1. просканировать корень экспериментов;
+2. найти папки с `journal.ndjson` и отсутствующим/неполным финальным JSON;
+3. вычислить число сохранённых отсчётов в `signal.bin`;
+4. проиграть журнал до валидного числа отсчётов;
+5. собрать кандидата на восстановление;
+6. показать экран восстановления.
 
 ---
 
-## Signal size truth
+## Истина о размере сигнала
 
-Actual saved samples:
+Реальное число сохранённых отсчётов:
 
 ```text
 saved_sample_count = floor(file_size_bytes / 4)
 ```
 
-If file size is not divisible by 4:
+Если размер файла не кратен 4:
 
-- truncate only after explicit recovery decision;
-- log recovery action;
-- preserve original copy if possible.
-
----
-
-## Journal replay
-
-Journal events that reference samples beyond `saved_sample_count` are not applied
-silently.
-
-Rules:
-
-- completed segment beyond saved size is clipped or rejected with explicit note;
-- open segment closes at last saved sample;
-- labels beyond saved data are marked invalid and excluded from final JSON until
-  user reviews;
-- recovery action writes `recovery_performed` event.
+- усечение выполняется только после явного решения о восстановлении;
+- действие восстановления логируется;
+- по возможности сохраняется исходная копия.
 
 ---
 
-## User choices
+## Проигрывание журнала
 
-Recovery UI offers:
+События журнала, которые ссылаются на отсчёты за пределами `saved_sample_count`,
+не применяются молча.
+
+Правила:
+
+- завершённый сегмент за пределами сохранённого размера обрезается или
+  отклоняется с явной пометкой;
+- открытый сегмент закрывается на последнем сохранённом отсчёте;
+- метки за пределами сохранённых данных помечаются невалидными и исключаются из
+  финального JSON, пока пользователь их не проверит;
+- действие восстановления пишет событие `recovery_performed`.
+
+---
+
+## Выбор пользователя
+
+Экран восстановления предлагает:
 
 ```text
 continue_recording
@@ -71,42 +73,43 @@ open_readonly
 discard_recovery_candidate
 ```
 
-Discard never deletes files immediately. It hides candidate from startup list or
-moves it to ignored state after confirmation.
+Отбрасывание никогда не удаляет файлы немедленно. Оно прячет кандидата из
+стартового списка или переводит его в игнорируемое состояние после
+подтверждения.
 
 ---
 
-## Continue recording
+## Продолжить запись
 
-If user continues:
+Если пользователь продолжает:
 
-1. app computes `valid_byte_length = floor(file_size_bytes / 4) * 4`;
-2. if `signal.bin` has a partial int32 tail, writer truncates file to
+1. приложение вычисляет `valid_byte_length = floor(file_size_bytes / 4) * 4`;
+2. если у `signal.bin` есть неполный «хвост» `int32`, файл усекается до
    `valid_byte_length`;
-3. app writes `recovery_performed` event to `journal.ndjson`;
-4. app reopens writer in append mode;
-5. starts a new segment;
-6. waits for device connection;
-7. resumes only after explicit user action.
+3. приложение пишет событие `recovery_performed` в `journal.ndjson`;
+4. приложение переоткрывает запись в режиме дозаписи (append);
+5. открывает новый сегмент;
+6. ждёт подключения устройства;
+7. возобновляет запись только после явного действия пользователя.
 
-The gap between crash and resume is not signal.
+Промежуток между крашем и возобновлением — не сигнал.
 
 ---
 
-## Finalize
+## Завершить эксперимент
 
-If user finalizes:
+Если пользователь финализирует:
 
-1. app creates final `experiment.json` from recovered state;
-2. invalid future annotations are omitted with warning;
-3. local index updates experiment as stopped/finalized.
+1. приложение создаёт финальный `experiment.json` из восстановленного состояния;
+2. невалидные «будущие» метки опускаются с предупреждением;
+3. локальный индекс отмечает эксперимент как остановленный/финализированный.
 
 ---
 
 ## Проверки реализации
 
-- app can detect unfinished journal;
-- saved sample count comes from file size;
-- journal events beyond saved samples are not blindly accepted;
-- recovery does not auto-delete files;
-- continue recording appends to same signal file and starts new segment.
+- приложение умеет обнаружить незавершённый журнал;
+- число сохранённых отсчётов берётся из размера файла;
+- события журнала за пределами сохранённых отсчётов не принимаются вслепую;
+- восстановление не удаляет файлы автоматически;
+- продолжение записи дописывает в тот же файл сигнала и открывает новый сегмент.

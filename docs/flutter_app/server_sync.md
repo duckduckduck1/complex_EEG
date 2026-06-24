@@ -1,12 +1,12 @@
 # Синхронизация с сервером
 
 Документ описывает MVP-взаимодействие Flutter-приложения с серверным контуром.
-В первом стенде Flutter-приложение не выполняет HTTP upload на сервер. Его задача
-— создать корректный experiment package, который пользователь затем загружает
-через Web UI.
+В первом стенде Flutter-приложение не выполняет HTTP-загрузку на сервер. Его
+задача — создать корректный пакет эксперимента, который пользователь затем
+загружает через Web UI.
 
 Название файла сохранено для связности документации; фактически документ
-описывает package handoff, а не сетевую синхронизацию.
+описывает передачу пакета, а не сетевую синхронизацию.
 
 ---
 
@@ -17,58 +17,59 @@ ExperimentPackageValidationCubit
 PackageExportBloc
 ```
 
-Эти BLoC/Cubit живут на экране сохранённых экспериментов или в export dialog.
-Они не хранят server auth token и не вызывают upload API.
+Эти BLoC/Cubit живут на экране сохранённых экспериментов или в диалоге экспорта.
+Они не хранят серверный токен авторизации и не вызывают API загрузки.
 
 ---
 
-## MVP handoff flow
+## Сценарий передачи пакета в MVP
 
-1. User finishes recording.
-2. App finalizes `experiment.json`.
-3. App keeps experiment as a local folder.
-4. User opens saved experiments list.
-5. User selects experiment package export/check action.
-6. App validates that the package is ready for server upload.
-7. App shows folder location or creates an optional `.zip` export.
-8. User opens server Web UI in browser.
-9. User uploads the folder/archive through Web UI.
+1. Пользователь завершает запись.
+2. Приложение собирает финальный `experiment.json`.
+3. Приложение хранит эксперимент как локальную папку.
+4. Пользователь открывает список сохранённых экспериментов.
+5. Пользователь выбирает действие экспорта/проверки пакета.
+6. Приложение проверяет, что пакет готов к загрузке на сервер.
+7. Приложение показывает расположение папки или создаёт опциональный
+   `.zip`-экспорт.
+8. Пользователь открывает Web UI сервера в браузере.
+9. Пользователь загружает папку/архив через Web UI.
 
-The app never starts upload automatically after recording stop.
-
----
-
-## Package preflight
-
-Before handoff, Flutter checks:
-
-- `experiment.json` exists;
-- `signal.bin` exists;
-- `experiment_id` matches `^[a-zA-Z0-9_-]{1,64}$`;
-- `signal.bin` size is divisible by 4;
-- required server compatibility fields exist;
-- segments fit inside sample count;
-- required files are readable.
-
-Server repeats validation after upload. Flutter preflight is a user convenience,
-not a security boundary.
+Приложение никогда не запускает загрузку автоматически после остановки записи.
 
 ---
 
-## Export formats
+## Предварительная проверка пакета
 
-MVP supports:
+Перед передачей Flutter проверяет:
+
+- `experiment.json` существует;
+- `signal.bin` существует;
+- `experiment_id` соответствует `^[a-zA-Z0-9_-]{1,64}$`;
+- размер `signal.bin` кратен 4;
+- присутствуют поля, необходимые для совместимости с сервером;
+- сегменты помещаются в число отсчётов;
+- обязательные файлы читаются.
+
+Сервер повторяет проверку после загрузки. Предварительная проверка в приложении —
+это удобство для пользователя, а не граница безопасности.
+
+---
+
+## Форматы экспорта
+
+MVP поддерживает:
 
 ```text
-experiment folder
-optional .zip archive
+папка эксперимента
+опциональный .zip-архив
 ```
 
-Current production Web UI upload accepts an experiment folder or selected package
-files. `.zip archive` is a local export/diagnostic format until server-side
-production zip upload is implemented.
+Текущий production Web UI принимает папку эксперимента или выбранные файлы пакета.
+`.zip`-архив остаётся локальным форматом экспорта/диагностики, пока на сервере не
+реализована production-загрузка zip.
 
-The canonical package content is:
+Канонический состав пакета:
 
 ```text
 signal.bin
@@ -77,16 +78,16 @@ journal.ndjson optional
 app.log optional
 ```
 
-If `.zip` export is implemented, archive entries must be relative paths. Absolute
-Windows paths must not be embedded into the archive.
+Если экспорт в `.zip` реализован, записи архива должны быть относительными
+путями. Абсолютные пути Windows не должны попадать в архив.
 
 ---
 
-## Server API usage
+## Использование серверного API
 
-No server API is required by the Flutter app in MVP.
+Серверный API не требуется Flutter-приложению в MVP.
 
-The following may be added later as a separate feature:
+Позже как отдельная функция могут быть добавлены:
 
 ```text
 POST /api/v1/uploads
@@ -95,16 +96,16 @@ POST /api/v1/uploads/{upload_session_id}/complete
 POST /api/v1/experiments/status-batch
 ```
 
-Future direct upload must reuse the same package contract and must not change
-recording behavior.
+Будущая прямая загрузка должна переиспользовать тот же контракт пакета и не должна
+менять поведение записи.
 
 ---
 
-## Local status
+## Локальный статус
 
-Flutter stores local package readiness, not authoritative server status.
+Flutter хранит локальную готовность пакета, а не авторитетный серверный статус.
 
-Canonical local package statuses:
+Канонические локальные статусы пакета:
 
 ```text
 not_ready
@@ -113,14 +114,15 @@ exported
 export_error
 ```
 
-Server status is authoritative only in Web UI for the MVP. If status sync is
-added later, it must be optional and must not block local viewing or recording.
+Серверный статус авторитетен только в Web UI для MVP. Если синхронизация статуса
+будет добавлена позже, она должна быть опциональной и не должна блокировать
+локальный просмотр или запись.
 
 ---
 
-## Error handling
+## Обработка ошибок
 
-Package validation errors map to user messages:
+Ошибки проверки пакета сопоставляются с сообщениями пользователю:
 
 ```text
 package.missing_experiment_json
@@ -132,28 +134,28 @@ package.unreadable_file
 package.export_failed
 ```
 
-The app writes technical details to `app.log`, but must not rewrite source files
-silently.
+Приложение пишет технические детали в `app.log`, но не должно молча переписывать
+исходные файлы.
 
 ---
 
-## Local folder policy
+## Политика локальной папки
 
-After server acceptance through Web UI:
+После приёма эксперимента сервером через Web UI:
 
-- local folder is not deleted automatically;
-- app may not know server status in MVP;
-- user may delete/archive local copy manually;
-- app must ask confirmation before deletion.
+- локальная папка не удаляется автоматически;
+- приложение может не знать серверный статус в MVP;
+- пользователь может удалить/архивировать локальную копию вручную;
+- приложение должно запросить подтверждение перед удалением.
 
 ---
 
 ## Проверки реализации
 
-- package validation works offline;
-- missing `signal.bin` blocks export;
-- missing `experiment.json` blocks export;
-- invalid `experiment_id` blocks export;
-- `.zip` export never contains absolute paths;
-- export does not modify `signal.bin`;
-- local folder remains after export.
+- проверка пакета работает офлайн;
+- отсутствие `signal.bin` блокирует экспорт;
+- отсутствие `experiment.json` блокирует экспорт;
+- невалидный `experiment_id` блокирует экспорт;
+- экспорт в `.zip` никогда не содержит абсолютных путей;
+- экспорт не изменяет `signal.bin`;
+- локальная папка остаётся после экспорта.

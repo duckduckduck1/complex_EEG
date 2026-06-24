@@ -11,15 +11,15 @@ AnnotationBloc
 AnnotationEditorCubit
 ```
 
-`AnnotationBloc` хранит состояние меток текущего experiment view.
+`AnnotationBloc` хранит состояние меток текущего просмотра эксперимента.
 `AnnotationEditorCubit` хранит состояние формы создания/редактирования метки.
 Справочник типов меток читается из app-level singleton `LabelDictionaryCubit`.
 
 ---
 
-## Types
+## Типы меток
 
-### State labels
+### Метки-состояния
 
 Интервальные состояния:
 
@@ -34,9 +34,7 @@ custom
 
 Список не зашит в код. Он идёт из настраиваемого справочника.
 
-### Point events
-
-Точечные события:
+### Точечные события
 
 ```text
 startle
@@ -44,13 +42,13 @@ movement
 custom_event
 ```
 
-### Bad/exclude regions
+### Бракованные участки (исключение из анализа)
 
 Интервальные метки исключения из анализа.
 
 ---
 
-## Coordinate system
+## Система координат
 
 Любая метка привязана к:
 
@@ -69,47 +67,48 @@ end_segment_sample_index
 
 Правила:
 
-- interval is `[start, end)`;
-- interval cannot cross segment boundary;
-- point event must be inside segment;
-- labels do not create or modify segments.
+- интервал задан как `[start, end)`;
+- интервал не может пересекать границу сегмента;
+- точечное событие должно быть внутри сегмента;
+- метки не создают и не меняют сегменты.
 
 ---
 
-## Live annotation
+## Разметка во время записи
 
-During recording:
+Во время записи:
 
-1. user starts state label;
-2. app captures current segment/sample index;
-3. journal writes `annotation_created` draft/start event;
-4. user ends label;
-5. journal writes end/update event.
+1. пользователь начинает метку-состояние;
+2. приложение фиксирует текущий сегмент и индекс отсчёта;
+3. в журнал пишется событие начала метки (`annotation_created`, черновик);
+4. пользователь завершает метку;
+5. в журнал пишется событие завершения/обновления.
 
-If BLE disconnect happens while state label is open:
+Если обрыв BLE произошёл при открытой метке-состоянии:
 
-- label closes at segment end;
-- user may start a new label after reconnect;
-- app does not infer behavior during gap.
-
----
-
-## Saved experiment annotation
-
-User can open saved experiment and add/edit/delete labels.
-
-Rules:
-
-- `signal.bin` is never changed;
-- changes write to journal or annotation change log;
-- final `experiment.json` is rebuilt atomically;
-- edits are validated before saving.
+- метка закрывается на конце сегмента;
+- после переподключения пользователь может начать новую метку;
+- приложение не достраивает поведение за время разрыва.
 
 ---
 
-## Dictionary
+## Разметка сохранённого эксперимента
 
-Dictionary record:
+Пользователь может открыть сохранённый эксперимент и добавить/изменить/удалить
+метки.
+
+Правила:
+
+- `signal.bin` никогда не меняется;
+- изменения пишутся в журнал или лог изменений разметки;
+- финальный `experiment.json` пересобирается атомарно;
+- правки проверяются перед сохранением.
+
+---
+
+## Справочник
+
+Запись справочника:
 
 ```text
 label_type_id
@@ -120,13 +119,13 @@ is_active
 sort_order
 ```
 
-Inactive labels remain readable for old experiments.
+Неактивные метки остаются читаемыми для старых экспериментов.
 
 ---
 
-## UI state
+## Состояние UI
 
-`AnnotationState` includes:
+`AnnotationState` включает:
 
 ```text
 labels
@@ -136,9 +135,9 @@ validation_error
 is_saving
 ```
 
-Widget does not mutate labels directly.
+Виджет не меняет метки напрямую.
 
-`AnnotationState` не содержит dictionary. Экран аннотации подписывается на два
+`AnnotationState` не содержит справочник. Экран разметки подписывается на два
 источника состояния:
 
 ```dart
@@ -148,15 +147,15 @@ BlocBuilder<LabelDictionaryCubit, LabelDictionaryState>(...)
 
 `AnnotationBloc` отвечает за метки конкретного эксперимента. App-level
 `LabelDictionaryCubit` отвечает за справочник типов меток. Виджет объединяет оба
-state только для отображения.
+состояния только для отображения.
 
 ---
 
 ## Проверки реализации
 
-- interval label cannot cross segment boundary;
-- point event outside segment is rejected;
-- disconnect closes open state label;
-- saved annotation rebuilds JSON atomically;
-- inactive dictionary label still renders old experiments;
-- bad/exclude region is stored as annotation, not signal mutation.
+- интервальная метка не может пересечь границу сегмента;
+- точечное событие вне сегмента отклоняется;
+- обрыв закрывает открытую метку-состояние;
+- сохранение разметки пересобирает JSON атомарно;
+- неактивная метка справочника всё ещё отображается в старых экспериментах;
+- бракованный участок хранится как разметка, а не как изменение сигнала.

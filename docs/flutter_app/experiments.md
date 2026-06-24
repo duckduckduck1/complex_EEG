@@ -21,7 +21,7 @@ ExperimentPackageValidationCubit
 
 ---
 
-## Experiment list
+## Список экспериментов
 
 Экран сохранённых экспериментов показывает:
 
@@ -42,7 +42,7 @@ folder_path user-visible optional
 
 ---
 
-## Filters and search
+## Фильтры и поиск
 
 Фильтры:
 
@@ -51,10 +51,10 @@ recording_status
 package_status
 date_from
 date_to
-text search over display_name and experiment_id
+поиск по тексту в display_name и experiment_id
 ```
 
-Sort:
+Сортировка:
 
 ```text
 created_at_desc
@@ -65,24 +65,24 @@ package_status_asc
 
 ---
 
-## Open experiment
+## Открытие эксперимента
 
 При открытии сохранённого эксперимента:
 
-1. app читает local index;
+1. приложение читает локальный индекс;
 2. проверяет наличие папки;
 3. проверяет `signal.bin`;
 4. читает `experiment.json`;
 5. создаёт `ExperimentViewerBloc`;
 6. создаёт scoped `AnnotationBloc` и `VisualizationBloc`.
 
-BLE connection не нужен для просмотра сохранённого эксперимента.
+Подключение по BLE не нужно для просмотра сохранённого эксперимента.
 
 ---
 
-## Export package
+## Экспорт пакета
 
-Экспорт в серверный пакет означает, что папка или `.zip` archive содержит:
+Экспорт в серверный пакет означает, что папка или `.zip`-архив содержит:
 
 ```text
 signal.bin
@@ -92,47 +92,49 @@ app.log optional
 ```
 
 Перед передачей пакета в Web UI `ExperimentPackageValidationCubit` запускает
-preflight validation из `server_sync.md`. `PackageExportBloc` отвечает за
-создание optional `.zip` archive или показ пользователю готовой папки.
+предварительную проверку из [server_sync.md](server_sync.md). `PackageExportBloc`
+отвечает за создание опционального `.zip`-архива или показ пользователю готовой
+папки.
 
-Flutter-приложение не создаёт upload session и не отправляет файлы на сервер в
+Flutter-приложение не создаёт сессию загрузки и не отправляет файлы на сервер в
 MVP.
 
 ---
 
-## Local delete/archive
+## Локальное удаление/архивирование
 
 Удаление локальной папки:
 
 - только вручную;
 - только после подтверждения пользователя;
-- не выполняется автоматически после server accepted;
+- не выполняется автоматически после приёма эксперимента сервером;
 - не удаляет данные на сервере.
 
-Archive action может переместить папку в выбранное пользователем место, но
-должна обновить local index.
+Архивирование может переместить папку в выбранное пользователем место, но должно
+обновить локальный индекс.
 
 ---
 
-## Rebuild index
+## Пересборка индекса
 
-Если local index повреждён, app может пересканировать `experiments_root`.
+Если локальный индекс повреждён, приложение может пересканировать
+`experiments_root`.
 
-Rebuild uses:
+Пересборка использует:
 
 - `experiment.json`;
-- `signal.bin` size;
-- `journal.ndjson`, если final JSON missing;
-- folder metadata.
+- размер `signal.bin`;
+- `journal.ndjson`, если финальный JSON отсутствует;
+- метаданные папки.
 
 ---
 
 ## Проверки реализации
 
-- список строится из BLoC state;
+- список строится из состояния BLoC;
 - удаление требует подтверждения;
-- accepted experiment не удаляется автоматически;
-- open saved experiment works offline;
-- index rebuild восстанавливает experiment records;
-- package validation не требует сети;
-- export не изменяет `signal.bin`.
+- принятый сервером эксперимент не удаляется автоматически;
+- открытие сохранённого эксперимента работает офлайн;
+- пересборка индекса восстанавливает записи экспериментов;
+- проверка пакета не требует сети;
+- экспорт не изменяет `signal.bin`.
