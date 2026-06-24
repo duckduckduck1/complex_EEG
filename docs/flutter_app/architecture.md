@@ -6,13 +6,13 @@
 
 ## Цель
 
-Приложение должно надёжно записывать ЭЭГ локально, отображать live-сигнал,
-позволять разметку, сохранять самодостаточный эксперимент и готовить package для
+Приложение должно надёжно записывать ЭЭГ локально, отображать живой сигнал,
+позволять разметку, сохранять самодостаточный эксперимент и готовить пакет для
 последующей ручной загрузки через Web UI сервера.
 
 Ни один экран не должен напрямую работать с BLE, файловой системой,
 локальной БД или внешними интеграциями. Всё проходит через BLoC и слой
-сервисов/repositories.
+сервисов/репозиториев.
 
 ---
 
@@ -56,7 +56,7 @@ data -> domain
 platform -> data
 ```
 
-UI не зависит от platform layer.
+UI не зависит от слоя `platform`.
 
 ---
 
@@ -100,7 +100,7 @@ flutter_app/
       disk_space/
 ```
 
-Каждый feature имеет собственные `presentation/application/domain/data`.
+Каждая фича имеет собственные `presentation/application/domain/data`.
 Общие примитивы лежат в `core`.
 
 ---
@@ -133,19 +133,19 @@ exp_01HX7M8M9RF2K0Z6GNZ6D7Q7AP
 ### `device_session_id`
 
 Локальный ID активной записи конкретного BLE-устройства. Используется только
-внутри приложения для связывания BLoC instances и writer.
+внутри приложения для связывания экземпляров BLoC и записи.
 
 ---
 
-## Dependency injection
+## Внедрение зависимостей
 
 Зависимости создаются в `dependency_scope.dart`.
 
 UI получает только:
 
 - BLoC/Cubit;
-- readonly view models;
-- callbacks, которые dispatch events.
+- модели представления только для чтения;
+- колбэки, которые отправляют события.
 
 Пример:
 
@@ -164,7 +164,7 @@ MultiRepositoryProvider(
 
 ## Навигация
 
-Navigation layer не выполняет бизнес-операции.
+Слой навигации не выполняет бизнес-операции.
 
 Разрешено:
 
@@ -175,66 +175,81 @@ Navigation layer не выполняет бизнес-операции.
 
 Запрещено:
 
-- стартовать запись из route callback;
-- писать файлы из screen;
-- выполнять внешние интеграции из widget;
+- стартовать запись из колбэка маршрута;
+- писать файлы из экрана;
+- выполнять внешние интеграции из виджета;
 - менять статус эксперимента вне BLoC/use case.
 
 ---
 
-## Feature boundaries
+## Границы фич
 
 ### `devices`
 
-Discovery, remembered devices, connection status, reconnect command.
+Поиск, запомненные устройства, статус подключения, команда переподключения.
 
 ### `recording`
 
-Start/stop, buffers, sample conversion, segment lifecycle, writer coordination.
+Старт/стоп, буферы, преобразование отсчётов, жизненный цикл сегмента, координация
+записи на диск.
 
 ### `annotation`
 
-State labels, point events, bad/exclude regions, dictionary management.
+Метки-состояния, точечные события, бракованные участки, управление справочником.
 
 ### `experiments`
 
-Saved experiments list, local status, open saved experiment, finalization.
+Список сохранённых экспериментов, локальный статус, открытие сохранённого
+эксперимента, финализация.
 
 ### `visualization`
 
-Live chart and saved experiment chart.
+Живой график и график сохранённого эксперимента.
 
 ### `utilities`
 
-Frequency spectrum, band power, spectrogram, filter preview, diagnostic logs.
+Частотный спектр, мощность по полосам, спектрограмма, предпросмотр фильтра,
+диагностические логи.
 
 ### `package_handoff`
 
-Package validation, optional `.zip` export, and handoff instructions for Web UI
-upload. This feature does not perform HTTP upload in MVP.
+Проверка пакета, опциональный экспорт в `.zip` и инструкции по передаче для
+загрузки через Web UI. Эта фича не выполняет HTTP-загрузку в MVP.
 
 ---
 
-## Multi-device UI
+## Интерфейс нескольких устройств
 
 Основной экран показывает список подключённых и ранее известных устройств.
 
-UI model первого стенда:
+Модель UI первого стенда:
 
 ```text
-left/sidebar: devices and connection status
-main area: tabs/panels for active device experiments
+боковая панель: устройства и статус подключения
+основная область: вкладки/панели для активных экспериментов устройств
 ```
 
-Каждый active experiment tab создаёт собственный `DeviceExperimentScope` с BLoC
-instances. Пользователь может переключаться между вкладками, но остановка или
-закрытие активной записи требует явного действия.
+Каждая вкладка активного эксперимента создаёт собственный `DeviceExperimentScope`
+с экземплярами BLoC. Пользователь может переключаться между вкладками, но
+остановка или закрытие активной записи требует явного действия.
+
+Модель вкладок:
+
+- одна вкладка — одно устройство и его эксперимент; вкладки независимы;
+- набор BLoC вкладки создаётся один раз при её открытии и живёт до закрытия —
+  переключение между вкладками не пересоздаёт состояние и не прерывает запись;
+- состояние вкладки (выбранные настройки, видимая область графика, фильтры)
+  сохраняется при уходе на другую вкладку и при возврате; контент вкладок не
+  размонтируется при переключении;
+- закрытие вкладки с активной записью требует подтверждения и корректного
+  завершения сегмента;
+- нельзя закрыть последнюю вкладку — всегда остаётся хотя бы одна рабочая область.
 
 ---
 
-## Error handling
+## Обработка ошибок
 
-Domain errors are typed:
+Доменные ошибки типизированы:
 
 ```text
 BleFailure
@@ -245,35 +260,35 @@ PackageExportFailure
 RecoveryFailure
 ```
 
-BLoC state exposes user-safe error messages and technical error codes. Stack
-traces and raw exceptions are written only to app logs.
+Состояние BLoC отдаёт безопасные для пользователя сообщения и технические коды
+ошибок. Стектрейсы и сырые исключения пишутся только в логи приложения.
 
 ---
 
-## Logging
+## Логирование
 
-Application logs go to:
+Логи приложения идут в:
 
 ```text
 {app_data}/logs/app.log
 ```
 
-Experiment events go to:
+События эксперимента идут в:
 
 ```text
 {experiment_dir}/journal.ndjson
 ```
 
-These are different streams. `app.log` is diagnostic; `journal.ndjson` is part of
-the experiment source.
+Это разные потоки. `app.log` — диагностический; `journal.ndjson` — часть
+источника эксперимента.
 
 ---
 
 ## Проверки реализации
 
-- no production screen uses repository directly;
-- every feature screen is backed by BLoC/Cubit;
-- file/BLE/external integration calls are absent from widgets;
-- experiment IDs pass server regex;
-- each active device has isolated recording state;
-- BLoC tests cover main state transitions.
+- ни один production-экран не использует репозиторий напрямую;
+- за каждым экраном фичи стоит BLoC/Cubit;
+- вызовы файлов/BLE/внешних интеграций отсутствуют в виджетах;
+- ID экспериментов проходят регулярное выражение сервера;
+- каждое активное устройство имеет изолированное состояние записи;
+- тесты BLoC покрывают основные переходы состояний.

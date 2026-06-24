@@ -1,6 +1,7 @@
 # Визуализация (графики)
 
-Документ описывает реализацию графика live и сохранённого сигнала.
+Документ описывает реализацию графика сигнала в реальном времени и сохранённого
+сигнала.
 
 ---
 
@@ -13,44 +14,46 @@ ChartViewportCubit
 ExperimentViewerBloc
 ```
 
-`VisualizationBloc` отвечает за данные графика. Widget отвечает только за
+`VisualizationBloc` отвечает за данные графика. Виджет отвечает только за
 отрисовку.
 
 ---
 
-## Live chart
+## График в реальном времени
 
-Live chart получает downsampled/windowed signal из memory buffer.
+Живой график получает прореженный/оконный сигнал из буфера в памяти.
 
 Правила:
 
-- chart does not read `signal.bin` during recording;
-- chart updates are throttled;
-- writer receives all samples;
-- chart may render fewer points than written to disk.
+- график не читает `signal.bin` во время записи;
+- обновления графика идут с ограничением частоты;
+- `SignalWriter` получает все отсчёты;
+- график может рисовать меньше точек, чем пишется на диск;
+- живой график может применять фильтр только для отображения; на записанные
+  отсчёты это не влияет (`signal.bin` хранит исходные мкВ).
 
 ---
 
-## Saved chart
+## График сохранённого сигнала
 
-Saved chart reads from `signal.bin` through repository:
+График сохранённого сигнала читает из `signal.bin` через репозиторий:
 
 ```text
 ExperimentSignalReader
 ```
 
-Reader supports:
+Чтение поддерживает:
 
-- read sample range;
-- downsample for viewport;
-- map global sample index to segment-local index;
-- avoid reading across gaps as continuous signal.
+- чтение диапазона отсчётов;
+- прореживание под видимую область;
+- перевод глобального индекса отсчёта в индекс внутри сегмента;
+- отказ от чтения через разрывы как непрерывного сигнала.
 
 ---
 
-## Viewport
+## Видимая область
 
-Viewport state:
+Состояние видимой области:
 
 ```text
 start_sample
@@ -61,51 +64,51 @@ zoom_level
 follow_live_tail
 ```
 
-Zoom/pan is BLoC/Cubit state, not widget local state.
+Масштаб и прокрутка — это состояние BLoC/Cubit, а не локальное состояние виджета.
 
 ---
 
-## Gaps and segments
+## Разрывы и сегменты
 
-Chart must show gaps explicitly:
+График должен показывать разрывы явно:
 
-- no line connecting segment end to next segment start;
-- gap marker visible;
-- labels and ФБМ events render inside segments only.
-
----
-
-## Overlays
-
-Overlays:
-
-- state labels;
-- point events;
-- ФБМ events;
-- bad/exclude regions;
-- disconnect gaps;
-- quality warnings.
-
-Overlay data comes from `AnnotationBloc`, `SegmentBloc` and `QualityBloc`.
+- нет линии, соединяющей конец сегмента с началом следующего;
+- маркер разрыва виден;
+- метки и события ФБМ рисуются только внутри сегментов.
 
 ---
 
-## Performance
+## Наложения
 
-Rules:
+Слои наложений:
 
-- never render all samples for long recording;
-- use downsampled viewport data;
-- cache decoded sample ranges;
-- avoid rebuilding entire screen on each packet;
-- use `BlocSelector` for chart-only state.
+- метки-состояния;
+- точечные события;
+- события ФБМ;
+- бракованные участки;
+- разрывы из-за обрыва связи;
+- предупреждения о качестве.
+
+Данные наложений приходят из `AnnotationBloc`, `SegmentBloc` и `QualityBloc`.
+
+---
+
+## Производительность
+
+Правила:
+
+- никогда не рисовать все отсчёты длинной записи;
+- использовать прореженные данные видимой области;
+- кэшировать декодированные диапазоны отсчётов;
+- не перестраивать весь экран на каждый пакет;
+- использовать `BlocSelector` для состояния, относящегося только к графику.
 
 ---
 
 ## Проверки реализации
 
-- recording remains smooth while disk flush runs;
-- chart does not connect across gaps;
-- zoom/pan survives widget rebuild;
-- annotations align by segment/sample index;
-- saved experiment can open without active BLE connection.
+- запись остаётся плавной во время сброса буфера на диск;
+- график не соединяет линию через разрывы;
+- масштаб/прокрутка переживают перестройку виджета;
+- разметка выравнивается по индексу сегмента/отсчёта;
+- сохранённый эксперимент открывается без активного подключения BLE.

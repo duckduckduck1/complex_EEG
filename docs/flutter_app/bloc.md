@@ -6,21 +6,21 @@
 
 ## Главный принцип
 
-Весь сценарный state приложения находится в BLoC/Cubit.
+Всё сценарное состояние приложения находится в BLoC/Cubit.
 
-Widget tree:
+Дерево виджетов:
 
 - подписывается на состояние через `BlocBuilder`, `BlocSelector`,
   `BlocListener`;
 - отправляет события через `context.read<XBloc>().add(...)`;
-- не вызывает repositories/services напрямую;
+- не вызывает репозитории/сервисы напрямую;
 - не хранит бизнес-состояние в `StatefulWidget`.
 
 ---
 
 ## Типы BLoC
 
-### App-level
+### Уровень приложения
 
 ```text
 AppBloc
@@ -32,10 +32,10 @@ LabelDictionaryCubit
 Живут всё время работы приложения.
 
 `LabelDictionaryCubit` является app-level singleton, потому что справочник меток
-используется и в settings screen для редактирования, и в annotation screen для
-разметки. Экранные scopes не создают отдельные экземпляры справочника.
+используется и в экране настроек для редактирования, и в экране разметки. Экранные
+области (scopes) не создают отдельные экземпляры справочника.
 
-### Device-level
+### Уровень устройства
 
 ```text
 DeviceDiscoveryBloc
@@ -43,9 +43,9 @@ DeviceConnectionBloc
 RememberedDevicesBloc
 ```
 
-Discovery может быть singleton. Connection создаётся per device.
+Поиск устройств может быть singleton; подключение создаётся на каждое устройство.
 
-### Recording session-level
+### Уровень сессии записи
 
 ```text
 RecordingBloc
@@ -56,10 +56,10 @@ PhotobiomodulationBloc
 DiskSpaceCubit
 ```
 
-Создаются на активный эксперимент устройства и уничтожаются после закрытия
-recording session.
+Создаются на активный эксперимент устройства и уничтожаются после закрытия сессии
+записи.
 
-### Editor/viewer-level
+### Уровень редактора/просмотра
 
 ```text
 ExperimentViewerBloc
@@ -69,9 +69,9 @@ VisualizationBloc
 UtilitiesBloc
 ```
 
-Создаются при открытии сохранённого или live эксперимента.
+Создаются при открытии сохранённого или живого эксперимента.
 
-### Settings-level
+### Уровень настроек
 
 ```text
 MetadataFormBloc
@@ -79,11 +79,11 @@ StorageSettingsCubit
 PackageExportSettingsCubit
 ```
 
-Создаются на время открытия settings/metadata screens. `MetadataFormBloc` также
-используется перед стартом записи, когда пользователь заполняет форму
+Создаются на время открытия экранов настроек и метаданных. `MetadataFormBloc`
+также используется перед стартом записи, когда пользователь заполняет форму
 эксперимента.
 
-### Experiments-list-level
+### Уровень списка экспериментов
 
 ```text
 ExperimentListFilterCubit
@@ -92,35 +92,35 @@ ExperimentActionsBloc
 
 Создаются на время открытия списка сохранённых экспериментов.
 
-### Startup/recovery-level
+### Уровень запуска/восстановления
 
 ```text
 RecoveryBloc
 ```
 
-Создаётся при startup scan, если приложение нашло незавершённые или
+Создаётся при стартовом сканировании, если приложение нашло незавершённые или
 повреждённые локальные эксперименты.
 
-### Package handoff
+### Передача пакета
 
 ```text
 ExperimentPackageValidationCubit
 PackageExportBloc
 ```
 
-Создаются при проверке/экспорте готового experiment package. В MVP эти BLoC не
-выполняют HTTP upload и не хранят server auth token.
+Создаются при проверке/экспорте готового пакета эксперимента. В MVP эти BLoC не
+выполняют HTTP-загрузку и не хранят серверный токен авторизации.
 
 ---
 
 ## Запрещено
 
-- `setState` для recording status, BLE status, package export status, annotation,
-  selected experiment, chart window, utility params;
-- прямой вызов `File(...)` из widget;
-- прямой вызов HTTP client из widget/BLoC presentation helpers;
-- direct BLE subscription inside widget;
-- mutable global singleton для активной записи.
+- `setState` для статуса записи, статуса BLE, статуса экспорта пакета, разметки,
+  выбранного эксперимента, окна графика, параметров утилит;
+- прямой вызов `File(...)` из виджета;
+- прямой вызов HTTP-клиента из виджета или presentation-хелперов BLoC;
+- прямая подписка на BLE внутри виджета;
+- изменяемый глобальный singleton для активной записи.
 
 ---
 
@@ -128,19 +128,19 @@ PackageExportBloc
 
 `setState` допустим только для локальных визуальных эффектов:
 
-- hover;
-- раскрытие tooltip;
+- наведение (hover);
+- раскрытие подсказки (tooltip);
 - временная анимация;
-- focus highlight.
+- подсветка фокуса.
 
-Если значение должно пережить rebuild, влиять на данные или использоваться
-другим widget — это BLoC/Cubit state.
+Если значение должно пережить перестройку виджета (rebuild), влиять на данные или
+использоваться другим виджетом — это состояние BLoC/Cubit.
 
 ---
 
-## Event naming
+## Именование событий
 
-Events are past-tense user/system facts or commands:
+Событие — это факт от пользователя или системы в прошедшем времени либо команда:
 
 ```text
 RecordingStartRequested
@@ -154,7 +154,7 @@ PackageValidationRequested
 PackageExportRequested
 ```
 
-Не использовать vague events:
+Не использовать размытые имена событий:
 
 ```text
 Update
@@ -164,9 +164,9 @@ DoStuff
 
 ---
 
-## State naming
+## Именование состояния
 
-State содержит всё, что нужно UI для отображения.
+Состояние содержит всё, что нужно UI для отображения.
 
 Пример:
 
@@ -181,14 +181,14 @@ final class RecordingState {
 }
 ```
 
-State immutable. Изменения только через `copyWith` или generated immutable
-classes.
+Состояние неизменяемо. Изменения только через `copyWith` или сгенерированные
+неизменяемые классы.
 
 ---
 
-## Side effects
+## Побочные эффекты
 
-Side effects выполняются в use cases/services, вызванных из BLoC.
+Побочные эффекты выполняются в use case/сервисах, вызванных из BLoC.
 
 Пример:
 
@@ -199,27 +199,28 @@ RecordingBloc
     -> SignalWriter
 ```
 
-BLoC отвечает за orchestration and state. Writer отвечает за запись bytes.
+BLoC отвечает за оркестрацию и состояние. `SignalWriter` отвечает за запись
+байтов.
 
 ---
 
-## Streams
+## Потоки данных
 
-BLE data stream is high-frequency. UI не должен получать каждую точку как новый
-full app state.
+Поток данных BLE высокочастотный. UI не должен получать каждую точку как новое
+полное состояние приложения.
 
 Правило:
 
-- writer получает все samples;
-- chart buffer получает decimated/windowed view;
-- UI получает throttled chart state;
-- critical events пишутся без throttle.
+- `SignalWriter` получает все отсчёты;
+- буфер графика получает прореженное/оконное представление;
+- UI получает состояние графика с ограничением частоты обновления;
+- критичные события пишутся без ограничения частоты.
 
 ---
 
-## Multi-device isolation
+## Изоляция нескольких устройств
 
-Для каждого подключённого устройства создаётся независимый scope:
+Для каждого подключённого устройства создаётся независимая область (scope):
 
 ```text
 DeviceExperimentScope
@@ -233,28 +234,28 @@ DeviceExperimentScope
   DiskSpaceCubit
 ```
 
-UI model for multi-device:
+Модель UI для нескольких устройств:
 
-- main screen shows connected/remembered devices as a device list;
-- every active recording opens a tab/panel keyed by `device_session_id`;
-- each tab owns its `DeviceExperimentScope`;
-- closing a tab requires explicit stop/finalize/cancel decision if recording is
-  active.
+- главный экран показывает подключённые и запомненные устройства как список;
+- каждая активная запись открывает вкладку/панель с ключом `device_session_id`;
+- каждая вкладка владеет своим `DeviceExperimentScope`;
+- закрытие вкладки требует явного решения (остановить/финализировать/отменить),
+  если запись активна.
 
-Ошибка одного scope не меняет состояние другого scope.
+Ошибка одной области не меняет состояние другой.
 
 ---
 
-## BLoC tests
+## Тесты BLoC
 
 Каждый BLoC должен иметь тесты:
 
-- initial state;
-- happy path;
-- failure path;
-- cancellation/dispose;
-- repeated event safety;
-- no duplicate side effects.
+- начальное состояние;
+- успешный сценарий;
+- сбойный сценарий;
+- отмена/освобождение (dispose);
+- безопасность повторных событий;
+- отсутствие дублирующихся побочных эффектов.
 
-Для BLoC, который пишет данные, тест проверяет не только state, но и вызовы
-use case/repository mock.
+Для BLoC, который пишет данные, тест проверяет не только состояние, но и вызовы
+mock-объектов use case/репозитория.

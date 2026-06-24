@@ -14,13 +14,13 @@ StorageSettingsCubit
 PackageExportSettingsCubit
 ```
 
-Настройки не читаются напрямую из widget. UI показывает state и dispatch events.
-Settings screen использует app-level singleton `LabelDictionaryCubit` для
+Настройки не читаются напрямую из виджета. UI показывает состояние и отправляет
+события. Экран настроек использует app-level singleton `LabelDictionaryCubit` для
 редактирования справочника меток и не создаёт отдельный экземпляр.
 
 ---
 
-## App settings
+## Настройки приложения
 
 Поля:
 
@@ -33,7 +33,7 @@ default_adc_model
 label_dictionary_path optional
 ```
 
-Default values:
+Значения по умолчанию:
 
 ```text
 sample_rate_hz = 250
@@ -43,9 +43,9 @@ signal_flush_interval_seconds = 10
 
 ---
 
-## Metadata form
+## Форма метаданных
 
-Перед стартом записи пользователь заполняет metadata form.
+Перед стартом записи пользователь заполняет форму метаданных.
 
 Минимальные поля:
 
@@ -70,29 +70,30 @@ sample_encoding = int32_le
 app_version
 ```
 
-`app_version` берётся из package metadata через `package_info_plus`
-(`PackageInfo.version` + build number, если доступен).
+`app_version` берётся из метаданных пакета через `package_info_plus`
+(`PackageInfo.version` плюс номер сборки, если доступен).
 
-Metadata form не стартует запись напрямую. Она dispatches
-`RecordingStartRequested` with validated metadata.
+Форма метаданных не стартует запись напрямую. Она отправляет
+`RecordingStartRequested` с проверенными метаданными.
 
 ---
 
-## Validation
+## Валидация
 
-Rules:
+Правила:
 
 - `display_name` не пустой;
-- `experiment_id` генерируется приложением и matches `^[a-zA-Z0-9_-]{1,64}$`;
-- `sample_rate_hz` fixed to 250 on first stand;
-- required metadata fields must be present before recording starts;
-- filesystem folder name is sanitized separately from `display_name`.
+- `experiment_id` генерируется приложением и соответствует
+  `^[a-zA-Z0-9_-]{1,64}$`;
+- `sample_rate_hz` зафиксирован в 250 на первом стенде;
+- обязательные поля метаданных должны присутствовать до старта записи;
+- имя папки в файловой системе нормализуется отдельно от `display_name`.
 
 ---
 
-## Label dictionary settings
+## Настройки справочника меток
 
-Dictionary is editable:
+Справочник редактируемый:
 
 ```text
 label_type_id
@@ -103,18 +104,17 @@ is_active
 sort_order
 ```
 
-Rules:
+Правила:
 
-- deleting label type used by old experiments marks it inactive;
-- old experiments keep rendering inactive labels;
-- dictionary changes do not rewrite old `signal.bin`;
-- dictionary export/import is allowed as JSON.
+- удаление типа метки, использованного старыми экспериментами, помечает его
+  неактивным;
+- старые эксперименты продолжают отображать неактивные метки;
+- изменения справочника не переписывают старый `signal.bin`;
+- экспорт/импорт справочника разрешён в формате JSON.
 
 ---
 
-## Package export settings
-
-Package export settings:
+## Настройки экспорта пакета
 
 ```text
 default_export_directory optional
@@ -122,30 +122,30 @@ zip_export_enabled
 include_app_log_by_default
 ```
 
-Flutter-приложение не хранит server auth token в MVP. Загрузка пакета
+Flutter-приложение не хранит серверный токен авторизации в MVP. Загрузка пакета
 выполняется через Web UI после web-аутентификации пользователя.
 
 ---
 
-## Storage settings
+## Настройки хранилища
 
-Changing `experiments_root`:
+Смена `experiments_root`:
 
-1. user selects new directory;
-2. app validates access;
-3. app offers scan/rebuild index;
-4. setting is saved only after successful validation.
+1. пользователь выбирает новую директорию;
+2. приложение проверяет доступ;
+3. приложение предлагает сканирование/пересборку индекса;
+4. настройка сохраняется только после успешной проверки.
 
-App does not silently move existing experiments unless user explicitly chooses
-archive/move action.
+Приложение не перемещает существующие эксперименты молча — только если
+пользователь явно выбрал архивирование/перемещение.
 
 ---
 
 ## Проверки реализации
 
-- metadata cannot start recording while invalid;
-- generated experiment ID matches server regex;
-- package export settings do not contain server credentials;
-- changing experiments root validates directory access;
-- inactive labels still render old experiments;
-- settings state is managed by Cubit/BLoC, not widget local state.
+- метаданные не могут стартовать запись, пока невалидны;
+- сгенерированный ID эксперимента соответствует регулярному выражению сервера;
+- настройки экспорта пакета не содержат серверных учётных данных;
+- смена корня экспериментов проверяет доступ к директории;
+- неактивные метки всё ещё отображаются в старых экспериментах;
+- состоянием настроек управляет Cubit/BLoC, а не локальное состояние виджета.

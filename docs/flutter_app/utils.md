@@ -17,16 +17,16 @@ DiagnosticLogCubit
 ```
 
 Каждая утилита имеет собственный Cubit или отдельную ветку `UtilitiesBloc`.
-Параметры утилит не хранятся в widget state.
+Параметры утилит не хранятся в состоянии виджета.
 
 `UtilitiesBloc` владеет выбором активной утилиты, выбранным окном анализа и
 общими ошибками. Sub-cubits отвечают за конкретные расчёты и параметры.
 
 ---
 
-## Events
+## События
 
-`UtilitiesBloc` events:
+События `UtilitiesBloc`:
 
 ```text
 UtilityTabSelected
@@ -36,7 +36,7 @@ UtilityRefreshRequested
 UtilityInputInvalidated
 ```
 
-Sub-cubit events/actions:
+События/действия sub-cubit:
 
 ```text
 SpectrumParametersChanged
@@ -50,12 +50,12 @@ FilterPreviewResetRequested
 DiagnosticLogReloadRequested
 ```
 
-Widget dispatches events only. DSP calculation is performed by services called
-from BLoC/Cubit.
+Виджет только отправляет события. Расчёты DSP выполняются сервисами, вызванными
+из BLoC/Cubit.
 
 ---
 
-## State
+## Состояние
 
 `UtilitiesState`:
 
@@ -121,20 +121,20 @@ error
 
 ---
 
-## Data flow
+## Поток данных
 
 ```text
-Visualization/ExperimentViewer selection
-  -> UtilitiesBloc UtilityWindowChanged
-  -> ExperimentSignalReader reads selected continuous window
-  -> DspService calculates spectrum/bands/spectrogram/filter preview
-  -> sub-cubit emits result state
-  -> widget renders result
+Выбор в Visualization/ExperimentViewer
+  -> UtilitiesBloc: UtilityWindowChanged
+  -> ExperimentSignalReader читает выбранное непрерывное окно
+  -> DspService считает спектр/полосы/спектрограмму/предпросмотр фильтра
+  -> sub-cubit выдаёт состояние результата
+  -> виджет отрисовывает результат
 ```
 
-`ExperimentSignalReader` reads only selected sample ranges. Utilities never load
-the full `signal.bin` unless the selected window is the full file by explicit
-user action.
+`ExperimentSignalReader` читает только выбранные диапазоны отсчётов. Утилиты
+никогда не грузят весь `signal.bin`, кроме случая, когда выбранное окно — это весь
+файл по явному действию пользователя.
 
 ---
 
@@ -142,15 +142,15 @@ user action.
 
 - утилиты не изменяют `signal.bin`;
 - расчёты выполняются по непрерывным сегментам;
-- gaps не заполняются;
-- results are diagnostic, not source of truth;
+- разрывы не заполняются;
+- результаты диагностические, а не источник истины;
 - автоматическая классификация фаз сна не выполняется.
 
 ---
 
-## Input window
+## Окно ввода
 
-Utility input:
+Вход утилиты:
 
 ```text
 experiment_id
@@ -161,14 +161,14 @@ sample_rate_hz
 samples_microvolts
 ```
 
-Если окно пересекает gap, UI требует выбрать непрерывный участок или анализирует
-только валидную часть с явным warning.
+Если окно пересекает разрыв, UI требует выбрать непрерывный участок или анализирует
+только валидную часть с явным предупреждением.
 
 ---
 
-## Frequency spectrum
+## Частотный спектр
 
-Parameters:
+Параметры:
 
 ```text
 window_seconds
@@ -177,18 +177,28 @@ frequency_min
 frequency_max
 ```
 
-Output:
+Результат:
 
 ```text
 frequencies_hz[]
 power[]
 ```
 
+Алгоритм:
+
+- к выбранному окну применяется оконная функция (по умолчанию Hann), чтобы
+  снизить спектральные утечки;
+- длина FFT — степень двойки, покрывающая `window_seconds` при 250 Гц;
+- амплитудный спектр нормируется на длину окна и выдаётся в дБ
+  (`20 * log10(|X| / N)`);
+- частоты считаются до Найквиста (125 Гц) и обрезаются до
+  `[frequency_min, frequency_max]` для отображения.
+
 ---
 
-## Band power
+## Мощность по полосам
 
-Band config is user/lab configurable:
+Конфигурация полос настраивается пользователем/лабораторией:
 
 ```text
 band_id
@@ -198,7 +208,7 @@ frequency_to_hz
 color
 ```
 
-Output:
+Результат:
 
 ```text
 band_id
@@ -207,13 +217,20 @@ window_start_sample
 window_end_sample
 ```
 
-Band power does not assign sleep phase.
+Мощность полосы — относительная: внутри каждой полосы спектр суммируется в
+линейной шкале (из дБ обратно в линейную), затем каждая полоса делится на сумму
+по всем настроенным полосам. Результат — доля `0..1`, удобная для сравнения
+полос между собой.
+
+Мощность по полосам не назначает фазу сна. Автоматическое управление ФБМ по
+порогам мощности в MVP не выполняется — ФБМ включает оператор (см.
+[`ble.md`](ble.md)).
 
 ---
 
-## Spectrogram
+## Спектрограмма
 
-Parameters:
+Параметры:
 
 ```text
 window_seconds
@@ -223,13 +240,14 @@ frequency_max
 color_scale
 ```
 
-Spectrogram shows gaps as missing data, not interpolated image.
+Спектрограмма показывает разрывы как отсутствующие данные, а не как
+интерполированное изображение.
 
 ---
 
-## Filter preview
+## Предпросмотр фильтра
 
-Supported first-stage previews:
+Поддерживаемые типы предпросмотра первого этапа:
 
 ```text
 notch
@@ -238,30 +256,34 @@ high_pass
 low_pass
 ```
 
-Filter preview returns display samples only. No filtered output is written back to
-experiment source.
+Фильтры реализуются как IIR Butterworth: high-pass и low-pass — низких порядков,
+notch — band-stop. Частоты среза и порядок — параметры предпросмотра, задаются
+пользователем. Фильтр применяется к копии выбранного окна.
+
+Предпросмотр фильтра возвращает только отображаемые отсчёты. Отфильтрованный
+результат не записывается обратно в источник эксперимента. `signal.bin` всегда
+хранит исходные (нефильтрованные) мкВ.
 
 ---
 
-## Diagnostic logs
+## Диагностические логи
 
-`DiagnosticLogCubit` reads `app.log` and presents:
+`DiagnosticLogCubit` читает `app.log` и показывает:
 
-- time;
-- severity;
-- subsystem;
-- message;
-- optional error code.
+- время;
+- уровень важности;
+- подсистема;
+- сообщение;
+- опциональный код ошибки.
 
-Logs are for diagnostics and can be included in the experiment package as
-`app.log`.
+Логи нужны для диагностики и могут включаться в пакет эксперимента как `app.log`.
 
 ---
 
 ## Проверки реализации
 
-- utility cannot write to `signal.bin`;
-- analysis window cannot silently cross gap;
-- changing filter parameters affects preview only;
-- band config is editable without code changes;
-- log viewer does not parse `journal.ndjson` as technical log.
+- утилита не может писать в `signal.bin`;
+- окно анализа не может молча пересечь разрыв;
+- изменение параметров фильтра влияет только на предпросмотр;
+- конфигурация полос редактируется без изменений кода;
+- просмотрщик логов не разбирает `journal.ndjson` как технический лог.
