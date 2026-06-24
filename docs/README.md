@@ -26,6 +26,8 @@
 
 - [Формат пакета эксперимента](reference/experiment_package.md) — контракт
   Flutter ↔ сервер.
+- [Формат пакета устройства](reference/device_packet.md) — контракт
+  устройство ↔ Flutter (BLE, декодирование сигнала, команда ФБМ).
 - [HTTP API](reference/http_api.md) — серверные эндпоинты.
 
 ## Сервер (`server/`)

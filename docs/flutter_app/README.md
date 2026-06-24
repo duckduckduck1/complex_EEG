@@ -44,6 +44,9 @@ testing.md            - тестовая стратегия Flutter-прилож
 Формат пакета эксперимента (`signal.bin`, `experiment.json`, …) вынесен в общий
 контракт: [reference/experiment_package.md](../reference/experiment_package.md).
 
+Контракт с устройством (BLE-характеристика, декодирование отсчётов в мкВ, команда
+ФБМ) — [reference/device_packet.md](../reference/device_packet.md).
+
 `server_sync.md` сохраняет старое имя файла, но в MVP не описывает прямую
 сетевую синхронизацию. Реальная feature в коде должна называться
 `package_handoff`.

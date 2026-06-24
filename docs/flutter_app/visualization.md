@@ -27,7 +27,9 @@ Live chart получает downsampled/windowed signal из memory buffer.
 - chart does not read `signal.bin` during recording;
 - chart updates are throttled;
 - writer receives all samples;
-- chart may render fewer points than written to disk.
+- chart may render fewer points than written to disk;
+- live chart может применять фильтр только для отображения; на записанные
+  samples это не влияет (`signal.bin` хранит исходные мкВ).
 
 ---
 
