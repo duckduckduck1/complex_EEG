@@ -1,0 +1,28 @@
+{
+  "name": "filters_sdk",
+  "version": "1.0.0",
+  "summary": "Library for filtering raw signal",
+  "description": "Library for filtering raw signal",
+  "homepage": "https://sdk.brainbit.com/",
+  "license": {
+    "file": "../LICENSE"
+  },
+  "authors": {
+    "BRAINBIT Inc.": "support@brainbit.com"
+  },
+  "source": {
+    "path": "."
+  },
+  "dependencies": {
+    "FlutterMacOS": []
+  },
+  "vendored_libraries": "libspectrumlib.dylib",
+  "platforms": {
+    "osx": "10.11"
+  },
+  "pod_target_xcconfig": {
+    "DEFINES_MODULE": "YES"
+  },
+  "swift_versions": "5.0",
+  "swift_version": "5.0"
+}

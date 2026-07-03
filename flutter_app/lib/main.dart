@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-
-import 'app/app.dart';
+import 'package:iot/main_app.dart';
 
 void main() {
-  runApp(const OperatorApp());
+  runApp(MainApp());
 }
