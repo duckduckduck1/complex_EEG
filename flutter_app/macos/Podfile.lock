@@ -1,0 +1,22 @@
+PODS:
+  - filters_sdk (1.0.0):
+    - FlutterMacOS
+  - FlutterMacOS (1.0.0)
+
+DEPENDENCIES:
+  - filters_sdk (from `Flutter/ephemeral/.symlinks/plugins/filters_sdk/macos`)
+  - FlutterMacOS (from `Flutter/ephemeral`)
+
+EXTERNAL SOURCES:
+  filters_sdk:
+    :path: Flutter/ephemeral/.symlinks/plugins/filters_sdk/macos
+  FlutterMacOS:
+    :path: Flutter/ephemeral
+
+SPEC CHECKSUMS:
+  filters_sdk: d42b0bf6c8d8371c09dcedb0238dcefb56674d39
+  FlutterMacOS: 8f6f14fa908a6fb3fba0cd85dbd81ec4b251fb24
+
+PODFILE CHECKSUM: 7eb978b976557c8c1cd717d8185ec483fd090a82
+
+COCOAPODS: 1.16.2
