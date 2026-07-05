@@ -28,29 +28,77 @@ class _FilterSliderState extends State<FilterSlider> {
   }
 
   @override
+  void didUpdateWidget(covariant FilterSlider oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initVal != widget.initVal) {
+      _currentVal = widget.initVal;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final value = _currentVal.clamp(0.0, 80.0).toDouble();
+
     void onSlide(double val) {
-      if (widget.isActive) {
-        setState(() {
-          _currentVal = val;
-        });
-        widget.onChanged(val);
-      }
+      setState(() {
+        _currentVal = val;
+      });
+      widget.onChanged(val);
     }
 
-    return Column(
-      children: [
-        Text("${widget.title} ${_currentVal.toStringAsFixed(1)} Hz"),
-        Slider(
-          value: widget.isActive ? _currentVal : 0,
-          onChanged: onSlide,
-          max: 80,
-          min: 0,
-          divisions: 160,
-          thumbColor:
-              widget.isActive ? Theme.of(context).primaryColor : Colors.grey,
-        ),
-      ],
+    return AnimatedOpacity(
+      duration: const Duration(milliseconds: 120),
+      opacity: widget.isActive ? 1 : 0.58,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Text(
+                '${_currentVal.toStringAsFixed(1)} Hz',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                widget.isActive ? 'вкл' : 'выкл',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color:
+                      widget.isActive
+                          ? colorScheme.primary
+                          : colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              trackHeight: 5,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
+              disabledThumbColor: colorScheme.onSurfaceVariant,
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+            ),
+            child: Slider(
+              value: value,
+              onChanged: widget.isActive ? onSlide : null,
+              max: 80,
+              min: 0,
+              divisions: 160,
+              activeColor: colorScheme.primary,
+              inactiveColor: colorScheme.outline.withValues(alpha: 0.58),
+              thumbColor:
+                  widget.isActive
+                      ? colorScheme.primary
+                      : colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

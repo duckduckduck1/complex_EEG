@@ -24,12 +24,15 @@ class _EegWidgetSettingsBarState extends State<EegWidgetSettingsBar> {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceAround,
+    return Wrap(
+      alignment: WrapAlignment.center,
+      runAlignment: WrapAlignment.center,
+      spacing: 8,
+      runSpacing: 8,
       children: [
         ShowSwitch(
           initialState: widget.initialSettings.isFilterShowing,
-          title: "Filter",
+          title: 'Фильтр',
           onChaged: (val) {
             setState(() {
               _currentSettings.isFilterShowing = val;
@@ -39,7 +42,7 @@ class _EegWidgetSettingsBarState extends State<EegWidgetSettingsBar> {
         ),
         ShowSwitch(
           initialState: widget.initialSettings.isFftShowing,
-          title: "FFT",
+          title: 'Спектр',
           onChaged: (val) {
             setState(() {
               _currentSettings.isFftShowing = val;
@@ -49,7 +52,7 @@ class _EegWidgetSettingsBarState extends State<EegWidgetSettingsBar> {
         ),
         ShowSwitch(
           initialState: widget.initialSettings.isBandsShowing,
-          title: "Bands",
+          title: 'Ритмы',
           onChaged: (val) {
             setState(() {
               _currentSettings.isBandsShowing = val;

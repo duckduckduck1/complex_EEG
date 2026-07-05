@@ -31,15 +31,33 @@ class _FillterSettingsWidgetState extends State<FillterSettingsWidget> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxWidth = constraints.maxWidth;
+        final itemWidth =
+            !maxWidth.isFinite
+                ? 220.0
+                : maxWidth >= 720
+                ? (maxWidth - 24) / 3
+                : maxWidth >= 440
+                ? (maxWidth - 12) / 2
+                : maxWidth;
+
+        return Wrap(
+          spacing: 12,
+          runSpacing: 8,
           children: [
-            Expanded(
+            _FilterControl(
+              width: itemWidth,
+              title: 'LP',
+              enabled: _currentSettings.isLpOn,
+              onEnabledChanged: (val) {
+                _currentSettings.isLpOn = val;
+                _updateSettings(_currentSettings);
+              },
               child: FilterSlider(
                 initVal: _currentSettings.lp,
-                title: "lp",
+                title: 'LP',
                 isActive: _currentSettings.isLpOn,
                 onChanged: (val) {
                   _currentSettings.lp = val;
@@ -47,22 +65,17 @@ class _FillterSettingsWidgetState extends State<FillterSettingsWidget> {
                 },
               ),
             ),
-            Checkbox(
-              value: _currentSettings.isLpOn,
-              onChanged: (val) {
-                _currentSettings.isLpOn = val!;
+            _FilterControl(
+              width: itemWidth,
+              title: 'HP',
+              enabled: _currentSettings.isHpOn,
+              onEnabledChanged: (val) {
+                _currentSettings.isHpOn = val;
                 _updateSettings(_currentSettings);
               },
-            ),
-          ],
-        ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Expanded(
               child: FilterSlider(
                 initVal: _currentSettings.hp,
-                title: "hp",
+                title: 'HP',
                 isActive: _currentSettings.isHpOn,
                 onChanged: (val) {
                   _currentSettings.hp = val;
@@ -70,23 +83,17 @@ class _FillterSettingsWidgetState extends State<FillterSettingsWidget> {
                 },
               ),
             ),
-            Checkbox(
-              value: _currentSettings.isHpOn,
-              onChanged: (val) {
-                _currentSettings.isHpOn = val!;
+            _FilterControl(
+              width: itemWidth,
+              title: 'Notch',
+              enabled: _currentSettings.isNotchOn,
+              onEnabledChanged: (val) {
+                _currentSettings.isNotchOn = val;
                 _updateSettings(_currentSettings);
               },
-            ),
-          ],
-        ),
-
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Expanded(
               child: FilterSlider(
                 initVal: _currentSettings.notch,
-                title: "notch",
+                title: 'Notch',
                 isActive: _currentSettings.isNotchOn,
                 onChanged: (val) {
                   _currentSettings.notch = val;
@@ -94,16 +101,92 @@ class _FillterSettingsWidgetState extends State<FillterSettingsWidget> {
                 },
               ),
             ),
-            Checkbox(
-              value: _currentSettings.isNotchOn,
-              onChanged: (val) {
-                _currentSettings.isNotchOn = val!;
-                _updateSettings(_currentSettings);
-              },
-            ),
           ],
+        );
+      },
+    );
+  }
+}
+
+class _FilterControl extends StatelessWidget {
+  final double width;
+  final String title;
+  final bool enabled;
+  final ValueChanged<bool> onEnabledChanged;
+  final Widget child;
+
+  const _FilterControl({
+    required this.width,
+    required this.title,
+    required this.enabled,
+    required this.onEnabledChanged,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return SizedBox(
+      width: width,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color:
+              enabled
+                  ? colorScheme.primary.withValues(alpha: 0.08)
+                  : colorScheme.surface.withValues(alpha: 0.6),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color:
+                enabled
+                    ? colorScheme.primary.withValues(alpha: 0.28)
+                    : colorScheme.outline.withValues(alpha: 0.64),
+          ),
         ),
-      ],
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 9,
+                    height: 9,
+                    decoration: BoxDecoration(
+                      color:
+                          enabled
+                              ? colorScheme.primary
+                              : colorScheme.outline.withValues(alpha: 0.9),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      title,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color:
+                            enabled
+                                ? colorScheme.onSurface
+                                : colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  Switch(
+                    value: enabled,
+                    onChanged: onEnabledChanged,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ],
+              ),
+              child,
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
