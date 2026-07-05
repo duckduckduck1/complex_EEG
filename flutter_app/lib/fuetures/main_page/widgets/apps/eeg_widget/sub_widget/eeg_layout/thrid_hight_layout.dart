@@ -7,6 +7,13 @@ class EegLayout extends StatelessWidget {
   final Widget? secondWidget;
   final Widget? thirdWidget;
   final Widget? fillterWidget;
+  final String firstTitle;
+  final String firstMeta;
+  final String? secondTitle;
+  final String? secondMeta;
+  final String? thirdTitle;
+  final String? thirdMeta;
+
   const EegLayout({
     super.key,
     required this.isFiltterShowing,
@@ -14,6 +21,12 @@ class EegLayout extends StatelessWidget {
     this.secondWidget,
     this.thirdWidget,
     this.fillterWidget,
+    this.firstTitle = 'Сигнал ЭЭГ',
+    this.firstMeta = 'мкВ · 250 Гц',
+    this.secondTitle,
+    this.secondMeta,
+    this.thirdTitle,
+    this.thirdMeta,
   });
 
   @override
@@ -41,6 +54,12 @@ class EegLayout extends StatelessWidget {
                   firstWidget: firtsWidget,
                   secondWidget: secondWidget,
                   thirdWidget: thirdWidget,
+                  firstTitle: firstTitle,
+                  firstMeta: firstMeta,
+                  secondTitle: secondTitle,
+                  secondMeta: secondMeta,
+                  thirdTitle: thirdTitle,
+                  thirdMeta: thirdMeta,
                 ),
               ),
             ],
@@ -52,6 +71,12 @@ class EegLayout extends StatelessWidget {
       firstWidget: firtsWidget,
       secondWidget: secondWidget,
       thirdWidget: thirdWidget,
+      firstTitle: firstTitle,
+      firstMeta: firstMeta,
+      secondTitle: secondTitle,
+      secondMeta: secondMeta,
+      thirdTitle: thirdTitle,
+      thirdMeta: thirdMeta,
     );
   }
 }

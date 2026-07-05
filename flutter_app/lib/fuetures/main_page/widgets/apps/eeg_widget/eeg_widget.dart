@@ -34,24 +34,22 @@ class _EegWidgetState extends State<EegWidget> {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          children: [
-            EegWidgetSettingsBar(
-              initialSettings:
-                  widget.rtEegDataBloc.eegSettings.eegIsShowingSettings,
-              onChaged: (val) {
-                _settings.eegIsShowingSettings = val;
-                widget.rtEegDataBloc.add(NewSettings(newSettings: _settings));
-                setState(() {});
-              },
-            ),
-            const SizedBox(height: 8),
-            Expanded(child: _buildContent()),
-          ],
-        ),
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        children: [
+          EegWidgetSettingsBar(
+            initialSettings:
+                widget.rtEegDataBloc.eegSettings.eegIsShowingSettings,
+            onChaged: (val) {
+              _settings.eegIsShowingSettings = val;
+              widget.rtEegDataBloc.add(NewSettings(newSettings: _settings));
+              setState(() {});
+            },
+          ),
+          const SizedBox(height: 8),
+          Expanded(child: _buildContent()),
+        ],
       ),
     );
   }
@@ -75,12 +73,18 @@ class _EegWidgetState extends State<EegWidget> {
           isFilt: _isFiltter,
         ),
         thirdWidget: BandPowerWidget(dataBloc: widget.rtEegDataBloc),
+        secondTitle: 'Спектр',
+        secondMeta: 'дБ',
+        thirdTitle: 'Ритмы',
+        thirdMeta: 'отн.',
         fillterWidget: _buildFilterSettings(),
       );
     }
 
+    final onlyBandsShowing =
+        widget.rtEegDataBloc.eegSettings.eegIsShowingSettings.isBandsShowing;
     if (widget.rtEegDataBloc.eegSettings.eegIsShowingSettings.isFftShowing ||
-        widget.rtEegDataBloc.eegSettings.eegIsShowingSettings.isBandsShowing) {
+        onlyBandsShowing) {
       return EegLayout(
         isFiltterShowing:
             widget
@@ -93,9 +97,11 @@ class _EegWidgetState extends State<EegWidget> {
           isFiltter: _isFiltter,
         ),
         secondWidget:
-            widget.rtEegDataBloc.eegSettings.eegIsShowingSettings.isBandsShowing
+            onlyBandsShowing
                 ? BandPowerWidget(dataBloc: widget.rtEegDataBloc)
                 : FftPlot(dataBloc: widget.rtEegDataBloc, isFilt: _isFiltter),
+        secondTitle: onlyBandsShowing ? 'Ритмы' : 'Спектр',
+        secondMeta: onlyBandsShowing ? 'отн.' : 'дБ',
         fillterWidget: _buildFilterSettings(),
       );
     }

@@ -36,6 +36,10 @@ void main() {
     final filterViewport = tester.getSize(find.byType(SingleChildScrollView));
     final firstPlot = tester.getSize(find.byKey(firstPlotKey));
 
+    expect(find.text('Сигнал ЭЭГ'), findsOneWidget);
+    expect(find.text('мкВ · 250 Гц'), findsOneWidget);
+    expect(find.text('Спектр'), findsOneWidget);
+    expect(find.text('Ритмы'), findsOneWidget);
     expect(filterViewport.height, lessThanOrEqualTo(156));
     expect(firstPlot.height, greaterThan(120));
     expect(tester.takeException(), isNull);
@@ -59,6 +63,28 @@ void main() {
     );
 
     expect(find.byType(SingleChildScrollView), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('bottom graph panels fit on narrow width', (tester) async {
+    await tester.pumpWidget(
+      wrap(
+        const SizedBox(
+          width: 360,
+          height: 560,
+          child: EegLayout(
+            isFiltterShowing: false,
+            firtsWidget: ColoredBox(color: Colors.red),
+            secondWidget: ColoredBox(color: Colors.green),
+            thirdWidget: ColoredBox(color: Colors.blue),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Сигнал ЭЭГ'), findsOneWidget);
+    expect(find.text('Спектр'), findsOneWidget);
+    expect(find.text('Ритмы'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }
