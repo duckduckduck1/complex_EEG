@@ -64,9 +64,10 @@ class _FrequencyPlotState extends State<FrequencyPlot> {
     final yInterval = _niceInterval(yRange.span);
     final xInterval = _niceInterval(widget.maxFrequency);
     final gridColor = palette.grid.withValues(alpha: 0.72);
+    final baselineColor = colorScheme.onSurfaceVariant.withValues(alpha: 0.34);
     final axisStyle = theme.textTheme.labelSmall?.copyWith(
       color: colorScheme.onSurface,
-      fontSize: 12,
+      fontSize: 13,
       fontWeight: FontWeight.w600,
     );
 
@@ -78,6 +79,13 @@ class _FrequencyPlotState extends State<FrequencyPlot> {
           minY: yRange.min,
           maxY: yRange.max,
           clipData: const FlClipData.all(),
+          extraLinesData: ExtraLinesData(
+            extraLinesOnTop: false,
+            horizontalLines: [
+              if (yRange.min <= 0 && yRange.max >= 0)
+                HorizontalLine(y: 0, color: baselineColor, strokeWidth: 1.1),
+            ],
+          ),
           lineBarsData: [
             LineChartBarData(
               isCurved: true,

@@ -38,6 +38,8 @@ void main() {
       chart.data.lineBarsData.single.color,
       EegPalette.oscilloscope.signal,
     );
+    expect(chart.data.extraLinesData.extraLinesOnTop, isFalse);
+    expect(chart.data.extraLinesData.horizontalLines.single.y, 0);
     expect(chart.data.titlesData.leftTitles.sideTitles.reservedSize, 40);
     expect(tester.takeException(), isNull);
   });
@@ -66,6 +68,8 @@ void main() {
       chart.data.lineBarsData.single.color,
       EegPalette.oscilloscope.spectrum,
     );
+    expect(chart.data.extraLinesData.extraLinesOnTop, isFalse);
+    expect(chart.data.extraLinesData.horizontalLines.single.y, 0);
     expect(chart.data.titlesData.leftTitles.sideTitles.reservedSize, 42);
     expect(tester.takeException(), isNull);
   });
@@ -104,6 +108,8 @@ void main() {
     expect(chart.data.lineBarsData[1].color, EegPalette.oscilloscope.theta);
     expect(chart.data.lineBarsData[2].color, EegPalette.oscilloscope.alpha);
     expect(chart.data.lineBarsData[3].color, EegPalette.oscilloscope.beta);
+    expect(chart.data.extraLinesData.extraLinesOnTop, isFalse);
+    expect(chart.data.extraLinesData.horizontalLines.single.y, 0);
     expect(find.text('Delta'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });

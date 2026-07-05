@@ -50,9 +50,10 @@ class BandPowerPlot extends StatelessWidget {
     final xInterval = _niceInterval(ensuredMaxX - minX);
     final yInterval = _niceInterval(1);
     final gridColor = palette.grid.withValues(alpha: 0.72);
+    final baselineColor = colorScheme.onSurfaceVariant.withValues(alpha: 0.34);
     final axisStyle = theme.textTheme.labelSmall?.copyWith(
       color: colorScheme.onSurface,
-      fontSize: 12,
+      fontSize: 13,
       fontWeight: FontWeight.w600,
     );
 
@@ -76,6 +77,16 @@ class BandPowerPlot extends StatelessWidget {
                 minY: 0,
                 maxY: 1.0,
                 clipData: const FlClipData.all(),
+                extraLinesData: ExtraLinesData(
+                  extraLinesOnTop: false,
+                  horizontalLines: [
+                    HorizontalLine(
+                      y: 0,
+                      color: baselineColor,
+                      strokeWidth: 1.1,
+                    ),
+                  ],
+                ),
                 lineTouchData: LineTouchData(
                   touchTooltipData: LineTouchTooltipData(
                     getTooltipItems: (touchedSpots) {
