@@ -1,7 +1,10 @@
+import 'dart:math';
+
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:iot/theme.dart';
 
-class PlotScafold extends StatelessWidget {
+class PlotScafold extends StatefulWidget {
   final List<FlSpot> data;
   final double minY;
   final double maxY;
@@ -17,106 +20,225 @@ class PlotScafold extends StatelessWidget {
   });
 
   @override
+  State<PlotScafold> createState() => _PlotScafoldState();
+}
+
+class _PlotScafoldState extends State<PlotScafold> {
+  _ChartRange? _stableYRange;
+
+  @override
   Widget build(BuildContext context) {
-    if (data.isEmpty) return const Center(child: Text('No data available'));
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final palette = theme.extension<EegPalette>() ?? EegPalette.oscilloscope;
+    final validData = widget.data
+        .where((spot) => spot.x.isFinite && spot.y.isFinite)
+        .toList(growable: false);
 
-    // Рассчитываем диапазон по Y
-
-    final yRange = _calculateYRange(data);
-    final yInterval = _calculateYInterval(yRange.maxY - yRange.minY);
-    return LineChart(
-      duration: Duration(milliseconds: 4),
-      LineChartData(
-        minX: data.first.x,
-        maxX: data.last.x,
-        minY: yRange.minY,
-        maxY: yRange.maxY,
-        lineTouchData: const LineTouchData(handleBuiltInTouches: false),
-        gridData: FlGridData(
-          show: true,
-          verticalInterval: 1, // Вертикальные линии каждую секунду
-          horizontalInterval: 1, // Горизонтальные линии на целых значениях Y
-          getDrawingVerticalLine:
-              (value) => FlLine(
-                color: Colors.grey.withValues(alpha: 0.3),
-                strokeWidth: 1,
-              ),
-          getDrawingHorizontalLine:
-              (value) => FlLine(
-                color: Colors.grey.withValues(alpha: 0.3),
-                strokeWidth: 1,
-              ),
-        ),
-        titlesData: FlTitlesData(
-          show: true,
-          bottomTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              interval: 1, // Подписи каждую секунду
-              reservedSize: 22,
-              getTitlesWidget: (value, meta) {
-                return value % 1 == 0
-                    ? Text(value.toInt().toString())
-                    : const SizedBox.shrink();
-              },
-            ),
-          ),
-          leftTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              interval: yInterval, // Подписи на целых значениях Y
-              reservedSize: 28,
-              getTitlesWidget: (value, meta) {
-                return (value % yInterval == 0 || value == 0)
-                    ? Padding(
-                      padding: const EdgeInsets.only(right: 8.0),
-                      child: Text(value.toStringAsFixed(yInterval < 1 ? 1 : 0)),
-                    )
-                    : const SizedBox.shrink();
-              },
-            ),
-          ),
-          rightTitles: const AxisTitles(
-            sideTitles: SideTitles(showTitles: false),
-          ),
-          topTitles: const AxisTitles(
-            sideTitles: SideTitles(showTitles: false),
+    if (validData.isEmpty) {
+      return Center(
+        child: Text(
+          'Нет данных сигнала',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: colorScheme.onSurfaceVariant,
           ),
         ),
-        lineBarsData: [
-          LineChartBarData(
-            spots: data,
-            dotData: const FlDotData(show: false),
-            color: Colors.blue,
-            barWidth: 2,
+      );
+    }
+
+    final yRange = _stableRangeFor(validData);
+    final minX = validData.first.x;
+    final maxX = max(validData.last.x, minX + 1);
+    final yInterval = _niceInterval(yRange.span);
+    final xInterval = _niceInterval(maxX - minX);
+    final gridColor = palette.grid.withValues(alpha: 0.72);
+    final axisStyle = theme.textTheme.labelSmall?.copyWith(
+      color: colorScheme.onSurface,
+      fontSize: 12,
+      fontWeight: FontWeight.w600,
+    );
+
+    return ClipRect(
+      child: LineChart(
+        LineChartData(
+          minX: minX,
+          maxX: maxX,
+          minY: yRange.min,
+          maxY: yRange.max,
+          clipData: const FlClipData.all(),
+          lineTouchData: const LineTouchData(handleBuiltInTouches: false),
+          gridData: FlGridData(
+            show: true,
+            verticalInterval: xInterval,
+            horizontalInterval: yInterval,
+            getDrawingVerticalLine:
+                (value) => FlLine(color: gridColor, strokeWidth: 0.8),
+            getDrawingHorizontalLine:
+                (value) => FlLine(color: gridColor, strokeWidth: 0.8),
           ),
-        ],
+          titlesData: FlTitlesData(
+            show: true,
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                interval: xInterval,
+                reservedSize: 28,
+                getTitlesWidget:
+                    (value, meta) => _AxisLabel(
+                      text: '${_formatTick(value, xInterval)} с',
+                      style: axisStyle,
+                      padding: const EdgeInsets.only(top: 8),
+                    ),
+              ),
+            ),
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                interval: yInterval,
+                reservedSize: 40,
+                getTitlesWidget:
+                    (value, meta) => _AxisLabel(
+                      text: _formatTick(value, yInterval),
+                      style: axisStyle,
+                      padding: const EdgeInsets.only(right: 8),
+                      alignRight: true,
+                    ),
+              ),
+            ),
+            rightTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+            topTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+          ),
+          borderData: FlBorderData(show: false),
+          lineBarsData: [
+            LineChartBarData(
+              spots: validData,
+              dotData: const FlDotData(show: false),
+              color: palette.signal,
+              barWidth: 2.2,
+              isCurved: false,
+              isStrokeCapRound: true,
+              belowBarData: BarAreaData(
+                show: true,
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    palette.signal.withValues(alpha: 0.22),
+                    palette.signal.withValues(alpha: 0.03),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        duration: Duration.zero,
       ),
     );
   }
 
-  ({double minY, double maxY}) _calculateYRange(List<FlSpot> data) {
-    if (data.isEmpty) return (minY: -1, maxY: 1);
+  _ChartRange _stableRangeFor(List<FlSpot> data) {
+    final next = _calculateYRange(data);
+    final current = _stableYRange;
+    if (current == null || _shouldAdoptRange(current, next)) {
+      _stableYRange = next;
+      return next;
+    }
+    return current;
+  }
 
-    double minY = double.infinity;
-    double maxY = -double.infinity;
-
+  _ChartRange _calculateYRange(List<FlSpot> data) {
+    var minY = double.infinity;
+    var maxY = -double.infinity;
     for (final spot in data) {
       if (spot.y < minY) minY = spot.y;
       if (spot.y > maxY) maxY = spot.y;
     }
 
-    // Добавляем отступ
-    final padding = (maxY - minY) * paddingFactor;
-    return (minY: minY - padding, maxY: maxY + padding);
+    if (minY == maxY) {
+      minY -= 1;
+      maxY += 1;
+    }
+
+    final span = max(maxY - minY, 1);
+    final padding = span * widget.paddingFactor.clamp(0.0, 1.0);
+    return _ChartRange(minY - padding, maxY + padding);
   }
 
-  double _calculateYInterval(double yRange) {
-    final double absMaxY = yRange / 2; // Максимальное абсолютное значение
-    if (absMaxY <= 2) return 0.5;
-    if (absMaxY <= 5) return 1;
-    if (absMaxY <= 10) return 2;
-    if (absMaxY <= 20) return 5;
-    return 10;
+  bool _shouldAdoptRange(_ChartRange current, _ChartRange next) {
+    final currentSpan = max(current.span, 1e-9);
+    final escapesCurrent = next.min < current.min || next.max > current.max;
+    final minDrift = (next.min - current.min).abs() / currentSpan;
+    final maxDrift = (next.max - current.max).abs() / currentSpan;
+    final spanDrift = (next.span - current.span).abs() / currentSpan;
+    return escapesCurrent ||
+        minDrift > 0.08 ||
+        maxDrift > 0.08 ||
+        spanDrift > 0.08;
   }
+}
+
+class _ChartRange {
+  final double min;
+  final double max;
+
+  const _ChartRange(this.min, this.max);
+
+  double get span => max - min;
+}
+
+class _AxisLabel extends StatelessWidget {
+  final String text;
+  final TextStyle? style;
+  final EdgeInsets padding;
+  final bool alignRight;
+
+  const _AxisLabel({
+    required this.text,
+    required this.style,
+    required this.padding,
+    this.alignRight = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: padding,
+      child: Text(
+        text,
+        textAlign: alignRight ? TextAlign.right : TextAlign.center,
+        style: style,
+      ),
+    );
+  }
+}
+
+double _niceInterval(double range, {int targetTicks = 5}) {
+  if (!range.isFinite || range <= 0) return 1;
+  final rawInterval = range / max(targetTicks - 1, 1);
+  final exponent = pow(10, (log(rawInterval) / ln10).floor()).toDouble();
+  final fraction = rawInterval / exponent;
+  final niceFraction =
+      fraction <= 1
+          ? 1
+          : fraction <= 2
+          ? 2
+          : fraction <= 5
+          ? 5
+          : 10;
+  return niceFraction * exponent;
+}
+
+String _formatTick(double value, double interval) {
+  final digits =
+      interval >= 1
+          ? 0
+          : interval >= 0.1
+          ? 1
+          : 2;
+  final normalized = value.abs() < interval * 0.001 ? 0.0 : value;
+  return normalized.toStringAsFixed(digits);
 }

@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:iot/theme.dart';
 
 class FrequencyPlot extends StatefulWidget {
   final List<FlSpot> data;
@@ -30,69 +31,71 @@ class FrequencyPlot extends StatefulWidget {
 }
 
 class _FrequencyPlotState extends State<FrequencyPlot> {
-  double _currentMinY = -60;
-  double _currentMaxY = 0;
-  double _targetMinY = -60;
-  double _targetMaxY = 0;
-  double _lastRange = 60;
+  _ChartRange? _stableYRange;
 
   @override
   Widget build(BuildContext context) {
-    final validData =
-        widget.data
-            .where(
-              (spot) =>
-                  spot.y.isFinite &&
-                  spot.x >= 0 &&
-                  spot.x <= widget.maxFrequency,
-            )
-            .toList();
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final palette = theme.extension<EegPalette>() ?? EegPalette.oscilloscope;
+    final lineColor =
+        widget.lineColor == Colors.green ? palette.spectrum : widget.lineColor;
+    final validData = widget.data
+        .where(
+          (spot) =>
+              spot.x.isFinite &&
+              spot.y.isFinite &&
+              spot.x >= 0 &&
+              spot.x <= widget.maxFrequency,
+        )
+        .toList(growable: false);
 
     if (validData.isEmpty) {
-      return Center(child: CircularProgressIndicator());
+      return Center(
+        child: Text(
+          'Нет данных спектра',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+      );
     }
 
-    _calculateNewRange(validData);
-    _currentMinY = _smoothValue(_currentMinY, _targetMinY);
-    _currentMaxY = _smoothValue(_currentMaxY, _targetMaxY);
-    _lastRange = _currentMaxY - _currentMinY;
-
-    // Гарантируем минимальный видимый диапазон
-    final ensuredMinY = min(_currentMinY, -10);
-    final ensuredMaxY = max(_currentMaxY, 10);
-    final ensuredRange = ensuredMaxY - ensuredMinY;
-
-    final yInterval = _calculateYInterval(ensuredRange.toDouble());
-    final xInterval = _calculateXInterval(widget.maxFrequency);
+    final yRange = _stableRangeFor(validData);
+    final yInterval = _niceInterval(yRange.span);
+    final xInterval = _niceInterval(widget.maxFrequency);
+    final gridColor = palette.grid.withValues(alpha: 0.72);
+    final axisStyle = theme.textTheme.labelSmall?.copyWith(
+      color: colorScheme.onSurface,
+      fontSize: 12,
+      fontWeight: FontWeight.w600,
+    );
 
     return ClipRect(
       child: LineChart(
         LineChartData(
           minX: 0,
           maxX: widget.maxFrequency,
-          minY: ensuredMinY.toDouble(),
-          maxY: ensuredMaxY.toDouble(),
+          minY: yRange.min,
+          maxY: yRange.max,
+          clipData: const FlClipData.all(),
           lineBarsData: [
             LineChartBarData(
               isCurved: true,
               curveSmoothness: 0.15,
               spots: validData,
               dotData: const FlDotData(show: false),
-              color: widget.lineColor,
+              color: lineColor,
               barWidth: 2,
-              shadow: Shadow(
-                color: widget.lineColor.withValues(alpha: 0.2),
-                blurRadius: 4,
-                offset: const Offset(2, 2),
-              ),
+              isStrokeCapRound: true,
               belowBarData: BarAreaData(
                 show: true,
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    widget.lineColor.withValues(alpha: 0.25),
-                    widget.lineColor.withValues(alpha: 0.05),
+                    lineColor.withValues(alpha: 0.22),
+                    lineColor.withValues(alpha: 0.03),
                   ],
                 ),
               ),
@@ -105,7 +108,7 @@ class _FrequencyPlotState extends State<FrequencyPlot> {
                 return touchedSpots.map((spot) {
                   return LineTooltipItem(
                     '${spot.x.toStringAsFixed(1)} Hz\n${spot.y.toStringAsFixed(1)} dB',
-                    const TextStyle(color: Colors.white, fontSize: 12),
+                    TextStyle(color: colorScheme.onSurface, fontSize: 12),
                     textDirection: TextDirection.ltr,
                   );
                 }).toList();
@@ -119,15 +122,9 @@ class _FrequencyPlotState extends State<FrequencyPlot> {
             verticalInterval: xInterval,
             horizontalInterval: yInterval,
             getDrawingVerticalLine:
-                (value) => FlLine(
-                  color: Colors.grey.withValues(alpha: 0.3),
-                  strokeWidth: 0.5,
-                ),
+                (value) => FlLine(color: gridColor, strokeWidth: 0.8),
             getDrawingHorizontalLine:
-                (value) => FlLine(
-                  color: Colors.grey.withValues(alpha: 0.3),
-                  strokeWidth: 0.5,
-                ),
+                (value) => FlLine(color: gridColor, strokeWidth: 0.8),
           ),
           titlesData: FlTitlesData(
             show: true,
@@ -135,24 +132,27 @@ class _FrequencyPlotState extends State<FrequencyPlot> {
               sideTitles: SideTitles(
                 showTitles: true,
                 interval: xInterval,
-                reservedSize: 22,
-                getTitlesWidget: (value, meta) {
-                  return value % xInterval == 0
-                      ? _buildAxisText('${value.toInt()}Hz')
-                      : const SizedBox.shrink();
-                },
+                reservedSize: 30,
+                getTitlesWidget:
+                    (value, meta) => _AxisLabel(
+                      text: '${_formatTick(value, xInterval)} Гц',
+                      style: axisStyle,
+                      padding: const EdgeInsets.only(top: 8),
+                    ),
               ),
             ),
             leftTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
                 interval: yInterval,
-                reservedSize: 28,
-                getTitlesWidget: (value, meta) {
-                  return (value % yInterval == 0 || value == 0)
-                      ? _buildAxisText('${value.toInt()}')
-                      : const SizedBox.shrink();
-                },
+                reservedSize: 42,
+                getTitlesWidget:
+                    (value, meta) => _AxisLabel(
+                      text: _formatTick(value, yInterval),
+                      style: axisStyle,
+                      padding: const EdgeInsets.only(right: 8),
+                      alignRight: true,
+                    ),
               ),
             ),
             rightTitles: const AxisTitles(
@@ -162,75 +162,113 @@ class _FrequencyPlotState extends State<FrequencyPlot> {
               sideTitles: SideTitles(showTitles: false),
             ),
           ),
-          borderData: FlBorderData(
-            show: true,
-            border: Border.all(
-              color: Colors.grey.withValues(alpha: 0.5),
-              width: 0.5,
-            ),
-          ),
+          borderData: FlBorderData(show: false),
         ),
+        duration: Duration.zero,
       ),
     );
   }
 
-  Widget _buildAxisText(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 4.0),
-      child: Text(
-        text,
-        style: TextStyle(
-          fontSize: 10,
-          color: Colors.grey.withValues(alpha: 0.7),
-        ),
-      ),
-    );
+  _ChartRange _stableRangeFor(List<FlSpot> validData) {
+    final next = _calculateYRange(validData);
+    final current = _stableYRange;
+    if (current == null || _shouldAdoptRange(current, next)) {
+      _stableYRange = next;
+      return next;
+    }
+    return current;
   }
 
-  void _calculateNewRange(List<FlSpot> validData) {
-    if (validData.isEmpty) return;
-
+  _ChartRange _calculateYRange(List<FlSpot> validData) {
     final sortedY = validData.map((e) => e.y).toList()..sort();
     final minIndex = (sortedY.length * 0.05).floor();
     final maxIndex = (sortedY.length * 0.95).ceil();
 
     final stableMinY = sortedY[minIndex.clamp(0, sortedY.length - 1)];
     final stableMaxY = sortedY[maxIndex.clamp(0, sortedY.length - 1)];
-
     final minRange = 20.0;
     final effectiveRange = max(stableMaxY - stableMinY, minRange);
+    final calculatedMin =
+        stableMinY - effectiveRange * widget.paddingFactor.clamp(0.0, 1.0);
+    final calculatedMax =
+        stableMaxY + effectiveRange * widget.paddingFactor.clamp(0.0, 1.0);
 
-    _targetMinY =
-        widget.minY ?? (stableMinY - effectiveRange * widget.paddingFactor);
-    _targetMaxY =
-        widget.maxY ?? (stableMaxY + effectiveRange * widget.paddingFactor);
+    final minY = widget.minY ?? min(calculatedMin, -10);
+    final maxY = widget.maxY ?? max(calculatedMax, 0);
+    return _ChartRange(minY.toDouble(), maxY.toDouble());
+  }
 
-    final maxChange = _lastRange * 0.5;
-    _targetMinY = _targetMinY.clamp(
-      _currentMinY - maxChange,
-      _currentMinY + maxChange,
+  bool _shouldAdoptRange(_ChartRange current, _ChartRange next) {
+    final currentSpan = max(current.span, 1e-9);
+    final escapesCurrent = next.min < current.min || next.max > current.max;
+    final minDrift = (next.min - current.min).abs() / currentSpan;
+    final maxDrift = (next.max - current.max).abs() / currentSpan;
+    final spanDrift = (next.span - current.span).abs() / currentSpan;
+    return escapesCurrent ||
+        minDrift > 0.08 ||
+        maxDrift > 0.08 ||
+        spanDrift > 0.08;
+  }
+}
+
+class _ChartRange {
+  final double min;
+  final double max;
+
+  const _ChartRange(this.min, this.max);
+
+  double get span => max - min;
+}
+
+class _AxisLabel extends StatelessWidget {
+  final String text;
+  final TextStyle? style;
+  final EdgeInsets padding;
+  final bool alignRight;
+
+  const _AxisLabel({
+    required this.text,
+    required this.style,
+    required this.padding,
+    this.alignRight = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: padding,
+      child: Text(
+        text,
+        textAlign: alignRight ? TextAlign.right : TextAlign.center,
+        style: style,
+      ),
     );
-    _targetMaxY = _targetMaxY.clamp(
-      _currentMaxY - maxChange,
-      _currentMaxY + maxChange,
-    );
   }
+}
 
-  double _smoothValue(double current, double target) {
-    return current + (target - current) * widget.smoothingFactor;
-  }
+double _niceInterval(double range, {int targetTicks = 5}) {
+  if (!range.isFinite || range <= 0) return 1;
+  final rawInterval = range / max(targetTicks - 1, 1);
+  final exponent = pow(10, (log(rawInterval) / ln10).floor()).toDouble();
+  final fraction = rawInterval / exponent;
+  final niceFraction =
+      fraction <= 1
+          ? 1
+          : fraction <= 2
+          ? 2
+          : fraction <= 5
+          ? 5
+          : 10;
+  return niceFraction * exponent;
+}
 
-  double _calculateYInterval(double range) {
-    if (range <= 20) return 5;
-    if (range <= 40) return 10;
-    if (range <= 80) return 20;
-    return 50;
-  }
-
-  double _calculateXInterval(double maxFreq) {
-    if (maxFreq <= 10) return 2;
-    if (maxFreq <= 20) return 5;
-    if (maxFreq <= 50) return 10;
-    return 20;
-  }
+String _formatTick(double value, double interval) {
+  final digits =
+      interval >= 1
+          ? 0
+          : interval >= 0.1
+          ? 1
+          : 2;
+  final normalized = value.abs() < interval * 0.001 ? 0.0 : value;
+  return normalized.toStringAsFixed(digits);
 }
