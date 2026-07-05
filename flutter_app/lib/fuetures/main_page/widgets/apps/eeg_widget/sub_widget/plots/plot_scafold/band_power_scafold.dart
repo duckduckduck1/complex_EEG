@@ -10,10 +10,10 @@ class BandPowerPlot extends StatelessWidget {
   final List<FlSpot> alphaData;
   final List<FlSpot> betaData;
   final double maxFrequency;
-  final Color deltaColor;
-  final Color thetaColor;
-  final Color alphaColor;
-  final Color betaColor;
+  final Color? deltaColor;
+  final Color? thetaColor;
+  final Color? alphaColor;
+  final Color? betaColor;
 
   const BandPowerPlot({
     super.key,
@@ -22,10 +22,10 @@ class BandPowerPlot extends StatelessWidget {
     required this.alphaData,
     required this.betaData,
     this.maxFrequency = 60,
-    this.deltaColor = Colors.blue,
-    this.thetaColor = Colors.green,
-    this.alphaColor = Colors.orange,
-    this.betaColor = Colors.red,
+    this.deltaColor,
+    this.thetaColor,
+    this.alphaColor,
+    this.betaColor,
   });
 
   @override
@@ -34,10 +34,10 @@ class BandPowerPlot extends StatelessWidget {
     final colorScheme = theme.colorScheme;
     final palette = theme.extension<EegPalette>() ?? EegPalette.oscilloscope;
     final colors = (
-      delta: deltaColor == Colors.blue ? palette.delta : deltaColor,
-      theta: thetaColor == Colors.green ? palette.theta : thetaColor,
-      alpha: alphaColor == Colors.orange ? palette.alpha : alphaColor,
-      beta: betaColor == Colors.red ? palette.beta : betaColor,
+      delta: deltaColor ?? palette.delta,
+      theta: thetaColor ?? palette.theta,
+      alpha: alphaColor ?? palette.alpha,
+      beta: betaColor ?? palette.beta,
     );
     final allData = [...deltaData, ...thetaData, ...alphaData, ...betaData];
     final minX =

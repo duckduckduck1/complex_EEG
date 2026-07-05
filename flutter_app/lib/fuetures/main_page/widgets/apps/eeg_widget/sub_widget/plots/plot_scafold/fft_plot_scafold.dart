@@ -6,7 +6,7 @@ import 'package:iot/theme.dart';
 
 class FrequencyPlot extends StatefulWidget {
   final List<FlSpot> data;
-  final Color lineColor;
+  final Color? lineColor;
   final double? minY;
   final double? maxY;
   final double maxFrequency;
@@ -17,7 +17,7 @@ class FrequencyPlot extends StatefulWidget {
   const FrequencyPlot({
     super.key,
     required this.data,
-    this.lineColor = Colors.green,
+    this.lineColor,
     this.minY,
     this.maxY,
     this.maxFrequency = 40,
@@ -38,8 +38,7 @@ class _FrequencyPlotState extends State<FrequencyPlot> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final palette = theme.extension<EegPalette>() ?? EegPalette.oscilloscope;
-    final lineColor =
-        widget.lineColor == Colors.green ? palette.spectrum : widget.lineColor;
+    final lineColor = widget.lineColor ?? palette.spectrum;
     final validData = widget.data
         .where(
           (spot) =>

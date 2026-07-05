@@ -34,6 +34,10 @@ void main() {
     expect(find.byType(ClipRect), findsOneWidget);
     expect(chart.duration, Duration.zero);
     expect(chart.data.clipData, const FlClipData.all());
+    expect(
+      chart.data.lineBarsData.single.color,
+      EegPalette.oscilloscope.signal,
+    );
     expect(chart.data.titlesData.leftTitles.sideTitles.reservedSize, 40);
     expect(tester.takeException(), isNull);
   });
@@ -58,6 +62,10 @@ void main() {
     expect(find.byType(ClipRect), findsOneWidget);
     expect(chart.duration, Duration.zero);
     expect(chart.data.clipData, const FlClipData.all());
+    expect(
+      chart.data.lineBarsData.single.color,
+      EegPalette.oscilloscope.spectrum,
+    );
     expect(chart.data.titlesData.leftTitles.sideTitles.reservedSize, 42);
     expect(tester.takeException(), isNull);
   });
@@ -92,6 +100,10 @@ void main() {
     expect(chart.data.clipData, const FlClipData.all());
     expect(chart.data.minY, 0);
     expect(chart.data.maxY, 1.0);
+    expect(chart.data.lineBarsData[0].color, EegPalette.oscilloscope.delta);
+    expect(chart.data.lineBarsData[1].color, EegPalette.oscilloscope.theta);
+    expect(chart.data.lineBarsData[2].color, EegPalette.oscilloscope.alpha);
+    expect(chart.data.lineBarsData[3].color, EegPalette.oscilloscope.beta);
     expect(find.text('Delta'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
