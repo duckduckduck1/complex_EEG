@@ -25,10 +25,21 @@ class IotTabBar extends StatelessWidget implements PreferredSizeWidget {
                 final tab = entry.value;
                 return Tab(
                   child: Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       tab,
+                      const SizedBox(width: 4),
                       IconButton(
                         icon: const Icon(Icons.close, size: 16),
+                        tooltip: 'Закрыть вкладку',
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 28,
+                          minHeight: 28,
+                        ),
+                        splashRadius: 16,
                         onPressed: () {
                           tabBloc.add(CloseTab(index));
                         },

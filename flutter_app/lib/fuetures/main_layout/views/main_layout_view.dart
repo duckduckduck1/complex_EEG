@@ -4,19 +4,6 @@ import 'package:iot/features/navigation/navigation_cubit.dart';
 import 'package:iot/fuetures/main_page/views/main_page_view.dart';
 import 'package:iot/fuetures/ble_page/views/ble_page_view.dart';
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'IoT Adaptive Navigation',
-      theme: ThemeData(primarySwatch: Colors.blue),
-      home: MainLayout(),
-    );
-  }
-}
-
 /// Раскладка приложения: боковая/нижняя навигация переключает раздел.
 ///
 /// Выбранный раздел — сценарное состояние, поэтому живёт в [NavigationCubit]

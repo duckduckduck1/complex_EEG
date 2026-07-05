@@ -7,7 +7,7 @@ void main() {
     await tester.pumpWidget(const MainApp());
     await tester.pump();
 
-    expect(find.text('Main Page'), findsOneWidget);
+    expect(find.text('Лаборатория «Умного сна»'), findsOneWidget);
     expect(find.byIcon(Icons.add), findsOneWidget);
   });
 }

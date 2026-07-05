@@ -62,12 +62,17 @@ class _MainPageState extends State<MainPage> with TickerProviderStateMixin {
         },
         child: Scaffold(
           appBar: AppBar(
-            title: const Text("Main Page"),
+            title: const Text('Лаборатория «Умного сна»'),
             bottom: IotTabBar(tabBloc: _tabBloc),
             actions: [
-              IconButton(
-                icon: const Icon(Icons.add),
-                onPressed: _addNewTabWithApp,
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: IconButton(
+                  icon: const Icon(Icons.add),
+                  tooltip: 'Добавить вкладку устройства',
+                  color: Theme.of(context).colorScheme.primary,
+                  onPressed: _addNewTabWithApp,
+                ),
               ),
             ],
           ),
