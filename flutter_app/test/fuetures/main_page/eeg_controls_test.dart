@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/eeg_widget_settings_bar/eeg_settings_bar.dart';
 import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/filter_settings/exp_widget.dart';
+import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/recording/recording_reservation_strip.dart';
 import 'package:iot/theme.dart';
 
 void main() {
@@ -63,6 +64,21 @@ void main() {
     expect(find.text('0.5 Hz'), findsOneWidget);
     expect(find.text('50.0 Hz'), findsOneWidget);
     expect(find.text('выкл'), findsNWidgets(3));
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets('recording reservation strip fits compact width', (tester) async {
+    await tester.pumpWidget(
+      wrap(const RecordingReservationStrip(), width: 320),
+    );
+
+    expect(
+      find.byKey(const Key('eeg-recording-reservation-strip')),
+      findsOneWidget,
+    );
+    expect(find.text('Запись'), findsOneWidget);
+    expect(find.text('00:00'), findsOneWidget);
+    expect(find.text('Метки'), findsOneWidget);
+    expect(find.text('Эксперимент'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }
