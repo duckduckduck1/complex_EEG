@@ -18,20 +18,34 @@ class EegLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (isFiltterShowing) {
-      return Column(
-        children: [
-          Expanded(flex: 3, child: fillterWidget!),
-          SizedBox(height: 20),
-          Expanded(
-            flex: 5,
-            child: HalfHightLayout(
-              firstWidget: firtsWidget,
-              secondWidget: secondWidget,
-              thirdWidget: thirdWidget,
-            ),
-          ),
-        ],
+    if (isFiltterShowing && fillterWidget != null) {
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          final filterMaxHeight =
+              constraints.maxHeight.isFinite
+                  ? (constraints.maxHeight * 0.28).clamp(72.0, 156.0)
+                  : 144.0;
+
+          return Column(
+            children: [
+              ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: filterMaxHeight),
+                child: SingleChildScrollView(
+                  physics: const ClampingScrollPhysics(),
+                  child: fillterWidget!,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: HalfHightLayout(
+                  firstWidget: firtsWidget,
+                  secondWidget: secondWidget,
+                  thirdWidget: thirdWidget,
+                ),
+              ),
+            ],
+          );
+        },
       );
     }
     return HalfHightLayout(
