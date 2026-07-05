@@ -99,6 +99,41 @@ void main() {
     );
   }
 
+  testWidgets('header uses compact oscilloscope app chrome', (tester) async {
+    await tester.pumpWidget(buildApp());
+    await tester.pump();
+
+    final appBar = tester.widget<AppBar>(find.byType(AppBar));
+
+    expect(appBar.toolbarHeight, 58);
+    expect(appBar.leadingWidth, 56);
+    expect(appBar.titleSpacing, 0);
+    expect(find.byIcon(Icons.check_circle), findsOneWidget);
+    expect(find.byIcon(Icons.add), findsOneWidget);
+  });
+
+  testWidgets('device tabs use compact browser-like tab bar', (tester) async {
+    const device = DiscoveredDevice(
+      id: BleDeviceId('AA:BB:CC:DD:EE:4F'),
+      name: 'JDY-16',
+    );
+    sessionsCubit.openSession(device);
+    await tester.pumpWidget(buildApp());
+    await tester.pump();
+
+    navigationCubit.setPendingTab(device.id);
+    await tester.pump();
+    await tester.pump();
+
+    final tabBar = tester.widget<TabBar>(find.byType(TabBar));
+
+    expect(tabBar.isScrollable, isTrue);
+    expect(tabBar.tabAlignment, TabAlignment.start);
+    expect(tabBar.indicatorSize, TabBarIndicatorSize.label);
+    expect(tabBar.indicatorWeight, 4);
+    expect(find.byIcon(Icons.close), findsOneWidget);
+  });
+
   testWidgets(
     'setPendingTab с существующей сессией создаёт вкладку и сбрасывает флаг',
     (tester) async {
