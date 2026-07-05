@@ -1,63 +1,81 @@
-import 'dart:async';
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
-import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/bloc/rt_eeg_data_bloc.dart';
-import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/eeg_widget.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:iot/features/devices/application/device_session.dart';
+import 'package:iot/features/devices/application/sessions_cubit.dart';
+import 'package:iot/features/devices/presentation/blocs/device_connection_state.dart';
+import 'package:iot/features/devices/presentation/device_display_name.dart';
+import 'package:iot/features/navigation/navigation_cubit.dart';
 
-Future<Widget?> showAppSelectorDialog(BuildContext context) async {
-  double _xval = 0;
-  final RtEegDataBloc bloc = RtEegDataBloc(250);
-  Timer timer = Timer.periodic(Duration(milliseconds: 4), (timer) {
-    // TODO: Заменить поток данных на данные ээг
-    double newData =
-        10 *
-            math.sin(2 * math.pi * _xval * 2) *
-            math.Random().nextDouble() *
-            0.5 -
-        0.25 +
-        14 *
-            math.sin(2 * math.pi * _xval * 3) *
-            math.Random().nextDouble() *
-            0.5 -
-        0.25 +
-        12 * math.sin(2 * math.pi * _xval * 6) * math.Random().nextDouble() -
-        0.5 +
-        5 *
-            math.sin(2 * math.pi * _xval * 50) *
-            math.Random().nextDouble() *
-            0.5 -
-        0.25 +
-        10 *
-            math.sin(2 * math.pi * _xval * 25) *
-            math.Random().nextDouble() *
-            0.5 -
-        0.25 +
-        10 *
-            math.sin(2 * math.pi * _xval + 14) *
-            math.Random().nextDouble() *
-            0.5 -
-        0.25;
-    bloc.add(NewEegDataReceived(newEegData: newData));
-    _xval += 0.004;
-  });
-  return await showDialog<Widget>(
+/// Диалог выбора устройства для новой вкладки графика.
+///
+/// Показывает текущие сессии из [SessionsCubit]. Если сессий нет — предлагает
+/// перейти на экран «Устройства» и начать поиск. Возвращает выбранную
+/// [DeviceSession] — вызывающий код сам решает, как назвать вкладку и какой
+/// виджет построить для неё.
+Future<DeviceSession?> showAppSelectorDialog(BuildContext context) async {
+  final sessionsCubit = context.read<SessionsCubit>();
+  final navigationCubit = context.read<NavigationCubit>();
+  final sessions = sessionsCubit.state;
+
+  if (sessions.isEmpty) {
+    return showDialog<DeviceSession>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Нет подключённых устройств'),
+          content: const Text(
+            'Сначала подключитесь к устройству на экране «Устройства».',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                navigationCubit.openDevicesAndStartScan();
+              },
+              child: const Text('Подключиться'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  return showDialog<DeviceSession>(
     context: context,
     builder: (context) {
       return AlertDialog(
-        title: const Text('Select app'),
+        title: const Text('Выберите устройство'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(
-              title: const Text('EEG app'),
-              onTap: () {
-                Navigator.pop(context, EegWidget(rtEegDataBloc: bloc));
-              },
-            ),
+            for (final session in sessions)
+              ListTile(
+                title: Text(eegDisplayName(session.deviceId)),
+                subtitle: Text(_statusText(session.connection.state)),
+                onTap: () {
+                  Navigator.pop(context, session);
+                },
+              ),
           ],
         ),
       );
     },
   );
+}
+
+String _statusText(DeviceConnectionState state) {
+  switch (state.status) {
+    case DeviceConnectionStatus.disconnected:
+      return 'Не подключено';
+    case DeviceConnectionStatus.connecting:
+      return 'Подключение…';
+    case DeviceConnectionStatus.connected:
+      return 'Подключено';
+    case DeviceConnectionStatus.lost:
+      return 'Связь потеряна';
+    case DeviceConnectionStatus.reconnectingManually:
+      return 'Переподключение…';
+    case DeviceConnectionStatus.failed:
+      return 'Не удалось подключиться';
+  }
 }

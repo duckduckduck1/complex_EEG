@@ -3,7 +3,7 @@ part of 'tab_bloc.dart';
 @immutable
 sealed class TabState {
   final List<Widget> tabs; // Виджеты для TabBar
-  final List<Widget> tabContents; // Содержимое для TabBarView
+  final List<Widget> tabContents; // Содержимое вкладок
   final TabController? controller;
   final int currentIndex;
 

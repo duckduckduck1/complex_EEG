@@ -95,19 +95,19 @@ class BandPowerPlot extends StatelessWidget {
                 horizontalInterval: 0.2,
                 getDrawingVerticalLine:
                     (value) => FlLine(
-                      color: Colors.grey.withOpacity(0.3),
+                      color: Colors.grey.withValues(alpha: 0.3),
                       strokeWidth: 0.5,
                     ),
                 getDrawingHorizontalLine:
                     (value) => FlLine(
-                      color: Colors.grey.withOpacity(0.3),
+                      color: Colors.grey.withValues(alpha: 0.3),
                       strokeWidth: 0.5,
                     ),
               ),
               borderData: FlBorderData(
                 show: true,
                 border: Border.all(
-                  color: Colors.grey.withOpacity(0.5),
+                  color: Colors.grey.withValues(alpha: 0.5),
                   width: 0.5,
                 ),
               ),
@@ -158,7 +158,7 @@ class BandPowerPlot extends StatelessWidget {
       isCurved: true,
       dotData: const FlDotData(show: false),
       belowBarData: BarAreaData(show: false),
-      shadow: Shadow(color: color.withOpacity(0.2)),
+      shadow: Shadow(color: color.withValues(alpha: 0.2)),
     );
   }
 }

@@ -24,15 +24,11 @@ class EegWidget extends StatefulWidget {
 
 class _EegWidgetState extends State<EegWidget> {
   final bool _isFiltter = true;
-  late FillterSettings _filterSettings;
-  late EegIsShowingSettings _eegIsShowingSettings;
   late EegSettings _settings;
 
   @override
   void initState() {
     super.initState();
-    _filterSettings = FillterSettings();
-    _eegIsShowingSettings = EegIsShowingSettings();
     _settings = widget.rtEegDataBloc.eegSettings;
   }
 

@@ -1,6 +1,5 @@
 part of 'rt_eeg_data_bloc.dart';
 
-@immutable
 sealed class RtEegState {}
 
 final class DataInitial extends RtEegState {}

@@ -9,6 +9,12 @@
 # packages, and plugins designed to encourage good coding practices.
 include: package:flutter_lints/flutter.yaml
 
+analyzer:
+  exclude:
+    # Вендоренный форк нативного плагина: правим только его C++, Dart-часть —
+    # копия апстрима, линтовать её не нужно (см. third_party/.../README_FORK.md).
+    - third_party/**
+
 linter:
   # The lint rules applied to this project can be customized in the
   # section below to disable rules from the `package:flutter_lints/flutter.yaml`

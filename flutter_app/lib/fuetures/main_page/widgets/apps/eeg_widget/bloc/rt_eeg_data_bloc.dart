@@ -1,11 +1,9 @@
 import 'package:bloc/bloc.dart';
-import 'package:fftea/impl.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/bloc/proccesing_math/signal_processor.dart';
 import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/eeg_settings.dart';
 import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/eeg_widget_settings_bar/eeg_settings_bar.dart';
 import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/filter_settings/fillter_settings_class.dart';
-import 'package:meta/meta.dart';
 
 part 'rt_eeg_data_vent.dart';
 part 'rt_eeg_data_state.dart';
@@ -34,7 +32,6 @@ class RtEegDataBloc extends Bloc<RtEegData, RtEegState> {
   int bufferSize = 1024;
   int fftFlag = 0;
   double minFreqY = -60;
-  late final FFT _fft;
 
   RtEegDataBloc(this.sampleRate) : super(DataInitial()) {
     on<NewEegDataReceived>(_onNewData);
@@ -109,7 +106,10 @@ class RtEegDataBloc extends Bloc<RtEegData, RtEegState> {
       } else {
         fftFlag++;
       }
-    } catch (e) {}
+    } catch (_) {
+      // Сбойный отсчёт пропускаем: real-time поток не должен падать целиком
+      // из-за одной некорректной точки.
+    }
   }
 
   void _onNewFilter(NewSettings event, Emitter<RtEegState> emit) {

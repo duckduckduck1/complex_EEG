@@ -81,7 +81,7 @@ class _FrequencyPlotState extends State<FrequencyPlot> {
               color: widget.lineColor,
               barWidth: 2,
               shadow: Shadow(
-                color: widget.lineColor.withOpacity(0.2),
+                color: widget.lineColor.withValues(alpha: 0.2),
                 blurRadius: 4,
                 offset: const Offset(2, 2),
               ),
@@ -91,8 +91,8 @@ class _FrequencyPlotState extends State<FrequencyPlot> {
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    widget.lineColor.withOpacity(0.25),
-                    widget.lineColor.withOpacity(0.05),
+                    widget.lineColor.withValues(alpha: 0.25),
+                    widget.lineColor.withValues(alpha: 0.05),
                   ],
                 ),
               ),
@@ -120,12 +120,12 @@ class _FrequencyPlotState extends State<FrequencyPlot> {
             horizontalInterval: yInterval,
             getDrawingVerticalLine:
                 (value) => FlLine(
-                  color: Colors.grey.withOpacity(0.3),
+                  color: Colors.grey.withValues(alpha: 0.3),
                   strokeWidth: 0.5,
                 ),
             getDrawingHorizontalLine:
                 (value) => FlLine(
-                  color: Colors.grey.withOpacity(0.3),
+                  color: Colors.grey.withValues(alpha: 0.3),
                   strokeWidth: 0.5,
                 ),
           ),
@@ -164,16 +164,13 @@ class _FrequencyPlotState extends State<FrequencyPlot> {
           ),
           borderData: FlBorderData(
             show: true,
-            border: Border.all(color: Colors.grey.withOpacity(0.5), width: 0.5),
+            border: Border.all(
+              color: Colors.grey.withValues(alpha: 0.5),
+              width: 0.5,
+            ),
           ),
         ),
       ),
-    );
-  }
-
-  Widget _buildPlaceholder(String text) {
-    return Center(
-      child: Text(text, style: TextStyle(color: Colors.grey.withOpacity(0.7))),
     );
   }
 
@@ -182,7 +179,10 @@ class _FrequencyPlotState extends State<FrequencyPlot> {
       padding: const EdgeInsets.only(top: 4.0),
       child: Text(
         text,
-        style: TextStyle(fontSize: 10, color: Colors.grey.withOpacity(0.7)),
+        style: TextStyle(
+          fontSize: 10,
+          color: Colors.grey.withValues(alpha: 0.7),
+        ),
       ),
     );
   }

@@ -4,9 +4,9 @@ class FilterSlider extends StatefulWidget {
   final double initVal;
   final String title;
   final bool isActive;
-  ValueChanged<double> onChanged;
+  final ValueChanged<double> onChanged;
 
-  FilterSlider({
+  const FilterSlider({
     super.key,
     required this.initVal,
     required this.title,

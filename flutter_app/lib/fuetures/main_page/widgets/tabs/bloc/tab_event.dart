@@ -5,7 +5,7 @@ sealed class TabEvent {}
 
 class NewTabAdded extends TabEvent {
   final Widget newTab; // Виджет для TabBar
-  final Widget content; // Содержимое для TabBarView
+  final Widget content; // Содержимое вкладки
 
   NewTabAdded({required this.newTab, required this.content});
 }

@@ -19,7 +19,6 @@ class PlotScafold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (data.isEmpty) return const Center(child: Text('No data available'));
-    final xRange = _calculateXRange(data);
 
     // Рассчитываем диапазон по Y
 
@@ -38,11 +37,15 @@ class PlotScafold extends StatelessWidget {
           verticalInterval: 1, // Вертикальные линии каждую секунду
           horizontalInterval: 1, // Горизонтальные линии на целых значениях Y
           getDrawingVerticalLine:
-              (value) =>
-                  FlLine(color: Colors.grey.withOpacity(0.3), strokeWidth: 1),
+              (value) => FlLine(
+                color: Colors.grey.withValues(alpha: 0.3),
+                strokeWidth: 1,
+              ),
           getDrawingHorizontalLine:
-              (value) =>
-                  FlLine(color: Colors.grey.withOpacity(0.3), strokeWidth: 1),
+              (value) => FlLine(
+                color: Colors.grey.withValues(alpha: 0.3),
+                strokeWidth: 1,
+              ),
         ),
         titlesData: FlTitlesData(
           show: true,
@@ -90,14 +93,6 @@ class PlotScafold extends StatelessWidget {
         ],
       ),
     );
-  }
-
-  ({double minX, double maxX}) _calculateXRange(List<FlSpot> data) {
-    if (visibleTimeSeconds != null && data.isNotEmpty) {
-      final maxX = data.last.x;
-      return (minX: maxX - visibleTimeSeconds!, maxX: maxX);
-    }
-    return (minX: data.first.x, maxX: data.last.x);
   }
 
   ({double minY, double maxY}) _calculateYRange(List<FlSpot> data) {

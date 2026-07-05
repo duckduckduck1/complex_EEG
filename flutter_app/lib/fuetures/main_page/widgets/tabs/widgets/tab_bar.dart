@@ -4,7 +4,7 @@ import 'package:iot/fuetures/main_page/widgets/tabs/bloc/tab_bloc.dart';
 
 class IotTabBar extends StatelessWidget implements PreferredSizeWidget {
   final TabBloc tabBloc;
-  IotTabBar({super.key, required this.tabBloc});
+  const IotTabBar({super.key, required this.tabBloc});
 
   @override
   Size get preferredSize => const Size.fromHeight(kToolbarHeight);
@@ -18,6 +18,7 @@ class IotTabBar extends StatelessWidget implements PreferredSizeWidget {
         return TabBar(
           controller: state.controller,
           isScrollable: true,
+          onTap: (index) => tabBloc.add(TabChanged(index)),
           tabs:
               state.tabs.asMap().entries.map((entry) {
                 final index = entry.key;

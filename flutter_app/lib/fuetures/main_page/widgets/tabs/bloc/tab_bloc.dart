@@ -19,12 +19,13 @@ class TabBloc extends Bloc<TabEvent, TabState> {
   void _onNewTabAdded(NewTabAdded event, Emitter<TabState> emit) {
     final newTabs = [...state.tabs, event.newTab];
     final newContents = [...state.tabContents, event.content];
+    final newIndex = newTabs.length - 1;
 
     _controller.dispose();
     _controller = TabController(
       length: newTabs.length,
       vsync: vsync,
-      initialIndex: _controller.index,
+      initialIndex: newIndex,
     );
 
     emit(
@@ -32,12 +33,15 @@ class TabBloc extends Bloc<TabEvent, TabState> {
         tabs: newTabs,
         tabContents: newContents,
         controller: _controller,
-        currentIndex: _controller.index,
+        currentIndex: newIndex,
       ),
     );
   }
 
   void _onTabChanged(TabChanged event, Emitter<TabState> emit) {
+    if (event.index < 0 || event.index >= state.tabs.length) {
+      return;
+    }
     _controller.animateTo(event.index);
     emit(
       TabUpdated(
@@ -51,16 +55,21 @@ class TabBloc extends Bloc<TabEvent, TabState> {
 
   void _onCloseTab(CloseTab event, Emitter<TabState> emit) {
     if (state.tabs.length <= 1) return; // Не закрывать последнюю вкладку
+    if (event.index < 0 || event.index >= state.tabs.length) return;
 
     final newTabs = List<Widget>.from(state.tabs)..removeAt(event.index);
     final newContents = List<Widget>.from(state.tabContents)
       ..removeAt(event.index);
+    final newIndex =
+        event.index < state.currentIndex
+            ? state.currentIndex - 1
+            : min(state.currentIndex, newTabs.length - 1);
 
     _controller.dispose();
     _controller = TabController(
       length: newTabs.length,
       vsync: vsync,
-      initialIndex: min(event.index, newTabs.length - 1),
+      initialIndex: newIndex,
     );
 
     emit(
@@ -68,17 +77,14 @@ class TabBloc extends Bloc<TabEvent, TabState> {
         tabs: newTabs,
         tabContents: newContents,
         controller: _controller,
-        currentIndex: _controller.index,
+        currentIndex: newIndex,
       ),
     );
   }
 
   @override
   Future<void> close() {
-    try {
-      _controller.dispose();
-    } catch (e) {}
-
+    _controller.dispose();
     return super.close();
   }
 }

@@ -31,81 +31,79 @@ class _FillterSettingsWidgetState extends State<FillterSettingsWidget> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: FilterSlider(
-                  initVal: _currentSettings.lp,
-                  title: "lp",
-                  isActive: _currentSettings.isLpOn,
-                  onChanged: (val) {
-                    _currentSettings.lp = val;
-                    _updateSettings(_currentSettings);
-                  },
-                ),
-              ),
-              Checkbox(
-                value: _currentSettings.isLpOn,
+    return Column(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: FilterSlider(
+                initVal: _currentSettings.lp,
+                title: "lp",
+                isActive: _currentSettings.isLpOn,
                 onChanged: (val) {
-                  _currentSettings.isLpOn = val!;
+                  _currentSettings.lp = val;
                   _updateSettings(_currentSettings);
                 },
               ),
-            ],
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: FilterSlider(
-                  initVal: _currentSettings.hp,
-                  title: "hp",
-                  isActive: _currentSettings.isHpOn,
-                  onChanged: (val) {
-                    _currentSettings.hp = val;
-                    _updateSettings(_currentSettings);
-                  },
-                ),
-              ),
-              Checkbox(
-                value: _currentSettings.isHpOn,
+            ),
+            Checkbox(
+              value: _currentSettings.isLpOn,
+              onChanged: (val) {
+                _currentSettings.isLpOn = val!;
+                _updateSettings(_currentSettings);
+              },
+            ),
+          ],
+        ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: FilterSlider(
+                initVal: _currentSettings.hp,
+                title: "hp",
+                isActive: _currentSettings.isHpOn,
                 onChanged: (val) {
-                  _currentSettings.isHpOn = val!;
+                  _currentSettings.hp = val;
                   _updateSettings(_currentSettings);
                 },
               ),
-            ],
-          ),
+            ),
+            Checkbox(
+              value: _currentSettings.isHpOn,
+              onChanged: (val) {
+                _currentSettings.isHpOn = val!;
+                _updateSettings(_currentSettings);
+              },
+            ),
+          ],
+        ),
 
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: FilterSlider(
-                  initVal: _currentSettings.notch,
-                  title: "notch",
-                  isActive: _currentSettings.isNotchOn,
-                  onChanged: (val) {
-                    _currentSettings.notch = val;
-                    _updateSettings(_currentSettings);
-                  },
-                ),
-              ),
-              Checkbox(
-                value: _currentSettings.isNotchOn,
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: FilterSlider(
+                initVal: _currentSettings.notch,
+                title: "notch",
+                isActive: _currentSettings.isNotchOn,
                 onChanged: (val) {
-                  _currentSettings.isNotchOn = val!;
+                  _currentSettings.notch = val;
                   _updateSettings(_currentSettings);
                 },
               ),
-            ],
-          ),
-        ],
-      ),
+            ),
+            Checkbox(
+              value: _currentSettings.isNotchOn,
+              onChanged: (val) {
+                _currentSettings.isNotchOn = val!;
+                _updateSettings(_currentSettings);
+              },
+            ),
+          ],
+        ),
+      ],
     );
   }
 }
