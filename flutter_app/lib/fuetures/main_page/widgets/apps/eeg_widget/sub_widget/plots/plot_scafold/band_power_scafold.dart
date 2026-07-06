@@ -89,6 +89,8 @@ class BandPowerPlot extends StatelessWidget {
                 ),
                 lineTouchData: LineTouchData(
                   touchTooltipData: LineTouchTooltipData(
+                    fitInsideVertically: true,
+                    fitInsideHorizontally: true,
                     getTooltipItems: (touchedSpots) {
                       return touchedSpots.map((spot) {
                         return LineTooltipItem(

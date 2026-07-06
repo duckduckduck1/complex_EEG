@@ -31,7 +31,9 @@ void main() {
     await tester.pump();
 
     final chart = tester.widget<LineChart>(find.byType(LineChart));
-    expect(find.byType(ClipRect), findsOneWidget);
+    // ClipRect'ов теперь два: внешний из ZoomableChart и внутренний из
+    // масштабируемого scaffold fl_chart.
+    expect(find.byType(ClipRect), findsWidgets);
     expect(chart.duration, Duration.zero);
     expect(chart.data.clipData, const FlClipData.all());
     expect(
@@ -41,6 +43,27 @@ void main() {
     expect(chart.data.extraLinesData.extraLinesOnTop, isFalse);
     expect(chart.data.extraLinesData.horizontalLines.single.y, 0);
     expect(chart.data.titlesData.leftTitles.sideTitles.reservedSize, 40);
+    expect(chart.transformationConfig.scaleAxis, FlScaleAxis.free);
+    expect(chart.transformationConfig.transformationController, isNotNull);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('signal plot keeps min padding so peaks avoid the frame', (
+    tester,
+  ) async {
+    // Плоский сигнал с одиночным резким пиком: без абсолютного минимума
+    // запаса относительный padding был бы крошечным и пик сел бы впритык.
+    final data = List<FlSpot>.generate(
+      16,
+      (index) => FlSpot(index.toDouble(), index == 8 ? 3.0 : 0.0),
+    );
+
+    await tester.pumpWidget(wrap(PlotScafold(data: data, paddingFactor: 0.01)));
+    await tester.pump();
+
+    final chart = tester.widget<LineChart>(find.byType(LineChart));
+    expect(chart.data.maxY, greaterThan(3.0));
+    expect(chart.data.minY, lessThan(0.0));
     expect(tester.takeException(), isNull);
   });
 
@@ -61,7 +84,9 @@ void main() {
     await tester.pump();
 
     final chart = tester.widget<LineChart>(find.byType(LineChart));
-    expect(find.byType(ClipRect), findsOneWidget);
+    // ClipRect'ов теперь два: внешний из ZoomableChart и внутренний из
+    // масштабируемого scaffold fl_chart.
+    expect(find.byType(ClipRect), findsWidgets);
     expect(chart.duration, Duration.zero);
     expect(chart.data.clipData, const FlClipData.all());
     expect(
@@ -71,6 +96,20 @@ void main() {
     expect(chart.data.extraLinesData.extraLinesOnTop, isFalse);
     expect(chart.data.extraLinesData.horizontalLines.single.y, 0);
     expect(chart.data.titlesData.leftTitles.sideTitles.reservedSize, 42);
+    expect(chart.transformationConfig.scaleAxis, FlScaleAxis.free);
+    expect(chart.transformationConfig.transformationController, isNotNull);
+    // Резкие выбросы (провал -80, пик 12) должны помещаться в диапазон с
+    // запасом — их не должно обрезать клипом.
+    expect(chart.data.minY, lessThan(-80.0));
+    expect(chart.data.maxY, greaterThan(12.0));
+    expect(
+      chart.data.lineTouchData.touchTooltipData.fitInsideVertically,
+      isTrue,
+    );
+    expect(
+      chart.data.lineTouchData.touchTooltipData.fitInsideHorizontally,
+      isTrue,
+    );
     expect(tester.takeException(), isNull);
   });
 

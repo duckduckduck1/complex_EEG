@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/plots/plot_scafold/zoomable_chart.dart';
 import 'package:iot/theme.dart';
 
 class PlotScafold extends StatefulWidget {
@@ -23,8 +24,18 @@ class PlotScafold extends StatefulWidget {
   State<PlotScafold> createState() => _PlotScafoldState();
 }
 
+const double _minPadding = 2.5;
+
 class _PlotScafoldState extends State<PlotScafold> {
   _ChartRange? _stableYRange;
+  late final TransformationController _transformController =
+      TransformationController();
+
+  @override
+  void dispose() {
+    _transformController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -59,7 +70,9 @@ class _PlotScafoldState extends State<PlotScafold> {
       fontWeight: FontWeight.w600,
     );
 
-    return ClipRect(
+    return ZoomableChart(
+      transformController: _transformController,
+      colorScheme: colorScheme,
       child: LineChart(
         LineChartData(
           minX: minX,
@@ -144,6 +157,15 @@ class _PlotScafoldState extends State<PlotScafold> {
           ],
         ),
         duration: Duration.zero,
+        transformationConfig: FlTransformationConfig(
+          scaleAxis: FlScaleAxis.free,
+          minScale: 1,
+          maxScale: 12,
+          panEnabled: true,
+          scaleEnabled: true,
+          trackpadScrollCausesScale: true,
+          transformationController: _transformController,
+        ),
       ),
     );
   }
@@ -172,7 +194,12 @@ class _PlotScafoldState extends State<PlotScafold> {
     }
 
     final span = max(maxY - minY, 1);
-    final padding = span * widget.paddingFactor.clamp(0.0, 1.0);
+    // Запас по Y: относительный от размаха, но не меньше абсолютного минимума,
+    // чтобы резкие пики не сидели впритык к рамке.
+    final padding = max(
+      span * widget.paddingFactor.clamp(0.0, 1.0),
+      _minPadding,
+    );
     return _ChartRange(minY - padding, maxY + padding);
   }
 

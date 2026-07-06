@@ -21,7 +21,7 @@ class _EegPlotState extends State<EegPlot> {
         if (state is DataUpdated) {
           return PlotScafold(
             data: widget.isFiltter ? state.filterData : state.newData,
-            paddingFactor: 0.3,
+            paddingFactor: 0.35,
           );
         }
         return Container();

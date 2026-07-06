@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/plots/plot_scafold/zoomable_chart.dart';
 import 'package:iot/theme.dart';
 
 class FrequencyPlot extends StatefulWidget {
@@ -32,6 +33,14 @@ class FrequencyPlot extends StatefulWidget {
 
 class _FrequencyPlotState extends State<FrequencyPlot> {
   _ChartRange? _stableYRange;
+  late final TransformationController _transformController =
+      TransformationController();
+
+  @override
+  void dispose() {
+    _transformController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -71,7 +80,9 @@ class _FrequencyPlotState extends State<FrequencyPlot> {
       fontWeight: FontWeight.w600,
     );
 
-    return ClipRect(
+    return ZoomableChart(
+      transformController: _transformController,
+      colorScheme: colorScheme,
       child: LineChart(
         LineChartData(
           minX: 0,
@@ -111,6 +122,8 @@ class _FrequencyPlotState extends State<FrequencyPlot> {
           lineTouchData: LineTouchData(
             enabled: widget.showTooltip,
             touchTooltipData: LineTouchTooltipData(
+              fitInsideVertically: true,
+              fitInsideHorizontally: true,
               getTooltipItems: (touchedSpots) {
                 return touchedSpots.map((spot) {
                   return LineTooltipItem(
@@ -172,6 +185,15 @@ class _FrequencyPlotState extends State<FrequencyPlot> {
           borderData: FlBorderData(show: false),
         ),
         duration: Duration.zero,
+        transformationConfig: FlTransformationConfig(
+          scaleAxis: FlScaleAxis.free,
+          minScale: 1,
+          maxScale: 12,
+          panEnabled: true,
+          scaleEnabled: true,
+          trackpadScrollCausesScale: true,
+          transformationController: _transformController,
+        ),
       ),
     );
   }
@@ -187,21 +209,33 @@ class _FrequencyPlotState extends State<FrequencyPlot> {
   }
 
   _ChartRange _calculateYRange(List<FlSpot> validData) {
-    final sortedY = validData.map((e) => e.y).toList()..sort();
-    final minIndex = (sortedY.length * 0.05).floor();
-    final maxIndex = (sortedY.length * 0.95).ceil();
+    // Диапазон по фактическим min/max всех валидных точек, чтобы резкие
+    // выбросы (notch-провал вниз, острый пик вверх) помещались с запасом и
+    // не обрезались клипом. Перцентили здесь не годятся — именно выбросы
+    // важны для оператора.
+    var dataMinY = double.infinity;
+    var dataMaxY = -double.infinity;
+    for (final spot in validData) {
+      if (spot.y < dataMinY) dataMinY = spot.y;
+      if (spot.y > dataMaxY) dataMaxY = spot.y;
+    }
+    if (dataMinY == dataMaxY) {
+      dataMinY -= 1;
+      dataMaxY += 1;
+    }
 
-    final stableMinY = sortedY[minIndex.clamp(0, sortedY.length - 1)];
-    final stableMaxY = sortedY[maxIndex.clamp(0, sortedY.length - 1)];
     final minRange = 20.0;
-    final effectiveRange = max(stableMaxY - stableMinY, minRange);
-    final calculatedMin =
-        stableMinY - effectiveRange * widget.paddingFactor.clamp(0.0, 1.0);
-    final calculatedMax =
-        stableMaxY + effectiveRange * widget.paddingFactor.clamp(0.0, 1.0);
+    final effectiveRange = max(dataMaxY - dataMinY, minRange);
+    final padding = effectiveRange * widget.paddingFactor.clamp(0.0, 1.0);
+    final calculatedMin = dataMinY - padding;
+    final calculatedMax = dataMaxY + padding;
 
-    final minY = widget.minY ?? min(calculatedMin, -10);
-    final maxY = widget.maxY ?? max(calculatedMax, 0);
+    // widget.minY/maxY — только нижние границы видимости: фактический диапазон
+    // с запасом имеет приоритет, если он шире (иначе выброс уехал бы за рамку).
+    final floorMin = widget.minY ?? -10;
+    final floorMax = widget.maxY ?? 0;
+    final minY = min(calculatedMin, floorMin);
+    final maxY = max(calculatedMax, floorMax);
     return _ChartRange(minY.toDouble(), maxY.toDouble());
   }
 

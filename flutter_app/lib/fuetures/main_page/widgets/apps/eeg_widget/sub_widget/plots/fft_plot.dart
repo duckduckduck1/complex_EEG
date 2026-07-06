@@ -21,7 +21,7 @@ class _FftPlotState extends State<FftPlot> {
         if (state is DataUpdated) {
           return FrequencyPlot(
             data: widget.isFilt ? state.filtSpectrum : state.spectrum,
-            paddingFactor: 0.3,
+            paddingFactor: 0.35,
             showTooltip: true,
             maxFrequency: 70,
           );
