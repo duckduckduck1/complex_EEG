@@ -13,3 +13,7 @@ class NewSettings extends RtEegData {
 
   NewSettings({required this.newSettings});
 }
+
+class RtEegResetRequested extends RtEegData {
+  RtEegResetRequested();
+}

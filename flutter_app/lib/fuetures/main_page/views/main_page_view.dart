@@ -4,6 +4,9 @@ import 'package:iot/features/devices/application/device_session.dart';
 import 'package:iot/features/devices/application/sessions_cubit.dart';
 import 'package:iot/features/devices/presentation/device_display_name.dart';
 import 'package:iot/features/navigation/navigation_cubit.dart';
+import 'package:iot/features/recording/application/recording_bloc.dart';
+import 'package:iot/features/recording/application/recording_bloc_factory.dart';
+import 'package:iot/features/recording/presentation/recording_start_dialog.dart';
 import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/device_eeg_tab.dart';
 import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/recording/recording_reservation_strip.dart';
 import 'package:iot/fuetures/main_page/widgets/tabs/bloc/tab_bloc.dart';
@@ -34,12 +37,28 @@ class _MainPageState extends State<MainPage> with TickerProviderStateMixin {
   }
 
   void _openDeviceTab(DeviceSession session) {
+    final recordingBloc = _createRecordingBloc();
     _tabBloc.add(
       NewTabAdded(
         newTab: Text(eegDisplayName(session.deviceId)),
-        content: DeviceEegTab(connection: session.connection),
+        content: DeviceEegTab(
+          connection: session.connection,
+          recordingBloc: recordingBloc,
+        ),
+        recordingBloc: recordingBloc,
       ),
     );
+  }
+
+  RecordingBloc _createRecordingBloc() {
+    return context.read<RecordingBlocFactory>().create();
+  }
+
+  Future<void> _startRecording(RecordingBloc recordingBloc) async {
+    final config = await showRecordingStartDialog(context);
+    if (config != null && mounted) {
+      recordingBloc.add(RecordingStartRequested(config));
+    }
   }
 
   @override
@@ -99,7 +118,22 @@ class _MainPageState extends State<MainPage> with TickerProviderStateMixin {
               preferredSize: const Size.fromHeight(56),
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-                child: const RecordingReservationStrip(),
+                child: BlocBuilder<TabBloc, TabState>(
+                  bloc: _tabBloc,
+                  builder: (context, state) {
+                    final recordingBloc =
+                        state.currentIndex < state.recordingBlocs.length
+                            ? state.recordingBlocs[state.currentIndex]
+                            : null;
+                    return RecordingReservationStrip(
+                      recordingBloc: recordingBloc,
+                      onStartPressed:
+                          recordingBloc == null
+                              ? null
+                              : () => _startRecording(recordingBloc),
+                    );
+                  },
+                ),
               ),
             ),
             actions: [

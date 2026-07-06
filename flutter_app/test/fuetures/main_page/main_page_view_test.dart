@@ -7,6 +7,9 @@ import 'package:iot/features/devices/application/sessions_cubit.dart';
 import 'package:iot/features/devices/domain/ble_adapter.dart';
 import 'package:iot/features/devices/domain/ble_device.dart';
 import 'package:iot/features/navigation/navigation_cubit.dart';
+import 'package:iot/features/recording/application/recording_bloc.dart';
+import 'package:iot/features/recording/application/recording_bloc_factory.dart';
+import 'package:iot/features/recording/domain/recording_ports.dart';
 import 'package:iot/fuetures/main_page/views/main_page_view.dart';
 import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/device_eeg_tab.dart';
 
@@ -90,12 +93,15 @@ void main() {
   });
 
   Widget buildApp() {
-    return MultiBlocProvider(
-      providers: [
-        BlocProvider<SessionsCubit>.value(value: sessionsCubit),
-        BlocProvider<NavigationCubit>.value(value: navigationCubit),
-      ],
-      child: const MaterialApp(home: MainPage()),
+    return RepositoryProvider<RecordingBlocFactory>(
+      create: (_) => const _FakeRecordingBlocFactory(),
+      child: MultiBlocProvider(
+        providers: [
+          BlocProvider<SessionsCubit>.value(value: sessionsCubit),
+          BlocProvider<NavigationCubit>.value(value: navigationCubit),
+        ],
+        child: const MaterialApp(home: MainPage()),
+      ),
     );
   }
 
@@ -240,4 +246,50 @@ void main() {
     expect(connectionA.packetCancelCount, 0);
     expect(connectionB.packetCancelCount, 0);
   });
+}
+
+class _FakeRecordingBlocFactory implements RecordingBlocFactory {
+  const _FakeRecordingBlocFactory();
+
+  @override
+  RecordingBloc create() {
+    return RecordingBloc(
+      storage: _MemoryExperimentStorage(),
+      filterFactory: const PassThroughStreamingFilterFactory(),
+      idGenerator: const _FixedIdGenerator(),
+    );
+  }
+}
+
+class _MemoryExperimentStorage implements ExperimentStorage {
+  @override
+  Future<void> createExperiment({
+    required String rootDirectory,
+    required String experimentId,
+  }) async {}
+
+  @override
+  Future<void> appendSamples(List<int> samples) async {}
+
+  @override
+  Future<void> appendJournal(
+    Map<String, Object?> event, {
+    bool flush = false,
+  }) async {}
+
+  @override
+  Future<void> flush() async {}
+
+  @override
+  Future<void> writeExperimentJson(Map<String, Object?> experimentJson) async {}
+
+  @override
+  Future<void> close() async {}
+}
+
+class _FixedIdGenerator implements ExperimentIdGenerator {
+  const _FixedIdGenerator();
+
+  @override
+  String nextId() => 'exp_main_page_test';
 }

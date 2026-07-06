@@ -126,77 +126,15 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
     RecordingStopRequested event,
     Emitter<RecordingState> emit,
   ) async {
-    if (state.status != RecordingStatus.recording &&
-        state.status != RecordingStatus.pausedByDisconnect) {
+    if (!_canFinalize(state.status)) {
       return;
     }
 
-    final experimentId = state.experimentId;
-    final config = _config;
-    if (experimentId == null || config == null || state.segments.isEmpty) {
-      emit(
-        state.copyWith(
-          status: RecordingStatus.failed,
-          lastError: const RecordingFailure('Recording is not initialized'),
-        ),
-      );
-      return;
-    }
-
+    final stateToFinalize = state;
     emit(state.copyWith(status: RecordingStatus.stopping));
 
     try {
-      final stoppedAt = _clock.now();
-      await _storage.flush();
-
-      final segments = List<RecordingSegment>.from(state.segments);
-      final activeIndex = segments.indexWhere(
-        (segment) => segment.segmentId == state.activeSegmentId,
-      );
-      if (activeIndex >= 0 && !segments[activeIndex].isClosed) {
-        final closed = segments[activeIndex].close(
-          endSample: state.sampleCount,
-          endedAtWallClock: stoppedAt,
-        );
-        segments[activeIndex] = closed;
-        await _storage.appendJournal(
-          _journalEvent(
-            type: 'segment_ended',
-            experimentId: experimentId,
-            timestamp: stoppedAt,
-            segmentId: closed.segmentId,
-            sampleIndex: closed.endSample,
-          ),
-          flush: true,
-        );
-      }
-
-      await _storage.appendJournal(
-        _journalEvent(
-          type: 'recording_stopped',
-          experimentId: experimentId,
-          timestamp: stoppedAt,
-          sampleIndex: state.sampleCount,
-        ),
-        flush: true,
-      );
-      await _storage.writeExperimentJson(
-        _buildExperimentJson(
-          experimentId: experimentId,
-          config: config,
-          segments: segments,
-        ),
-      );
-      await _storage.flush();
-      await _storage.close();
-
-      emit(
-        state.copyWith(
-          status: RecordingStatus.stopped,
-          activeSegmentId: null,
-          segments: segments,
-        ),
-      );
+      emit(await _finalizeRecording(stateToFinalize));
     } catch (error) {
       await _safeCloseStorage();
       emit(
@@ -208,10 +146,74 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
     }
   }
 
+  Future<RecordingState> _finalizeRecording(
+    RecordingState stateToFinalize,
+  ) async {
+    final experimentId = stateToFinalize.experimentId;
+    final config = _config;
+    if (experimentId == null ||
+        config == null ||
+        stateToFinalize.segments.isEmpty) {
+      throw StateError('Recording is not initialized');
+    }
+
+    final stoppedAt = _clock.now();
+    await _storage.flush();
+
+    final segments = List<RecordingSegment>.from(stateToFinalize.segments);
+    final activeIndex = segments.indexWhere(
+      (segment) => segment.segmentId == stateToFinalize.activeSegmentId,
+    );
+    if (activeIndex >= 0 && !segments[activeIndex].isClosed) {
+      final closed = segments[activeIndex].close(
+        endSample: stateToFinalize.sampleCount,
+        endedAtWallClock: stoppedAt,
+      );
+      segments[activeIndex] = closed;
+      await _storage.appendJournal(
+        _journalEvent(
+          type: 'segment_ended',
+          experimentId: experimentId,
+          timestamp: stoppedAt,
+          segmentId: closed.segmentId,
+          sampleIndex: closed.endSample,
+        ),
+        flush: true,
+      );
+    }
+
+    await _storage.appendJournal(
+      _journalEvent(
+        type: 'recording_stopped',
+        experimentId: experimentId,
+        timestamp: stoppedAt,
+        sampleIndex: stateToFinalize.sampleCount,
+      ),
+      flush: true,
+    );
+    await _storage.writeExperimentJson(
+      _buildExperimentJson(
+        experimentId: experimentId,
+        config: config,
+        segments: segments,
+        gaps: stateToFinalize.gaps,
+      ),
+    );
+    await _storage.flush();
+    await _storage.close();
+
+    return stateToFinalize.copyWith(
+      status: RecordingStatus.stopped,
+      activeSegmentId: null,
+      segments: segments,
+    );
+  }
+
   Map<String, Object?> _buildExperimentJson({
     required String experimentId,
     required RecordingStartConfig config,
     required List<RecordingSegment> segments,
+    required List<RecordingGap> gaps,
   }) {
     return {
       'experiment_id': experimentId,
@@ -228,7 +230,7 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
           .where((segment) => segment.endSample != null)
           .map((segment) => segment.toJson())
           .toList(growable: false),
-      'gaps': state.gaps.map((gap) => gap.toJson()).toList(growable: false),
+      'gaps': gaps.map((gap) => gap.toJson()).toList(growable: false),
       'labels': const <Object>[],
       'fbm_events': const <Object>[],
     };
@@ -250,6 +252,11 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
     };
   }
 
+  bool _canFinalize(RecordingStatus status) {
+    return status == RecordingStatus.recording ||
+        status == RecordingStatus.pausedByDisconnect;
+  }
+
   Future<void> _safeCloseStorage() async {
     try {
       await _storage.close();
@@ -260,7 +267,15 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
 
   @override
   Future<void> close() async {
-    await _safeCloseStorage();
+    if (_canFinalize(state.status)) {
+      try {
+        await _finalizeRecording(state);
+      } catch (_) {
+        await _safeCloseStorage();
+      }
+    } else {
+      await _safeCloseStorage();
+    }
     return super.close();
   }
 }

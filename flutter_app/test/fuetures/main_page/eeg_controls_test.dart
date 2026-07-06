@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:iot/features/recording/application/recording_bloc.dart';
+import 'package:iot/features/recording/domain/recording_ports.dart';
 import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/eeg_widget_settings_bar/eeg_settings_bar.dart';
 import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/filter_settings/exp_widget.dart';
 import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/recording/recording_reservation_strip.dart';
@@ -67,17 +69,76 @@ void main() {
     expect(tester.takeException(), isNull);
   });
   testWidgets('recording reservation strip fits compact width', (tester) async {
+    var startPressed = false;
+    final recordingBloc = _createRecordingBloc();
+    addTearDown(() async {
+      if (!recordingBloc.isClosed) {
+        await recordingBloc.close();
+      }
+    });
+
     await tester.pumpWidget(
-      wrap(const RecordingReservationStrip(), width: 320),
+      wrap(
+        RecordingReservationStrip(
+          recordingBloc: recordingBloc,
+          onStartPressed: () => startPressed = true,
+        ),
+        width: 320,
+      ),
     );
 
     expect(
       find.byKey(const Key('eeg-recording-reservation-strip')),
       findsOneWidget,
     );
-    // Это зарезервированное место, а не рабочие кнопки: явная подпись + «скоро».
-    expect(find.text('Управление записью эксперимента'), findsOneWidget);
-    expect(find.text('скоро'), findsOneWidget);
+    expect(find.text('Запись эксперимента не идёт'), findsOneWidget);
+    expect(find.text('Начать эксперимент'), findsOneWidget);
     expect(tester.takeException(), isNull);
+
+    await tester.tap(find.text('Начать эксперимент'));
+    await tester.pump();
+
+    expect(startPressed, isTrue);
   });
+}
+
+RecordingBloc _createRecordingBloc() {
+  return RecordingBloc(
+    storage: _MemoryExperimentStorage(),
+    filterFactory: const PassThroughStreamingFilterFactory(),
+    idGenerator: const _FixedIdGenerator(),
+  );
+}
+
+class _MemoryExperimentStorage implements ExperimentStorage {
+  @override
+  Future<void> createExperiment({
+    required String rootDirectory,
+    required String experimentId,
+  }) async {}
+
+  @override
+  Future<void> appendSamples(List<int> samples) async {}
+
+  @override
+  Future<void> appendJournal(
+    Map<String, Object?> event, {
+    bool flush = false,
+  }) async {}
+
+  @override
+  Future<void> flush() async {}
+
+  @override
+  Future<void> writeExperimentJson(Map<String, Object?> experimentJson) async {}
+
+  @override
+  Future<void> close() async {}
+}
+
+class _FixedIdGenerator implements ExperimentIdGenerator {
+  const _FixedIdGenerator();
+
+  @override
+  String nextId() => 'exp_controls_test';
 }

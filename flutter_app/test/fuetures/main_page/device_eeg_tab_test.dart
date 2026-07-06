@@ -7,6 +7,8 @@ import 'package:iot/features/devices/domain/ble_device.dart';
 import 'package:iot/features/devices/presentation/blocs/device_connection_bloc.dart';
 import 'package:iot/features/devices/presentation/blocs/device_connection_event.dart';
 import 'package:iot/features/devices/presentation/blocs/device_connection_state.dart';
+import 'package:iot/features/recording/application/recording_bloc.dart';
+import 'package:iot/features/recording/domain/recording_ports.dart';
 import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/device_eeg_tab.dart';
 import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/eeg_widget.dart';
 
@@ -46,12 +48,23 @@ void main() {
     'размонтирование вкладки не закрывает DeviceConnectionBloc сессии',
     (tester) async {
       final connectionBloc = DeviceConnectionBloc(adapter: _FakeAdapter());
+      final recordingBloc = _createRecordingBloc();
       addTearDown(connectionBloc.close);
+      addTearDown(() async {
+        if (!recordingBloc.isClosed) {
+          await recordingBloc.close();
+        }
+      });
       connectionBloc.add(const ConnectRequested(BleDeviceId('AA:BB:CC')));
       await tester.pump();
 
       await tester.pumpWidget(
-        MaterialApp(home: DeviceEegTab(connection: connectionBloc)),
+        MaterialApp(
+          home: DeviceEegTab(
+            connection: connectionBloc,
+            recordingBloc: recordingBloc,
+          ),
+        ),
       );
       await tester.pump();
       expect(find.byType(EegWidget), findsOneWidget);
@@ -69,4 +82,45 @@ void main() {
       );
     },
   );
+}
+
+RecordingBloc _createRecordingBloc() {
+  return RecordingBloc(
+    storage: _MemoryExperimentStorage(),
+    filterFactory: const PassThroughStreamingFilterFactory(),
+    idGenerator: const _FixedIdGenerator(),
+  );
+}
+
+class _MemoryExperimentStorage implements ExperimentStorage {
+  @override
+  Future<void> createExperiment({
+    required String rootDirectory,
+    required String experimentId,
+  }) async {}
+
+  @override
+  Future<void> appendSamples(List<int> samples) async {}
+
+  @override
+  Future<void> appendJournal(
+    Map<String, Object?> event, {
+    bool flush = false,
+  }) async {}
+
+  @override
+  Future<void> flush() async {}
+
+  @override
+  Future<void> writeExperimentJson(Map<String, Object?> experimentJson) async {}
+
+  @override
+  Future<void> close() async {}
+}
+
+class _FixedIdGenerator implements ExperimentIdGenerator {
+  const _FixedIdGenerator();
+
+  @override
+  String nextId() => 'exp_widget_test';
 }

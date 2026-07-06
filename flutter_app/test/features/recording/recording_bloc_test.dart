@@ -21,7 +21,9 @@ void main() {
   });
 
   tearDown(() async {
-    await bloc.close();
+    if (!bloc.isClosed) {
+      await bloc.close();
+    }
   });
 
   test('start creates experiment files and opens first segment', () async {
@@ -84,6 +86,29 @@ void main() {
     expect(segment['end_sample'], 3);
     expect(experimentJson['labels'], isEmpty);
     expect(experimentJson['fbm_events'], isEmpty);
+    expect(storage.journal.map((event) => event['type']), [
+      'experiment_started',
+      'segment_started',
+      'segment_ended',
+      'recording_stopped',
+    ]);
+  });
+
+  test('close finalizes active recording package', () async {
+    bloc.add(RecordingStartRequested(_startConfig()));
+    await pumpEventQueue();
+    bloc.add(const RecordingSamplesReceived([11, 12]));
+    await pumpEventQueue();
+
+    await bloc.close();
+
+    final experimentJson = storage.experimentJson!;
+    final segments = experimentJson['segments']! as List<Object?>;
+    final segment = segments.single! as Map<String, Object?>;
+
+    expect(storage.closed, isTrue);
+    expect(storage.samples, [111, 112]);
+    expect(segment['end_sample'], 2);
     expect(storage.journal.map((event) => event['type']), [
       'experiment_started',
       'segment_started',

@@ -36,6 +36,7 @@ class RtEegDataBloc extends Bloc<RtEegData, RtEegState> {
   RtEegDataBloc(this.sampleRate) : super(DataInitial()) {
     on<NewEegDataReceived>(_onNewData);
     on<NewSettings>(_onNewFilter);
+    on<RtEegResetRequested>(_onResetRequested);
   }
 
   void _onNewData(NewEegDataReceived event, Emitter<RtEegState> emit) {
@@ -115,5 +116,22 @@ class RtEegDataBloc extends Bloc<RtEegData, RtEegState> {
   void _onNewFilter(NewSettings event, Emitter<RtEegState> emit) {
     eegSettings = event.newSettings;
     processor.settings = event.newSettings.fillterSettings;
+  }
+
+  void _onResetRequested(RtEegResetRequested event, Emitter<RtEegState> emit) {
+    _eegData = [];
+    _fillterEegData = [];
+    timePlotData = [];
+    freqPlotData = [];
+    fitDataPlot = [];
+    filtSpectrum = [];
+    _deltaPowerOverTime.clear();
+    _thetaPowerOverTime.clear();
+    _alphaPowerOverTime.clear();
+    _betaPowerOverTime.clear();
+    _lastBandUpdateTime = 0;
+    sampleCounter = 0;
+    fftFlag = 0;
+    emit(DataInitial());
   }
 }
