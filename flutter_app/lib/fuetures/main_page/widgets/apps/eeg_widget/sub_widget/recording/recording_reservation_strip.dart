@@ -8,10 +8,12 @@ class RecordingReservationStrip extends StatelessWidget {
     super.key,
     required this.recordingBloc,
     required this.onStartPressed,
+    this.onReconnectPressed,
   });
 
   final RecordingBloc? recordingBloc;
   final VoidCallback? onStartPressed;
+  final VoidCallback? onReconnectPressed;
 
   @override
   Widget build(BuildContext context) {
@@ -32,6 +34,10 @@ class RecordingReservationStrip extends StatelessWidget {
           child: switch (state.status) {
             RecordingStatus.recording => _RecordingControls(
               state: state,
+              onStop: () => bloc.add(const RecordingStopRequested()),
+            ),
+            RecordingStatus.pausedByDisconnect => _PausedControls(
+              onReconnectPressed: onReconnectPressed,
               onStop: () => bloc.add(const RecordingStopRequested()),
             ),
             RecordingStatus.preparing ||
@@ -71,6 +77,65 @@ class _StripShell extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
         child: child,
       ),
+    );
+  }
+}
+
+class _PausedControls extends StatelessWidget {
+  final VoidCallback? onReconnectPressed;
+  final VoidCallback onStop;
+
+  const _PausedControls({
+    required this.onReconnectPressed,
+    required this.onStop,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final status = _MutedStatus(
+      icon: Icons.link_off_rounded,
+      text: 'Связь потеряна, запись на паузе',
+      color: colorScheme.error,
+    );
+    final reconnectButton = FilledButton.icon(
+      onPressed: onReconnectPressed,
+      icon: const Icon(Icons.bluetooth_searching_rounded),
+      label: const Text('Переподключиться'),
+    );
+    final stopButton = OutlinedButton.icon(
+      onPressed: onStop,
+      icon: const Icon(Icons.stop_rounded),
+      label: const Text('Завершить'),
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final buttons = Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [reconnectButton, stopButton],
+        );
+        if (constraints.maxWidth < 520) {
+          return Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              SizedBox(width: constraints.maxWidth, child: status),
+              buttons,
+            ],
+          );
+        }
+        return Row(
+          children: [
+            Expanded(child: status),
+            const SizedBox(width: 12),
+            buttons,
+          ],
+        );
+      },
     );
   }
 }

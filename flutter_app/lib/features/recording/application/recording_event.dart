@@ -28,3 +28,11 @@ final class RecordingSamplesReceived extends RecordingEvent {
 final class RecordingStopRequested extends RecordingEvent {
   const RecordingStopRequested();
 }
+
+final class RecordingConnectionLost extends RecordingEvent {
+  const RecordingConnectionLost();
+}
+
+final class RecordingConnectionResumed extends RecordingEvent {
+  const RecordingConnectionResumed();
+}

@@ -6,11 +6,13 @@ sealed class TabEvent {}
 class NewTabAdded extends TabEvent {
   final Widget newTab; // Виджет для TabBar
   final Widget content; // Содержимое вкладки
+  final DeviceConnectionBloc? connectionBloc;
   final RecordingBloc? recordingBloc;
 
   NewTabAdded({
     required this.newTab,
     required this.content,
+    this.connectionBloc,
     this.recordingBloc,
   });
 }

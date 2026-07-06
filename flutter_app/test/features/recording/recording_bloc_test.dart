@@ -116,6 +116,62 @@ void main() {
       'recording_stopped',
     ]);
   });
+
+  test('disconnect closes segment and reconnect opens a new one', () async {
+    bloc.add(RecordingStartRequested(_startConfig()));
+    await pumpEventQueue();
+    bloc.add(const RecordingSamplesReceived([1, 2, 3]));
+    await pumpEventQueue();
+
+    bloc.add(const RecordingConnectionLost());
+    await pumpEventQueue(times: 3);
+
+    expect(bloc.state.status, RecordingStatus.pausedByDisconnect);
+    expect(bloc.state.activeSegmentId, isNull);
+    expect(bloc.state.segments.single.endSample, 3);
+    expect(bloc.state.gaps.single.sampleIndex, 3);
+    expect(bloc.state.gaps.single.endedAtWallClock, isNull);
+
+    bloc.add(const RecordingSamplesReceived([99]));
+    await pumpEventQueue();
+    expect(storage.samples, [101, 102, 103]);
+
+    bloc.add(const RecordingConnectionResumed());
+    await pumpEventQueue(times: 3);
+    bloc.add(const RecordingSamplesReceived([4, 5]));
+    await pumpEventQueue();
+    bloc.add(const RecordingStopRequested());
+    await pumpEventQueue(times: 4);
+
+    final experimentJson = storage.experimentJson!;
+    final segments = experimentJson['segments']! as List<Object?>;
+    final firstSegment = segments.first! as Map<String, Object?>;
+    final secondSegment = segments.last! as Map<String, Object?>;
+    final gaps = experimentJson['gaps']! as List<Object?>;
+    final gap = gaps.single! as Map<String, Object?>;
+
+    expect(bloc.state.status, RecordingStatus.stopped);
+    expect(storage.samples, [101, 102, 103, 104, 105]);
+    expect(storage.samples.contains(0), isFalse);
+    expect(firstSegment['segment_id'], 'seg_1');
+    expect(firstSegment['start_sample'], 0);
+    expect(firstSegment['end_sample'], 3);
+    expect(secondSegment['segment_id'], 'seg_2');
+    expect(secondSegment['start_sample'], 3);
+    expect(secondSegment['end_sample'], 5);
+    expect(gap['sample_index'], 3);
+    expect(gap['ended_at_wall_clock'], isNotNull);
+    expect(storage.journal.map((event) => event['type']), [
+      'experiment_started',
+      'segment_started',
+      'segment_ended',
+      'connection_lost',
+      'connection_resumed',
+      'segment_started',
+      'segment_ended',
+      'recording_stopped',
+    ]);
+  });
 }
 
 RecordingStartConfig _startConfig() {

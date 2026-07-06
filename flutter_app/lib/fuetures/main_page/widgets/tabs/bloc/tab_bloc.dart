@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:bloc/bloc.dart';
 import 'package:flutter/material.dart';
+import 'package:iot/features/devices/presentation/blocs/device_connection_bloc.dart';
 import 'package:iot/features/recording/application/recording_bloc.dart';
 import 'package:iot/features/recording/domain/recording_models.dart';
 
@@ -22,6 +23,7 @@ class TabBloc extends Bloc<TabEvent, TabState> {
   void _onNewTabAdded(NewTabAdded event, Emitter<TabState> emit) {
     final newTabs = [...state.tabs, event.newTab];
     final newContents = [...state.tabContents, event.content];
+    final newConnectionBlocs = [...state.connectionBlocs, event.connectionBloc];
     final newRecordingBlocs = [...state.recordingBlocs, event.recordingBloc];
     final newIndex = newTabs.length - 1;
 
@@ -36,6 +38,7 @@ class TabBloc extends Bloc<TabEvent, TabState> {
       TabUpdated(
         tabs: newTabs,
         tabContents: newContents,
+        connectionBlocs: newConnectionBlocs,
         recordingBlocs: newRecordingBlocs,
         controller: _controller,
         currentIndex: newIndex,
@@ -52,6 +55,7 @@ class TabBloc extends Bloc<TabEvent, TabState> {
       TabUpdated(
         tabs: state.tabs,
         tabContents: state.tabContents,
+        connectionBlocs: state.connectionBlocs,
         recordingBlocs: state.recordingBlocs,
         controller: _controller,
         currentIndex: event.index,
@@ -71,6 +75,9 @@ class TabBloc extends Bloc<TabEvent, TabState> {
     final newTabs = List<Widget>.from(state.tabs)..removeAt(event.index);
     final newContents = List<Widget>.from(state.tabContents)
       ..removeAt(event.index);
+    final newConnectionBlocs = List<DeviceConnectionBloc?>.from(
+      state.connectionBlocs,
+    )..removeAt(event.index);
     final newRecordingBlocs = List<RecordingBloc?>.from(state.recordingBlocs)
       ..removeAt(event.index);
     final newIndex =
@@ -89,6 +96,7 @@ class TabBloc extends Bloc<TabEvent, TabState> {
       TabUpdated(
         tabs: newTabs,
         tabContents: newContents,
+        connectionBlocs: newConnectionBlocs,
         recordingBlocs: newRecordingBlocs,
         controller: _controller,
         currentIndex: newIndex,

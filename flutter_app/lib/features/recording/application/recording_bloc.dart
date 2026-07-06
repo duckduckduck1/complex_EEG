@@ -19,6 +19,8 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
     on<RecordingStartRequested>(_onStartRequested);
     on<RecordingSamplesReceived>(_onSamplesReceived);
     on<RecordingStopRequested>(_onStopRequested);
+    on<RecordingConnectionLost>(_onConnectionLost);
+    on<RecordingConnectionResumed>(_onConnectionResumed);
   }
 
   final ExperimentStorage _storage;
@@ -28,6 +30,8 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
 
   RecordingStartConfig? _config;
   StreamingFilter _filter = const PassThroughStreamingFilter();
+  bool _connectionLostInProgress = false;
+  bool _resumeAfterConnectionLost = false;
 
   Future<void> _onStartRequested(
     RecordingStartRequested event,
@@ -146,6 +150,155 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
     }
   }
 
+  Future<void> _onConnectionLost(
+    RecordingConnectionLost event,
+    Emitter<RecordingState> emit,
+  ) async {
+    if (state.status != RecordingStatus.recording) {
+      return;
+    }
+
+    final experimentId = state.experimentId;
+    if (experimentId == null || state.segments.isEmpty) {
+      return;
+    }
+
+    _connectionLostInProgress = true;
+    try {
+      final lostAt = _clock.now();
+      await _storage.flush();
+
+      final segments = List<RecordingSegment>.from(state.segments);
+      final activeIndex = segments.indexWhere(
+        (segment) => segment.segmentId == state.activeSegmentId,
+      );
+      if (activeIndex >= 0 && !segments[activeIndex].isClosed) {
+        final closed = segments[activeIndex].close(
+          endSample: state.sampleCount,
+          endedAtWallClock: lostAt,
+        );
+        segments[activeIndex] = closed;
+        await _storage.appendJournal(
+          _journalEvent(
+            type: 'segment_ended',
+            experimentId: experimentId,
+            timestamp: lostAt,
+            segmentId: closed.segmentId,
+            sampleIndex: closed.endSample,
+          ),
+          flush: true,
+        );
+      }
+
+      await _storage.appendJournal(
+        _journalEvent(
+          type: 'connection_lost',
+          experimentId: experimentId,
+          timestamp: lostAt,
+          sampleIndex: state.sampleCount,
+        ),
+        flush: true,
+      );
+
+      emit(
+        state.copyWith(
+          status: RecordingStatus.pausedByDisconnect,
+          activeSegmentId: null,
+          segments: segments,
+          gaps: [
+            ...state.gaps,
+            RecordingGap(
+              startedAtWallClock: lostAt,
+              sampleIndex: state.sampleCount,
+            ),
+          ],
+        ),
+      );
+    } catch (error) {
+      await _safeCloseStorage();
+      emit(
+        state.copyWith(
+          status: RecordingStatus.failed,
+          lastError: RecordingFailure(error.toString()),
+        ),
+      );
+    } finally {
+      _connectionLostInProgress = false;
+      if (_resumeAfterConnectionLost && !isClosed) {
+        _resumeAfterConnectionLost = false;
+        add(const RecordingConnectionResumed());
+      }
+    }
+  }
+
+  Future<void> _onConnectionResumed(
+    RecordingConnectionResumed event,
+    Emitter<RecordingState> emit,
+  ) async {
+    if (_connectionLostInProgress) {
+      _resumeAfterConnectionLost = true;
+      return;
+    }
+
+    if (state.status != RecordingStatus.pausedByDisconnect) {
+      return;
+    }
+
+    try {
+      emit(await _resumeFromPaused(state));
+    } catch (error) {
+      await _safeCloseStorage();
+      emit(
+        state.copyWith(
+          status: RecordingStatus.failed,
+          lastError: RecordingFailure(error.toString()),
+        ),
+      );
+    }
+  }
+
+  Future<RecordingState> _resumeFromPaused(RecordingState stateToResume) async {
+    final experimentId = stateToResume.experimentId;
+    if (experimentId == null || stateToResume.segments.isEmpty) {
+      throw StateError('Recording is not initialized');
+    }
+
+    final resumedAt = _clock.now();
+    final segment = RecordingSegment(
+      segmentId: 'seg_${stateToResume.segments.length + 1}',
+      startSample: stateToResume.sampleCount,
+      startedAtWallClock: resumedAt,
+    );
+    final gaps = _closeLatestGap(stateToResume.gaps, resumedAt);
+
+    await _storage.appendJournal(
+      _journalEvent(
+        type: 'connection_resumed',
+        experimentId: experimentId,
+        timestamp: resumedAt,
+        sampleIndex: stateToResume.sampleCount,
+      ),
+      flush: true,
+    );
+    await _storage.appendJournal(
+      _journalEvent(
+        type: 'segment_started',
+        experimentId: experimentId,
+        timestamp: resumedAt,
+        segmentId: segment.segmentId,
+        sampleIndex: segment.startSample,
+      ),
+      flush: true,
+    );
+
+    return stateToResume.copyWith(
+      status: RecordingStatus.recording,
+      activeSegmentId: segment.segmentId,
+      segments: [...stateToResume.segments, segment],
+      gaps: gaps,
+    );
+  }
+
   Future<RecordingState> _finalizeRecording(
     RecordingState stateToFinalize,
   ) async {
@@ -250,6 +403,23 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
       if (segmentId != null) 'segment_id': segmentId,
       if (sampleIndex != null) 'sample_index': sampleIndex,
     };
+  }
+
+  List<RecordingGap> _closeLatestGap(
+    List<RecordingGap> gaps,
+    DateTime endedAtWallClock,
+  ) {
+    if (gaps.isEmpty || gaps.last.endedAtWallClock != null) {
+      return gaps;
+    }
+    return [
+      ...gaps.take(gaps.length - 1),
+      RecordingGap(
+        startedAtWallClock: gaps.last.startedAtWallClock,
+        endedAtWallClock: endedAtWallClock,
+        sampleIndex: gaps.last.sampleIndex,
+      ),
+    ];
   }
 
   bool _canFinalize(RecordingStatus status) {

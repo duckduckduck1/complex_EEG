@@ -32,6 +32,7 @@ class RecordingBridge {
       final connection = _connection.activeConnection;
       if (connection == null) return;
 
+      _recordingBloc.add(const RecordingConnectionResumed());
       _attached = true;
       final decoder = BleSampleDecoder(config: _config);
       _packetsSub = connection.packets.listen((payload) {
@@ -43,8 +44,13 @@ class RecordingBridge {
           _recordingBloc.add(RecordingSamplesReceived(samples));
         }
       });
-    } else {
-      _detach();
+      return;
+    }
+
+    _detach();
+    if (state.status == DeviceConnectionStatus.lost ||
+        state.status == DeviceConnectionStatus.failed) {
+      _recordingBloc.add(const RecordingConnectionLost());
     }
   }
 

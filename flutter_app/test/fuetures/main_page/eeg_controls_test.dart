@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iot/features/recording/application/recording_bloc.dart';
+import 'package:iot/features/recording/domain/recording_models.dart';
 import 'package:iot/features/recording/domain/recording_ports.dart';
 import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/eeg_widget_settings_bar/eeg_settings_bar.dart';
 import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/filter_settings/exp_widget.dart';
@@ -99,6 +100,53 @@ void main() {
     await tester.pump();
 
     expect(startPressed, isTrue);
+  });
+
+  testWidgets('recording strip shows reconnect controls after BLE disconnect', (
+    tester,
+  ) async {
+    var reconnectPressed = false;
+    final recordingBloc = _createRecordingBloc();
+    addTearDown(() async {
+      if (!recordingBloc.isClosed) {
+        await recordingBloc.close();
+      }
+    });
+
+    recordingBloc.add(
+      const RecordingStartRequested(
+        RecordingStartConfig(rootDirectory: 'memory-root'),
+      ),
+    );
+    await tester.pump();
+    recordingBloc.add(const RecordingConnectionLost());
+    await tester.pump();
+    await tester.pump();
+
+    await tester.pumpWidget(
+      wrap(
+        RecordingReservationStrip(
+          recordingBloc: recordingBloc,
+          onStartPressed: () {},
+          onReconnectPressed: () => reconnectPressed = true,
+        ),
+        width: 360,
+      ),
+    );
+
+    expect(find.text('Связь потеряна, запись на паузе'), findsOneWidget);
+    expect(find.text('Переподключиться'), findsOneWidget);
+    expect(find.text('Завершить'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.text('Переподключиться'));
+    await tester.pump();
+    expect(reconnectPressed, isTrue);
+
+    await tester.tap(find.text('Завершить'));
+    await tester.pump();
+    await tester.pump();
+    expect(recordingBloc.state.status, RecordingStatus.stopped);
   });
 }
 

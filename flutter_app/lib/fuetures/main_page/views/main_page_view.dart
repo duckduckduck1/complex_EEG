@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:iot/features/devices/application/device_session.dart';
 import 'package:iot/features/devices/application/sessions_cubit.dart';
+import 'package:iot/features/devices/presentation/blocs/device_connection_event.dart';
 import 'package:iot/features/devices/presentation/device_display_name.dart';
 import 'package:iot/features/navigation/navigation_cubit.dart';
 import 'package:iot/features/recording/application/recording_bloc.dart';
@@ -45,6 +46,7 @@ class _MainPageState extends State<MainPage> with TickerProviderStateMixin {
           connection: session.connection,
           recordingBloc: recordingBloc,
         ),
+        connectionBloc: session.connection,
         recordingBloc: recordingBloc,
       ),
     );
@@ -125,12 +127,22 @@ class _MainPageState extends State<MainPage> with TickerProviderStateMixin {
                         state.currentIndex < state.recordingBlocs.length
                             ? state.recordingBlocs[state.currentIndex]
                             : null;
+                    final connectionBloc =
+                        state.currentIndex < state.connectionBlocs.length
+                            ? state.connectionBlocs[state.currentIndex]
+                            : null;
                     return RecordingReservationStrip(
                       recordingBloc: recordingBloc,
                       onStartPressed:
                           recordingBloc == null
                               ? null
                               : () => _startRecording(recordingBloc),
+                      onReconnectPressed:
+                          connectionBloc == null
+                              ? null
+                              : () => connectionBloc.add(
+                                const ManualReconnectRequested(),
+                              ),
                     );
                   },
                 ),
