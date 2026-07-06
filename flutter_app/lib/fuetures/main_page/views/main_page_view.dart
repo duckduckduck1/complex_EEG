@@ -5,6 +5,7 @@ import 'package:iot/features/devices/application/sessions_cubit.dart';
 import 'package:iot/features/devices/presentation/device_display_name.dart';
 import 'package:iot/features/navigation/navigation_cubit.dart';
 import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/device_eeg_tab.dart';
+import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/recording/recording_reservation_strip.dart';
 import 'package:iot/fuetures/main_page/widgets/tabs/bloc/tab_bloc.dart';
 import 'package:iot/fuetures/main_page/widgets/tabs/widgets/app_selector_diolog.dart';
 import 'package:iot/fuetures/main_page/widgets/tabs/widgets/tab_bar.dart';
@@ -76,8 +77,31 @@ class _MainPageState extends State<MainPage> with TickerProviderStateMixin {
                 );
               },
             ),
-            title: const Text('Лаборатория «Умного сна»'),
-            bottom: IotTabBar(tabBloc: _tabBloc),
+            title: Row(
+              children: [
+                const Text('Лаборатория «Умного сна»'),
+                const SizedBox(width: 16),
+                Container(
+                  width: 1,
+                  height: 24,
+                  color: Theme.of(context).colorScheme.outline,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: SizedBox(
+                    height: 46,
+                    child: IotTabBar(tabBloc: _tabBloc),
+                  ),
+                ),
+              ],
+            ),
+            bottom: PreferredSize(
+              preferredSize: const Size.fromHeight(56),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                child: const RecordingReservationStrip(),
+              ),
+            ),
             actions: [
               Padding(
                 padding: const EdgeInsets.only(right: 12),

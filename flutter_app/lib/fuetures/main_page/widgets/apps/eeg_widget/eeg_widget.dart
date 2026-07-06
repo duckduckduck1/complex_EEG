@@ -5,7 +5,6 @@ import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/eeg_la
 import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/eeg_widget_settings_bar/eeg_settings_bar.dart';
 import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/filter_settings/filter_settings.dart';
 import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/plots/plots.dart';
-import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/recording/recording_reservation_strip.dart';
 
 class EegWidget extends StatefulWidget {
   final RtEegDataBloc rtEegDataBloc;
@@ -39,8 +38,6 @@ class _EegWidgetState extends State<EegWidget> {
       padding: const EdgeInsets.all(12),
       child: Column(
         children: [
-          const RecordingReservationStrip(),
-          const SizedBox(height: 10),
           EegWidgetSettingsBar(
             initialSettings:
                 widget.rtEegDataBloc.eegSettings.eegIsShowingSettings,

@@ -196,6 +196,14 @@ void main() {
   testWidgets('переключение между EEG-вкладками не размонтирует живой график', (
     tester,
   ) async {
+    // Табы теперь в строке названия аппбара; на узком стандартном окне (800px)
+    // они уходят под область названия и tap по ярлыку промахивается. Даём окну
+    // ширину рабочего стенда, чтобы название, разделитель и оба таба помещались
+    // в одну строку и ярлык таба был кликабелен.
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
     const deviceA = DiscoveredDevice(
       id: BleDeviceId('AA:BB:CC:DD:EE:4F'),
       name: 'JDY-16-A',

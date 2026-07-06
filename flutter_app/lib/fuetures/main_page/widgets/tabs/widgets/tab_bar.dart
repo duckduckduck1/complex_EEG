@@ -2,24 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:iot/fuetures/main_page/widgets/tabs/bloc/tab_bloc.dart';
 
-class IotTabBar extends StatelessWidget implements PreferredSizeWidget {
+class IotTabBar extends StatelessWidget {
   final TabBloc tabBloc;
   const IotTabBar({super.key, required this.tabBloc});
-
-  @override
-  Size get preferredSize => const Size.fromHeight(52);
 
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<TabBloc, TabState>(
       builder: (context, state) {
         if (state.controller == null) {
-          return SizedBox(height: preferredSize.height);
+          return const SizedBox.shrink();
         }
 
         final colorScheme = Theme.of(context).colorScheme;
-        return SizedBox(
-          height: preferredSize.height,
+        return SizedBox.expand(
           child: Align(
             alignment: Alignment.centerLeft,
             child: TabBar(
