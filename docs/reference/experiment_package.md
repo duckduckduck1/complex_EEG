@@ -27,11 +27,15 @@ experiment_folder/
 
 ## signal.bin
 
+- Файл хранит **фильтрованный** сигнал записи. Исходный raw-поток BLE в MVP не
+  сохраняется.
 - Отсчёт: `int32`, little-endian.
 - Единица амплитуды: микровольты.
 - Частота дискретизации: 250 Гц.
 - Файл содержит только значения амплитуды; время, сегменты, метки и ФБМ — в JSON.
 - `sample_count = размер_файла_в_байтах / 4`.
+- Применённые фильтры фиксируются в `experiment.json` в поле
+  `recording.filters`.
 
 Сервер требует: файл существует, не пустой, размер кратен 4 байтам.
 
@@ -50,8 +54,8 @@ experiment_folder/
 ### Рекомендуемые поля (приложение пишет, сервер не требует)
 
 `display_name`; `recording` (`sample_rate_hz`, `adc`, `amplitude_unit`,
-`sample_encoding`); `gaps`; `segments[].started_at_wall_clock`. Сервер их не
-валидирует, но они нужны для воспроизводимости.
+`sample_encoding`, `filters`); `gaps`; `segments[].started_at_wall_clock`.
+Сервер их не валидирует, но они нужны для воспроизводимости.
 
 ### Пример
 
@@ -64,7 +68,12 @@ experiment_folder/
     "sample_rate_hz": 250,
     "adc": "MAX30003",
     "amplitude_unit": "microvolts",
-    "sample_encoding": "int32_le"
+    "sample_encoding": "int32_le",
+    "filters": {
+      "lp": { "enabled": true, "hz": 40.0 },
+      "hp": { "enabled": true, "hz": 0.5 },
+      "notch": { "enabled": false, "hz": 50.0 }
+    }
   },
   "segments": [
     { "segment_id": "seg_1", "start_sample": 0, "end_sample": 1000,
@@ -84,6 +93,8 @@ experiment_folder/
 - `end_sample` ≤ `sample_count`.
 - Сегменты отсортированы по `start_sample` по возрастанию и не пересекаются.
 - Разрывы задаются явно (`gaps`), без синтетических отсчётов.
+- При обрыве BLE `signal.bin` не дополняется нулями: текущий сегмент закрывается,
+  а после ручного переподключения открывается следующий сегмент.
 
 ## Метки (`labels`) — опционально
 
