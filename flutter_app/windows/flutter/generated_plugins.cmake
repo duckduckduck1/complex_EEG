@@ -3,11 +3,13 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  file_selector_windows
   flutter_blue_plus_winrt
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST
   filters_sdk
+  jni
 )
 
 set(PLUGIN_BUNDLED_LIBRARIES)
