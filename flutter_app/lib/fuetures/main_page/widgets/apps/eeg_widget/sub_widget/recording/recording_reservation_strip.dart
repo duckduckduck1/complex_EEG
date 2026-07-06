@@ -1,5 +1,12 @@
 import 'package:flutter/material.dart';
 
+/// Зарезервированное место под будущие кнопки управления записью эксперимента
+/// (старт/стоп записи, таймер, метки, имя эксперимента).
+///
+/// Это НЕ рабочие контролы — только заглушка, чтобы высота уже была учтена в
+/// раскладке и добавление реальных кнопок позже не сдвигало графики. Оформлена
+/// подчёркнуто «неактивно» (пунктир, приглушённые цвета, бейдж «скоро»), чтобы
+/// пользователь не принял её за готовую функцию.
 class RecordingReservationStrip extends StatelessWidget {
   const RecordingReservationStrip({super.key});
 
@@ -7,106 +14,111 @@ class RecordingReservationStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final muted = colorScheme.onSurfaceVariant;
 
-    return DecoratedBox(
+    return CustomPaint(
       key: const Key('eeg-recording-reservation-strip'),
-      decoration: BoxDecoration(
-        color: colorScheme.surface.withValues(alpha: 0.72),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: colorScheme.outline.withValues(alpha: 0.92)),
+      painter: _DashedReservationPainter(
+        borderColor: colorScheme.outline.withValues(alpha: 0.85),
+        fillColor: colorScheme.surface.withValues(alpha: 0.45),
+        radius: 16,
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final compact = constraints.maxWidth < 680;
-            return Wrap(
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: compact ? 10 : 16,
-              runSpacing: 8,
-              children: [
-                _PlaceholderPill(width: compact ? 112 : 170),
-                _PlaceholderPill(width: compact ? 96 : 150),
-                _StatusToken(
-                  icon: Icons.fiber_manual_record,
-                  label: 'Запись',
-                  color: colorScheme.onSurfaceVariant,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+        child: Row(
+          children: [
+            Icon(
+              Icons.fiber_manual_record,
+              size: 13,
+              color: muted.withValues(alpha: 0.65),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Управление записью эксперимента',
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: muted,
+                  fontWeight: FontWeight.w700,
                 ),
-                _StatusToken(
-                  icon: Icons.timer_outlined,
-                  label: '00:00',
-                  color: colorScheme.onSurfaceVariant,
-                ),
-                _StatusToken(
-                  icon: Icons.flag,
-                  label: 'Метки',
-                  color: colorScheme.primary,
-                ),
-                Text(
-                  'Эксперимент',
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                if (!compact) ...[
-                  _PlaceholderPill(width: 170),
-                  _PlaceholderPill(width: 150),
-                ],
-              ],
-            );
-          },
+              ),
+            ),
+            const SizedBox(width: 10),
+            _SoonBadge(color: muted, borderColor: colorScheme.outline),
+          ],
         ),
       ),
     );
   }
 }
 
-class _StatusToken extends StatelessWidget {
-  final IconData icon;
-  final String label;
+class _SoonBadge extends StatelessWidget {
   final Color color;
+  final Color borderColor;
 
-  const _StatusToken({
-    required this.icon,
-    required this.label,
-    required this.color,
-  });
+  const _SoonBadge({required this.color, required this.borderColor});
 
   @override
   Widget build(BuildContext context) {
-    final textStyle = Theme.of(context).textTheme.labelLarge?.copyWith(
-      color: Theme.of(context).colorScheme.onSurfaceVariant,
-      fontWeight: FontWeight.w700,
-    );
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 16, color: color),
-        const SizedBox(width: 5),
-        Text(label, style: textStyle),
-      ],
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: borderColor.withValues(alpha: 0.7)),
+      ),
+      child: Text(
+        'скоро',
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: color,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.5,
+        ),
+      ),
     );
   }
 }
 
-class _PlaceholderPill extends StatelessWidget {
-  final double width;
+/// Рисует пунктирную скруглённую рамку с лёгкой заливкой — «зарезервировано».
+class _DashedReservationPainter extends CustomPainter {
+  final Color borderColor;
+  final Color fillColor;
+  final double radius;
 
-  const _PlaceholderPill({required this.width});
+  const _DashedReservationPainter({
+    required this.borderColor,
+    required this.fillColor,
+    required this.radius,
+  });
 
   @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Container(
-      width: width,
-      height: 22,
-      decoration: BoxDecoration(
-        color: colorScheme.outline.withValues(alpha: 0.38),
-        borderRadius: BorderRadius.circular(999),
-      ),
+  void paint(Canvas canvas, Size size) {
+    final rrect = RRect.fromRectAndRadius(
+      Offset.zero & size,
+      Radius.circular(radius),
     );
+    canvas.drawRRect(rrect, Paint()..color = fillColor);
+
+    final stroke =
+        Paint()
+          ..color = borderColor
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.3;
+    final path = Path()..addRRect(rrect);
+    const dash = 6.0;
+    const gap = 5.0;
+    for (final metric in path.computeMetrics()) {
+      var distance = 0.0;
+      while (distance < metric.length) {
+        final end = (distance + dash).clamp(0.0, metric.length);
+        canvas.drawPath(metric.extractPath(distance, end), stroke);
+        distance += dash + gap;
+      }
+    }
   }
+
+  @override
+  bool shouldRepaint(covariant _DashedReservationPainter old) =>
+      old.borderColor != borderColor ||
+      old.fillColor != fillColor ||
+      old.radius != radius;
 }

@@ -75,10 +75,9 @@ void main() {
       find.byKey(const Key('eeg-recording-reservation-strip')),
       findsOneWidget,
     );
-    expect(find.text('Запись'), findsOneWidget);
-    expect(find.text('00:00'), findsOneWidget);
-    expect(find.text('Метки'), findsOneWidget);
-    expect(find.text('Эксперимент'), findsOneWidget);
+    // Это зарезервированное место, а не рабочие кнопки: явная подпись + «скоро».
+    expect(find.text('Управление записью эксперимента'), findsOneWidget);
+    expect(find.text('скоро'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }
