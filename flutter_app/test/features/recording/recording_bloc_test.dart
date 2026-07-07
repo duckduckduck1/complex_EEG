@@ -5,14 +5,17 @@ import 'package:iot/features/recording/domain/recording_ports.dart';
 
 void main() {
   late _MemoryExperimentStorage storage;
+  late _FakeFbmTransport fbmTransport;
   late RecordingBloc bloc;
 
   setUp(() {
     storage = _MemoryExperimentStorage();
+    fbmTransport = _FakeFbmTransport();
     bloc = RecordingBloc(
       storage: storage,
       filterFactory: const _OffsetFilterFactory(),
       idGenerator: const _FixedIdGenerator('exp_test_01'),
+      fbmTransport: fbmTransport,
       clock: _FakeClock([
         DateTime.utc(2026, 1, 1, 10),
         DateTime.utc(2026, 1, 1, 10, 0, 5),
@@ -81,6 +84,7 @@ void main() {
     expect(recording['amplitude_unit'], 'microvolts');
     expect(recording['sample_encoding'], 'int32_le');
     expect(filters['lp'], {'enabled': true, 'hz': 40.0});
+    expect(recording['pwm_level'], 50);
     expect(segment['segment_id'], 'seg_1');
     expect(segment['start_sample'], 0);
     expect(segment['end_sample'], 3);
@@ -172,14 +176,132 @@ void main() {
       'recording_stopped',
     ]);
   });
+
+  test('fbm commands call transport and write journal events', () async {
+    bloc.add(RecordingStartRequested(_startConfig(pwmLevel: 20)));
+    await pumpEventQueue();
+
+    bloc.add(const FbmOnRequested());
+    await pumpEventQueue();
+    bloc.add(const FbmPwmChanged(60));
+    await pumpEventQueue();
+    bloc.add(const FbmOffRequested());
+    await pumpEventQueue();
+
+    final fbmEvents = storage.journal
+        .where((event) => event['type'] == 'fbm_event')
+        .toList(growable: false);
+
+    expect(fbmTransport.commands, [
+      const _FbmCommand(on: true, pwmByte: 51),
+      const _FbmCommand(on: true, pwmByte: 153),
+      const _FbmCommand(on: false, pwmByte: 153),
+    ]);
+    expect(bloc.state.fbmOn, isFalse);
+    expect(bloc.state.pwmLevel, 60);
+    expect(bloc.state.fbmEvents, hasLength(3));
+    expect(fbmEvents.map((event) => event['on']), [true, true, false]);
+    expect(fbmEvents.map((event) => event['pwm_level']), [20, 60, 60]);
+    expect(fbmEvents.map((event) => event['pwm_byte']), [51, 153, 153]);
+    expect(fbmEvents.map((event) => event['command_delivered']), [
+      true,
+      true,
+      true,
+    ]);
+  });
+
+  test('pwm change while fbm is off only updates next command level', () async {
+    bloc.add(RecordingStartRequested(_startConfig(pwmLevel: 20)));
+    await pumpEventQueue();
+
+    bloc.add(const FbmPwmChanged(60));
+    await pumpEventQueue();
+
+    expect(bloc.state.pwmLevel, 60);
+    expect(bloc.state.fbmEvents, isEmpty);
+    expect(fbmTransport.commands, isEmpty);
+    expect(
+      storage.journal.where((event) => event['type'] == 'fbm_event'),
+      isEmpty,
+    );
+
+    bloc.add(const FbmOnRequested());
+    await pumpEventQueue();
+
+    expect(fbmTransport.commands, [const _FbmCommand(on: true, pwmByte: 153)]);
+    expect(bloc.state.fbmEvents.single.pwmLevel, 60);
+  });
+
+  test('fbm is ignored outside recording and auto-off on stop', () async {
+    bloc.add(const FbmOnRequested());
+    await pumpEventQueue();
+    expect(fbmTransport.commands, isEmpty);
+
+    bloc.add(RecordingStartRequested(_startConfig(pwmLevel: 40)));
+    await pumpEventQueue();
+    bloc.add(const FbmOnRequested());
+    await pumpEventQueue();
+    bloc.add(const RecordingSamplesReceived([1, 2]));
+    await pumpEventQueue();
+    bloc.add(const RecordingStopRequested());
+    await pumpEventQueue(times: 5);
+
+    final experimentJson = storage.experimentJson!;
+    final fbmEvents = experimentJson['fbm_events']! as List<Object?>;
+
+    expect(fbmTransport.commands, [
+      const _FbmCommand(on: true, pwmByte: 102),
+      const _FbmCommand(on: false, pwmByte: 102),
+    ]);
+    expect(bloc.state.status, RecordingStatus.stopped);
+    expect(bloc.state.fbmOn, isFalse);
+    expect(fbmEvents, hasLength(2));
+    final offEvent = fbmEvents.last! as Map<String, Object?>;
+    expect(offEvent['on'], isFalse);
+    expect(offEvent['command_delivered'], isTrue);
+    expect(offEvent['reason'], 'recording_stop');
+  });
+
+  test(
+    'disconnect auto-off records undelivered command without failing',
+    () async {
+      bloc.add(RecordingStartRequested(_startConfig(pwmLevel: 40)));
+      await pumpEventQueue();
+      bloc.add(const FbmOnRequested());
+      await pumpEventQueue();
+      bloc.add(const RecordingSamplesReceived([1, 2]));
+      await pumpEventQueue();
+
+      fbmTransport.connected = false;
+      bloc.add(const RecordingConnectionLost());
+      await pumpEventQueue(times: 5);
+
+      final fbmEvents = storage.journal
+          .where((event) => event['type'] == 'fbm_event')
+          .toList(growable: false);
+      final autoOffEvent = fbmEvents.last;
+
+      expect(bloc.state.status, RecordingStatus.pausedByDisconnect);
+      expect(bloc.state.fbmOn, isFalse);
+      expect(fbmTransport.commands, [
+        const _FbmCommand(on: true, pwmByte: 102),
+      ]);
+      expect(autoOffEvent['on'], isFalse);
+      expect(autoOffEvent['command_delivered'], isFalse);
+      expect(autoOffEvent['reason'], 'connection_lost');
+      expect(autoOffEvent['sample_index'], 1);
+      expect(autoOffEvent['segment_sample_index'], 1);
+    },
+  );
 }
 
-RecordingStartConfig _startConfig() {
-  return const RecordingStartConfig(
+RecordingStartConfig _startConfig({int pwmLevel = 50}) {
+  return RecordingStartConfig(
     rootDirectory: 'memory-root',
+    pwmLevel: pwmLevel,
     displayName: 'test recording',
     metadata: {'animal_id': 'mouse_1'},
-    filters: RecordingFilters(isLpEnabled: true),
+    filters: const RecordingFilters(isLpEnabled: true),
   );
 }
 
@@ -268,5 +390,34 @@ class _FakeClock implements RecordingClock {
     final value = _values[_index.clamp(0, _values.length - 1)];
     _index++;
     return value;
+  }
+}
+
+class _FbmCommand {
+  const _FbmCommand({required this.on, required this.pwmByte});
+
+  final bool on;
+  final int pwmByte;
+
+  @override
+  bool operator ==(Object other) {
+    return other is _FbmCommand && other.on == on && other.pwmByte == pwmByte;
+  }
+
+  @override
+  int get hashCode => Object.hash(on, pwmByte);
+}
+
+class _FakeFbmTransport implements FbmTransport {
+  final List<_FbmCommand> commands = <_FbmCommand>[];
+  bool connected = true;
+
+  @override
+  Future<bool> setLed({required bool on, required int pwmByte}) async {
+    if (!connected) {
+      return false;
+    }
+    commands.add(_FbmCommand(on: on, pwmByte: pwmByte));
+    return true;
   }
 }

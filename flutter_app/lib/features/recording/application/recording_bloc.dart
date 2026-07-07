@@ -10,10 +10,12 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
     required ExperimentStorage storage,
     required StreamingFilterFactory filterFactory,
     required ExperimentIdGenerator idGenerator,
+    required FbmTransport fbmTransport,
     RecordingClock clock = const SystemRecordingClock(),
   }) : _storage = storage,
        _filterFactory = filterFactory,
        _idGenerator = idGenerator,
+       _fbmTransport = fbmTransport,
        _clock = clock,
        super(const RecordingState()) {
     on<RecordingStartRequested>(_onStartRequested);
@@ -21,11 +23,15 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
     on<RecordingStopRequested>(_onStopRequested);
     on<RecordingConnectionLost>(_onConnectionLost);
     on<RecordingConnectionResumed>(_onConnectionResumed);
+    on<FbmOnRequested>(_onFbmOnRequested);
+    on<FbmOffRequested>(_onFbmOffRequested);
+    on<FbmPwmChanged>(_onFbmPwmChanged);
   }
 
   final ExperimentStorage _storage;
   final StreamingFilterFactory _filterFactory;
   final ExperimentIdGenerator _idGenerator;
+  final FbmTransport _fbmTransport;
   final RecordingClock _clock;
 
   RecordingStartConfig? _config;
@@ -87,6 +93,7 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
           displayName: event.config.displayName,
           activeSegmentId: segment.segmentId,
           segments: [segment],
+          pwmLevel: event.config.pwmLevel,
         ),
       );
     } catch (error) {
@@ -134,10 +141,14 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
       return;
     }
 
-    final stateToFinalize = state;
+    var stateToFinalize = state;
     emit(state.copyWith(status: RecordingStatus.stopping));
 
     try {
+      stateToFinalize = await _autoTurnFbmOff(
+        stateToFinalize,
+        reason: 'recording_stop',
+      );
       emit(await _finalizeRecording(stateToFinalize));
     } catch (error) {
       await _safeCloseStorage();
@@ -166,15 +177,20 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
     _connectionLostInProgress = true;
     try {
       final lostAt = _clock.now();
+      final stateBeforeLost = await _autoTurnFbmOff(
+        state,
+        allowUndelivered: true,
+        reason: 'connection_lost',
+      );
       await _storage.flush();
 
-      final segments = List<RecordingSegment>.from(state.segments);
+      final segments = List<RecordingSegment>.from(stateBeforeLost.segments);
       final activeIndex = segments.indexWhere(
-        (segment) => segment.segmentId == state.activeSegmentId,
+        (segment) => segment.segmentId == stateBeforeLost.activeSegmentId,
       );
       if (activeIndex >= 0 && !segments[activeIndex].isClosed) {
         final closed = segments[activeIndex].close(
-          endSample: state.sampleCount,
+          endSample: stateBeforeLost.sampleCount,
           endedAtWallClock: lostAt,
         );
         segments[activeIndex] = closed;
@@ -195,21 +211,21 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
           type: 'connection_lost',
           experimentId: experimentId,
           timestamp: lostAt,
-          sampleIndex: state.sampleCount,
+          sampleIndex: stateBeforeLost.sampleCount,
         ),
         flush: true,
       );
 
       emit(
-        state.copyWith(
+        stateBeforeLost.copyWith(
           status: RecordingStatus.pausedByDisconnect,
           activeSegmentId: null,
           segments: segments,
           gaps: [
-            ...state.gaps,
+            ...stateBeforeLost.gaps,
             RecordingGap(
               startedAtWallClock: lostAt,
-              sampleIndex: state.sampleCount,
+              sampleIndex: stateBeforeLost.sampleCount,
             ),
           ],
         ),
@@ -246,6 +262,90 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
 
     try {
       emit(await _resumeFromPaused(state));
+    } catch (error) {
+      await _safeCloseStorage();
+      emit(
+        state.copyWith(
+          status: RecordingStatus.failed,
+          lastError: RecordingFailure(error.toString()),
+        ),
+      );
+    }
+  }
+
+  Future<void> _onFbmOnRequested(
+    FbmOnRequested event,
+    Emitter<RecordingState> emit,
+  ) async {
+    if (state.status != RecordingStatus.recording || state.fbmOn) {
+      return;
+    }
+
+    try {
+      emit(
+        await _applyFbmEvent(
+          state,
+          isOn: true,
+          pwmLevel: state.pwmLevel ?? 50,
+          sendCommand: true,
+        ),
+      );
+    } catch (error) {
+      await _safeCloseStorage();
+      emit(
+        state.copyWith(
+          status: RecordingStatus.failed,
+          lastError: RecordingFailure(error.toString()),
+        ),
+      );
+    }
+  }
+
+  Future<void> _onFbmOffRequested(
+    FbmOffRequested event,
+    Emitter<RecordingState> emit,
+  ) async {
+    if (state.status != RecordingStatus.recording || !state.fbmOn) {
+      return;
+    }
+
+    try {
+      emit(await _applyFbmEvent(state, isOn: false, sendCommand: true));
+    } catch (error) {
+      await _safeCloseStorage();
+      emit(
+        state.copyWith(
+          status: RecordingStatus.failed,
+          lastError: RecordingFailure(error.toString()),
+        ),
+      );
+    }
+  }
+
+  Future<void> _onFbmPwmChanged(
+    FbmPwmChanged event,
+    Emitter<RecordingState> emit,
+  ) async {
+    if (state.status != RecordingStatus.recording ||
+        !_isValidPwmLevel(event.pwmLevel) ||
+        state.pwmLevel == event.pwmLevel) {
+      return;
+    }
+
+    if (!state.fbmOn) {
+      emit(state.copyWith(pwmLevel: event.pwmLevel));
+      return;
+    }
+
+    try {
+      emit(
+        await _applyFbmEvent(
+          state,
+          isOn: true,
+          pwmLevel: event.pwmLevel,
+          sendCommand: true,
+        ),
+      );
     } catch (error) {
       await _safeCloseStorage();
       emit(
@@ -350,6 +450,7 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
         config: config,
         segments: segments,
         gaps: stateToFinalize.gaps,
+        fbmEvents: stateToFinalize.fbmEvents,
       ),
     );
     await _storage.flush();
@@ -367,6 +468,7 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
     required RecordingStartConfig config,
     required List<RecordingSegment> segments,
     required List<RecordingGap> gaps,
+    required List<RecordingFbmEvent> fbmEvents,
   }) {
     return {
       'experiment_id': experimentId,
@@ -378,6 +480,7 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
         'amplitude_unit': 'microvolts',
         'sample_encoding': 'int32_le',
         'filters': config.filters.toJson(),
+        'pwm_level': config.pwmLevel,
       },
       'segments': segments
           .where((segment) => segment.endSample != null)
@@ -385,7 +488,9 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
           .toList(growable: false),
       'gaps': gaps.map((gap) => gap.toJson()).toList(growable: false),
       'labels': const <Object>[],
-      'fbm_events': const <Object>[],
+      'fbm_events': fbmEvents
+          .map((event) => event.toJson())
+          .toList(growable: false),
     };
   }
 
@@ -395,6 +500,7 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
     required DateTime timestamp,
     String? segmentId,
     int? sampleIndex,
+    Map<String, Object?> extra = const <String, Object?>{},
   }) {
     return {
       'type': type,
@@ -402,7 +508,114 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
       'timestamp': timestamp.toUtc().toIso8601String(),
       if (segmentId != null) 'segment_id': segmentId,
       if (sampleIndex != null) 'sample_index': sampleIndex,
+      ...extra,
     };
+  }
+
+  Future<RecordingState> _autoTurnFbmOff(
+    RecordingState stateToUpdate, {
+    bool allowUndelivered = false,
+    String? reason,
+  }) async {
+    if (!stateToUpdate.fbmOn) {
+      return stateToUpdate;
+    }
+    return _applyFbmEvent(
+      stateToUpdate,
+      isOn: false,
+      sendCommand: true,
+      allowUndelivered: allowUndelivered,
+      reason: reason,
+    );
+  }
+
+  Future<RecordingState> _applyFbmEvent(
+    RecordingState stateToUpdate, {
+    required bool isOn,
+    int? pwmLevel,
+    required bool sendCommand,
+    bool allowUndelivered = false,
+    String? reason,
+  }) async {
+    final effectivePwmLevel = pwmLevel ?? stateToUpdate.pwmLevel;
+    if (effectivePwmLevel == null || !_isValidPwmLevel(effectivePwmLevel)) {
+      throw StateError('PWM level must be in range 1..99');
+    }
+
+    final experimentId = stateToUpdate.experimentId;
+    final segment = _activeSegment(stateToUpdate);
+    if (experimentId == null || segment == null) {
+      throw StateError('Recording is not initialized');
+    }
+
+    final pwmByte = pwmByteFromLevel(effectivePwmLevel);
+    var commandDelivered = false;
+    if (sendCommand) {
+      commandDelivered = await _fbmTransport.setLed(on: isOn, pwmByte: pwmByte);
+      if (!commandDelivered && !allowUndelivered) {
+        throw StateError('FBM command could not be delivered');
+      }
+    }
+
+    final timestamp = _clock.now();
+    final globalSampleIndex = _globalSampleIndex(
+      segment: segment,
+      sampleCount: stateToUpdate.sampleCount,
+    );
+    final segmentSampleIndex = globalSampleIndex - segment.startSample;
+    final fbmEvent = RecordingFbmEvent(
+      segmentId: segment.segmentId,
+      segmentSampleIndex: segmentSampleIndex,
+      globalSampleIndex: globalSampleIndex,
+      wallClockTime: timestamp,
+      isOn: isOn,
+      pwmLevel: effectivePwmLevel,
+      pwmByte: pwmByte,
+      commandDelivered: commandDelivered,
+      reason: reason,
+    );
+
+    await _storage.appendJournal(
+      _journalEvent(
+        type: 'fbm_event',
+        experimentId: experimentId,
+        timestamp: timestamp,
+        segmentId: segment.segmentId,
+        sampleIndex: globalSampleIndex,
+        extra: fbmEvent.toJson(),
+      ),
+      flush: true,
+    );
+
+    return stateToUpdate.copyWith(
+      fbmOn: isOn,
+      pwmLevel: effectivePwmLevel,
+      fbmEvents: [...stateToUpdate.fbmEvents, fbmEvent],
+    );
+  }
+
+  RecordingSegment? _activeSegment(RecordingState stateToRead) {
+    final activeSegmentId = stateToRead.activeSegmentId;
+    if (activeSegmentId == null) {
+      return null;
+    }
+    for (final segment in stateToRead.segments) {
+      if (segment.segmentId == activeSegmentId) {
+        return segment;
+      }
+    }
+    return null;
+  }
+
+  int _globalSampleIndex({
+    required RecordingSegment segment,
+    required int sampleCount,
+  }) {
+    final writtenInSegment = sampleCount - segment.startSample;
+    if (writtenInSegment <= 0) {
+      return segment.startSample;
+    }
+    return sampleCount - 1;
   }
 
   List<RecordingGap> _closeLatestGap(
@@ -427,6 +640,15 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
         status == RecordingStatus.pausedByDisconnect;
   }
 
+  bool _isValidPwmLevel(int pwmLevel) => pwmLevel >= 1 && pwmLevel <= 99;
+
+  static int pwmByteFromLevel(int pwmLevel) {
+    if (pwmLevel < 1 || pwmLevel > 99) {
+      throw ArgumentError.value(pwmLevel, 'pwmLevel', 'must be in range 1..99');
+    }
+    return (pwmLevel * 255 / 100).round();
+  }
+
   Future<void> _safeCloseStorage() async {
     try {
       await _storage.close();
@@ -439,7 +661,8 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
   Future<void> close() async {
     if (_canFinalize(state.status)) {
       try {
-        await _finalizeRecording(state);
+        final stateToClose = await _autoTurnFbmOff(state, reason: 'bloc_close');
+        await _finalizeRecording(stateToClose);
       } catch (_) {
         await _safeCloseStorage();
       }

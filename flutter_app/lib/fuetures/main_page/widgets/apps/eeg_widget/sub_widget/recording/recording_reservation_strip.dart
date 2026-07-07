@@ -35,6 +35,13 @@ class RecordingReservationStrip extends StatelessWidget {
             RecordingStatus.recording => _RecordingControls(
               state: state,
               onStop: () => bloc.add(const RecordingStopRequested()),
+              onToggleFbm:
+                  () => bloc.add(
+                    state.fbmOn
+                        ? const FbmOffRequested()
+                        : const FbmOnRequested(),
+                  ),
+              onPwmChanged: (value) => bloc.add(FbmPwmChanged(value)),
             ),
             RecordingStatus.pausedByDisconnect => _PausedControls(
               onReconnectPressed: onReconnectPressed,
@@ -217,8 +224,15 @@ class _BusyControls extends StatelessWidget {
 class _RecordingControls extends StatelessWidget {
   final RecordingState state;
   final VoidCallback onStop;
+  final VoidCallback onToggleFbm;
+  final ValueChanged<int> onPwmChanged;
 
-  const _RecordingControls({required this.state, required this.onStop});
+  const _RecordingControls({
+    required this.state,
+    required this.onStop,
+    required this.onToggleFbm,
+    required this.onPwmChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -244,12 +258,63 @@ class _RecordingControls extends StatelessWidget {
           label: segmentLabel,
           color: colorScheme.primary,
         ),
+        FilledButton.tonalIcon(
+          onPressed: onToggleFbm,
+          icon: Icon(state.fbmOn ? Icons.lightbulb : Icons.lightbulb_outline),
+          label: Text(state.fbmOn ? 'Свет выкл' : 'Свет вкл'),
+        ),
+        _PwmControl(
+          value: state.pwmLevel ?? 50,
+          enabled: state.status == RecordingStatus.recording,
+          onChanged: onPwmChanged,
+        ),
         OutlinedButton.icon(
           onPressed: onStop,
           icon: const Icon(Icons.stop_rounded),
           label: const Text('Остановить'),
         ),
       ],
+    );
+  }
+}
+
+class _PwmControl extends StatelessWidget {
+  final int value;
+  final bool enabled;
+  final ValueChanged<int> onChanged;
+
+  const _PwmControl({
+    required this.value,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 168,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'ШИМ $value',
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          Expanded(
+            child: Slider(
+              value: value.toDouble(),
+              min: 1,
+              max: 99,
+              divisions: 98,
+              label: '$value',
+              onChanged: enabled ? (value) => onChanged(value.round()) : null,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

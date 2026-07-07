@@ -11,6 +11,7 @@ void main() {
       storage: _MemoryExperimentStorage(),
       filterFactory: const PassThroughStreamingFilterFactory(),
       idGenerator: const _FixedIdGenerator(),
+      fbmTransport: const _FakeFbmTransport(),
     );
     final tabBloc = TabBloc(vsync: tester);
     addTearDown(tabBloc.close);
@@ -22,7 +23,7 @@ void main() {
 
     recordingBloc.add(
       const RecordingStartRequested(
-        RecordingStartConfig(rootDirectory: 'memory-root'),
+        RecordingStartConfig(rootDirectory: 'memory-root', pwmLevel: 50),
       ),
     );
     await tester.pump();
@@ -82,4 +83,11 @@ class _FixedIdGenerator implements ExperimentIdGenerator {
 
   @override
   String nextId() => 'exp_tab_test';
+}
+
+class _FakeFbmTransport implements FbmTransport {
+  const _FakeFbmTransport();
+
+  @override
+  Future<bool> setLed({required bool on, required int pwmByte}) async => true;
 }

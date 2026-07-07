@@ -7,6 +7,7 @@ import 'package:iot/features/devices/presentation/device_display_name.dart';
 import 'package:iot/features/navigation/navigation_cubit.dart';
 import 'package:iot/features/recording/application/recording_bloc.dart';
 import 'package:iot/features/recording/application/recording_bloc_factory.dart';
+import 'package:iot/features/recording/data/device_connection_fbm_transport.dart';
 import 'package:iot/features/recording/presentation/recording_start_dialog.dart';
 import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/device_eeg_tab.dart';
 import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/recording/recording_reservation_strip.dart';
@@ -38,7 +39,7 @@ class _MainPageState extends State<MainPage> with TickerProviderStateMixin {
   }
 
   void _openDeviceTab(DeviceSession session) {
-    final recordingBloc = _createRecordingBloc();
+    final recordingBloc = _createRecordingBloc(session);
     _tabBloc.add(
       NewTabAdded(
         newTab: Text(eegDisplayName(session.deviceId)),
@@ -52,8 +53,12 @@ class _MainPageState extends State<MainPage> with TickerProviderStateMixin {
     );
   }
 
-  RecordingBloc _createRecordingBloc() {
-    return context.read<RecordingBlocFactory>().create();
+  RecordingBloc _createRecordingBloc(DeviceSession session) {
+    return context.read<RecordingBlocFactory>().create(
+      fbmTransport: DeviceConnectionFbmTransport(
+        connection: session.connection,
+      ),
+    );
   }
 
   Future<void> _startRecording(RecordingBloc recordingBloc) async {

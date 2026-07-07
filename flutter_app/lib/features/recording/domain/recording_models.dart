@@ -47,13 +47,15 @@ class RecordingFilters extends Equatable {
 class RecordingStartConfig extends Equatable {
   const RecordingStartConfig({
     required this.rootDirectory,
+    required this.pwmLevel,
     this.displayName,
     this.metadata = const <String, Object?>{},
     this.filters = const RecordingFilters(),
     this.sampleRateHz = 250,
-  });
+  }) : assert(pwmLevel >= 1 && pwmLevel <= 99);
 
   final String rootDirectory;
+  final int pwmLevel;
   final String? displayName;
   final Map<String, Object?> metadata;
   final RecordingFilters filters;
@@ -62,10 +64,61 @@ class RecordingStartConfig extends Equatable {
   @override
   List<Object?> get props => [
     rootDirectory,
+    pwmLevel,
     displayName,
     metadata,
     filters,
     sampleRateHz,
+  ];
+}
+
+class RecordingFbmEvent extends Equatable {
+  const RecordingFbmEvent({
+    required this.segmentId,
+    required this.segmentSampleIndex,
+    required this.globalSampleIndex,
+    required this.wallClockTime,
+    required this.isOn,
+    required this.pwmLevel,
+    required this.pwmByte,
+    required this.commandDelivered,
+    this.reason,
+  });
+
+  final String segmentId;
+  final int segmentSampleIndex;
+  final int globalSampleIndex;
+  final DateTime wallClockTime;
+  final bool isOn;
+  final int pwmLevel;
+  final int pwmByte;
+  final bool commandDelivered;
+  final String? reason;
+
+  Map<String, Object?> toJson() => {
+    'segment_id': segmentId,
+    'sample_index': globalSampleIndex,
+    'segment_sample_index': segmentSampleIndex,
+    'global_sample_index': globalSampleIndex,
+    'wall_clock_time': wallClockTime.toUtc().toIso8601String(),
+    'on': isOn,
+    'pwm_level': pwmLevel,
+    'pwm_byte': pwmByte,
+    'command_delivered': commandDelivered,
+    if (reason != null) 'reason': reason,
+  };
+
+  @override
+  List<Object?> get props => [
+    segmentId,
+    segmentSampleIndex,
+    globalSampleIndex,
+    wallClockTime,
+    isOn,
+    pwmLevel,
+    pwmByte,
+    commandDelivered,
+    reason,
   ];
 }
 
@@ -162,6 +215,9 @@ class RecordingState extends Equatable {
     this.activeSegmentId,
     this.segments = const <RecordingSegment>[],
     this.gaps = const <RecordingGap>[],
+    this.pwmLevel,
+    this.fbmOn = false,
+    this.fbmEvents = const <RecordingFbmEvent>[],
     this.lastError,
   });
 
@@ -172,6 +228,9 @@ class RecordingState extends Equatable {
   final String? activeSegmentId;
   final List<RecordingSegment> segments;
   final List<RecordingGap> gaps;
+  final int? pwmLevel;
+  final bool fbmOn;
+  final List<RecordingFbmEvent> fbmEvents;
   final RecordingFailure? lastError;
 
   static const _unset = Object();
@@ -184,6 +243,9 @@ class RecordingState extends Equatable {
     Object? activeSegmentId = _unset,
     List<RecordingSegment>? segments,
     List<RecordingGap>? gaps,
+    Object? pwmLevel = _unset,
+    bool? fbmOn,
+    List<RecordingFbmEvent>? fbmEvents,
     Object? lastError = _unset,
   }) {
     return RecordingState(
@@ -199,6 +261,9 @@ class RecordingState extends Equatable {
               : activeSegmentId as String?,
       segments: segments ?? this.segments,
       gaps: gaps ?? this.gaps,
+      pwmLevel: pwmLevel == _unset ? this.pwmLevel : pwmLevel as int?,
+      fbmOn: fbmOn ?? this.fbmOn,
+      fbmEvents: fbmEvents ?? this.fbmEvents,
       lastError:
           lastError == _unset ? this.lastError : lastError as RecordingFailure?,
     );
@@ -213,6 +278,9 @@ class RecordingState extends Equatable {
     activeSegmentId,
     segments,
     gaps,
+    pwmLevel,
+    fbmOn,
+    fbmEvents,
     lastError,
   ];
 }

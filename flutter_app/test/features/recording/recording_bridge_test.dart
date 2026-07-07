@@ -23,6 +23,7 @@ void main() {
         storage: _MemoryExperimentStorage(),
         filterFactory: const PassThroughStreamingFilterFactory(),
         idGenerator: const _FixedIdGenerator(),
+        fbmTransport: const _FakeFbmTransport(),
       );
       final bridge = RecordingBridge(
         connection: connectionBloc,
@@ -36,7 +37,7 @@ void main() {
 
       recordingBloc.add(
         const RecordingStartRequested(
-          RecordingStartConfig(rootDirectory: 'memory-root'),
+          RecordingStartConfig(rootDirectory: 'memory-root', pwmLevel: 50),
         ),
       );
       await pumpEventQueue();
@@ -71,6 +72,7 @@ void main() {
         storage: storage,
         filterFactory: const PassThroughStreamingFilterFactory(),
         idGenerator: const _FixedIdGenerator(),
+        fbmTransport: const _FakeFbmTransport(),
       );
       final bridge = RecordingBridge(
         connection: connectionBloc,
@@ -84,7 +86,7 @@ void main() {
 
       recordingBloc.add(
         const RecordingStartRequested(
-          RecordingStartConfig(rootDirectory: 'memory-root'),
+          RecordingStartConfig(rootDirectory: 'memory-root', pwmLevel: 50),
         ),
       );
       await pumpEventQueue();
@@ -215,4 +217,11 @@ class _FixedIdGenerator implements ExperimentIdGenerator {
 
   @override
   String nextId() => 'exp_bridge_test';
+}
+
+class _FakeFbmTransport implements FbmTransport {
+  const _FakeFbmTransport();
+
+  @override
+  Future<bool> setLed({required bool on, required int pwmByte}) async => true;
 }

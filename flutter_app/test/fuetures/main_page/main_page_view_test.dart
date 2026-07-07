@@ -252,11 +252,12 @@ class _FakeRecordingBlocFactory implements RecordingBlocFactory {
   const _FakeRecordingBlocFactory();
 
   @override
-  RecordingBloc create() {
+  RecordingBloc create({required FbmTransport fbmTransport}) {
     return RecordingBloc(
       storage: _MemoryExperimentStorage(),
       filterFactory: const PassThroughStreamingFilterFactory(),
       idGenerator: const _FixedIdGenerator(),
+      fbmTransport: fbmTransport,
     );
   }
 }

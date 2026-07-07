@@ -193,21 +193,37 @@ segment_id + segment_sample_index
 
 При вызове:
 
-1. `PhotobiomodulationBloc` проверяет статус записи;
+1. `RecordingBloc` проверяет статус записи;
 2. отправляется команда по BLE;
 3. событие немедленно пишется в `journal.ndjson`;
 4. UI показывает результат команды.
+
+Уровень ШИМ задаётся в диапазоне `1..99` и переводится в байт командой
+`round(level * 255 / 100)`. Если ФБМ выключена, изменение уровня только меняет
+настройку следующего включения и не создаёт `fbm_event`.
 
 Поля события:
 
 ```text
 segment_id
+sample_index
 segment_sample_index
 global_sample_index
 wall_clock_time
-duration_ms optional
-intensity optional
+on
+pwm_level
+pwm_byte
+command_delivered
+reason optional
 ```
+
+`sample_index` и `global_sample_index` — глобальные индексы в `signal.bin`;
+`segment_sample_index` — локальный индекс внутри текущего сегмента. При штатном
+stop приложение сначала отправляет off-команду ФБМ и пишет событие с
+`reason: recording_stop`. При физическом обрыве BLE команда может быть уже
+недоставима; тогда событие авто-выключения пишется с `command_delivered: false`
+и `reason: connection_lost`, чтобы журнал не выдавал попытку за доставленную
+команду.
 
 ---
 

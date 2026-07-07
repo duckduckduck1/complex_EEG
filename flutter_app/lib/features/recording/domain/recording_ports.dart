@@ -33,6 +33,10 @@ abstract interface class ExperimentIdGenerator {
   String nextId();
 }
 
+abstract interface class FbmTransport {
+  Future<bool> setLed({required bool on, required int pwmByte});
+}
+
 class PassThroughStreamingFilter implements StreamingFilter {
   const PassThroughStreamingFilter();
 

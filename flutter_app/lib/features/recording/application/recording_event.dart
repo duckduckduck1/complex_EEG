@@ -36,3 +36,20 @@ final class RecordingConnectionLost extends RecordingEvent {
 final class RecordingConnectionResumed extends RecordingEvent {
   const RecordingConnectionResumed();
 }
+
+final class FbmOnRequested extends RecordingEvent {
+  const FbmOnRequested();
+}
+
+final class FbmOffRequested extends RecordingEvent {
+  const FbmOffRequested();
+}
+
+final class FbmPwmChanged extends RecordingEvent {
+  const FbmPwmChanged(this.pwmLevel);
+
+  final int pwmLevel;
+
+  @override
+  List<Object?> get props => [pwmLevel];
+}

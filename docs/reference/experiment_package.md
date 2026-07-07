@@ -54,7 +54,8 @@ experiment_folder/
 ### Рекомендуемые поля (приложение пишет, сервер не требует)
 
 `display_name`; `recording` (`sample_rate_hz`, `adc`, `amplitude_unit`,
-`sample_encoding`, `filters`); `gaps`; `segments[].started_at_wall_clock`.
+`sample_encoding`, `filters`, `pwm_level`); `gaps`;
+`segments[].started_at_wall_clock`.
 Сервер их не валидирует, но они нужны для воспроизводимости.
 
 ### Пример
@@ -73,7 +74,8 @@ experiment_folder/
       "lp": { "enabled": true, "hz": 40.0 },
       "hp": { "enabled": true, "hz": 0.5 },
       "notch": { "enabled": false, "hz": 50.0 }
-    }
+    },
+    "pwm_level": 50
   },
   "segments": [
     { "segment_id": "seg_1", "start_sample": 0, "end_sample": 1000,
@@ -99,13 +101,20 @@ experiment_folder/
 ## Метки (`labels`) — опционально
 
 Массив. Каждая метка ссылается на существующий `segment_id` и задаёт либо точку
-`sample_index`, либо интервал `start_sample`/`end_sample`. Точка или интервал
-должны полностью лежать внутри своего сегмента.
+`sample_index`, либо интервал `start_sample`/`end_sample`. Эти поля — глобальные
+индексы отсчётов в `signal.bin`; точка или интервал должны полностью лежать
+внутри своего сегмента. Если приложению нужна локальная координата для UI, оно
+может дополнительно хранить `segment_sample_index`.
 
 ## ФБМ-события (`fbm_events`) — опционально
 
-Массив. Каждое событие фотобиомодуляции ссылается на существующий `segment_id` и
-`sample_index` внутри этого сегмента.
+Массив. Каждое событие фотобиомодуляции ссылается на существующий `segment_id`.
+`sample_index` — глобальный индекс отсчёта в `signal.bin`, который должен лежать
+в диапазоне сегмента. Приложение также пишет `segment_sample_index`,
+`global_sample_index`, `wall_clock_time`, `on`, `pwm_level`, `pwm_byte` и
+`command_delivered`. Если BLE-соединение уже потеряно и авто-выключение ФБМ не
+могло быть доставлено, событие фиксируется с `command_delivered: false` и
+`reason: "connection_lost"`.
 
 ## journal.ndjson — опционально
 

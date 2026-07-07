@@ -115,7 +115,7 @@ void main() {
 
     recordingBloc.add(
       const RecordingStartRequested(
-        RecordingStartConfig(rootDirectory: 'memory-root'),
+        RecordingStartConfig(rootDirectory: 'memory-root', pwmLevel: 50),
       ),
     );
     await tester.pump();
@@ -148,6 +148,43 @@ void main() {
     await tester.pump();
     expect(recordingBloc.state.status, RecordingStatus.stopped);
   });
+
+  testWidgets('recording strip exposes fbm and pwm controls', (tester) async {
+    final recordingBloc = _createRecordingBloc();
+    addTearDown(() async {
+      if (!recordingBloc.isClosed) {
+        await recordingBloc.close();
+      }
+    });
+
+    recordingBloc.add(
+      const RecordingStartRequested(
+        RecordingStartConfig(rootDirectory: 'memory-root', pwmLevel: 50),
+      ),
+    );
+    await tester.pump();
+
+    await tester.pumpWidget(
+      wrap(
+        RecordingReservationStrip(
+          recordingBloc: recordingBloc,
+          onStartPressed: () {},
+        ),
+        width: 760,
+      ),
+    );
+
+    expect(find.text('Свет вкл'), findsOneWidget);
+    expect(find.text('ШИМ 50'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.text('Свет вкл'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(recordingBloc.state.fbmOn, isTrue);
+    expect(find.text('Свет выкл'), findsOneWidget);
+  });
 }
 
 RecordingBloc _createRecordingBloc() {
@@ -155,6 +192,7 @@ RecordingBloc _createRecordingBloc() {
     storage: _MemoryExperimentStorage(),
     filterFactory: const PassThroughStreamingFilterFactory(),
     idGenerator: const _FixedIdGenerator(),
+    fbmTransport: const _FakeFbmTransport(),
   );
 }
 
@@ -189,4 +227,11 @@ class _FixedIdGenerator implements ExperimentIdGenerator {
 
   @override
   String nextId() => 'exp_controls_test';
+}
+
+class _FakeFbmTransport implements FbmTransport {
+  const _FakeFbmTransport();
+
+  @override
+  Future<bool> setLed({required bool on, required int pwmByte}) async => true;
 }

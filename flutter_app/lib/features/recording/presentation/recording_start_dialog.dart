@@ -9,10 +9,12 @@ Future<RecordingStartConfig?> showRecordingStartDialog(
   final lpController = TextEditingController(text: '40');
   final hpController = TextEditingController(text: '0.5');
   final notchController = TextEditingController(text: '50');
+  final pwmController = TextEditingController(text: '50');
   String? rootDirectory;
   var lpEnabled = true;
   var hpEnabled = true;
   var notchEnabled = false;
+  var pwmLevel = 50;
 
   try {
     return await showDialog<RecordingStartConfig>(
@@ -20,7 +22,12 @@ Future<RecordingStartConfig?> showRecordingStartDialog(
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
-            final canStart = rootDirectory != null;
+            final parsedPwmLevel = int.tryParse(pwmController.text.trim());
+            final pwmIsValid =
+                parsedPwmLevel != null &&
+                parsedPwmLevel >= 1 &&
+                parsedPwmLevel <= 99;
+            final canStart = rootDirectory != null && pwmIsValid;
             return AlertDialog(
               title: const Text('Начать эксперимент'),
               content: SizedBox(
@@ -59,6 +66,46 @@ Future<RecordingStartConfig?> showRecordingStartDialog(
                             },
                             icon: const Icon(Icons.folder_open),
                             label: const Text('Папка'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          const SizedBox(width: 64, child: Text('ШИМ')),
+                          Expanded(
+                            child: Slider(
+                              value: pwmLevel.toDouble(),
+                              min: 1,
+                              max: 99,
+                              divisions: 98,
+                              label: '$pwmLevel',
+                              onChanged:
+                                  (value) => setDialogState(() {
+                                    pwmLevel = value.round();
+                                    pwmController.text = '$pwmLevel';
+                                  }),
+                            ),
+                          ),
+                          SizedBox(
+                            width: 72,
+                            child: TextField(
+                              controller: pwmController,
+                              keyboardType: TextInputType.number,
+                              decoration: InputDecoration(
+                                suffixText: '%',
+                                errorText: pwmIsValid ? null : '1–99',
+                              ),
+                              onChanged:
+                                  (value) => setDialogState(() {
+                                    final parsed = int.tryParse(value.trim());
+                                    if (parsed != null &&
+                                        parsed >= 1 &&
+                                        parsed <= 99) {
+                                      pwmLevel = parsed;
+                                    }
+                                  }),
+                            ),
                           ),
                         ],
                       ),
@@ -107,6 +154,7 @@ Future<RecordingStartConfig?> showRecordingStartDialog(
                               context,
                               RecordingStartConfig(
                                 rootDirectory: rootDirectory!,
+                                pwmLevel: parsedPwmLevel,
                                 displayName: _blankToNull(
                                   displayNameController.text,
                                 ),
@@ -138,6 +186,7 @@ Future<RecordingStartConfig?> showRecordingStartDialog(
     lpController.dispose();
     hpController.dispose();
     notchController.dispose();
+    pwmController.dispose();
   }
 }
 
