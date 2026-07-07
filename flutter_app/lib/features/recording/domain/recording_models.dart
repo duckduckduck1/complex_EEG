@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'package:iot/features/annotation/domain/annotation_models.dart';
 
 enum RecordingStatus {
   idle,
@@ -215,6 +216,8 @@ class RecordingState extends Equatable {
     this.activeSegmentId,
     this.segments = const <RecordingSegment>[],
     this.gaps = const <RecordingGap>[],
+    this.labels = const <AnnotationLabel>[],
+    this.activeDraftLabel,
     this.pwmLevel,
     this.fbmOn = false,
     this.fbmEvents = const <RecordingFbmEvent>[],
@@ -228,6 +231,8 @@ class RecordingState extends Equatable {
   final String? activeSegmentId;
   final List<RecordingSegment> segments;
   final List<RecordingGap> gaps;
+  final List<AnnotationLabel> labels;
+  final AnnotationLabel? activeDraftLabel;
   final int? pwmLevel;
   final bool fbmOn;
   final List<RecordingFbmEvent> fbmEvents;
@@ -243,6 +248,8 @@ class RecordingState extends Equatable {
     Object? activeSegmentId = _unset,
     List<RecordingSegment>? segments,
     List<RecordingGap>? gaps,
+    List<AnnotationLabel>? labels,
+    Object? activeDraftLabel = _unset,
     Object? pwmLevel = _unset,
     bool? fbmOn,
     List<RecordingFbmEvent>? fbmEvents,
@@ -261,6 +268,11 @@ class RecordingState extends Equatable {
               : activeSegmentId as String?,
       segments: segments ?? this.segments,
       gaps: gaps ?? this.gaps,
+      labels: labels ?? this.labels,
+      activeDraftLabel:
+          activeDraftLabel == _unset
+              ? this.activeDraftLabel
+              : activeDraftLabel as AnnotationLabel?,
       pwmLevel: pwmLevel == _unset ? this.pwmLevel : pwmLevel as int?,
       fbmOn: fbmOn ?? this.fbmOn,
       fbmEvents: fbmEvents ?? this.fbmEvents,
@@ -278,6 +290,8 @@ class RecordingState extends Equatable {
     activeSegmentId,
     segments,
     gaps,
+    labels,
+    activeDraftLabel,
     pwmLevel,
     fbmOn,
     fbmEvents,

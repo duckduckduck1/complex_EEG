@@ -177,6 +177,135 @@ void main() {
     ]);
   });
 
+  test('annotations are journaled and written to experiment json', () async {
+    bloc.add(RecordingStartRequested(_startConfig()));
+    await pumpEventQueue();
+    bloc.add(const RecordingSamplesReceived([1, 2, 3]));
+    await pumpEventQueue();
+
+    bloc.add(const RecordingStateLabelStarted(labelTypeId: 'sleep'));
+    await pumpEventQueue();
+    bloc.add(const RecordingSamplesReceived([4, 5]));
+    await pumpEventQueue();
+    bloc.add(const RecordingActiveStateLabelClosed());
+    await pumpEventQueue();
+    bloc.add(const RecordingPointLabelAdded(labelTypeId: 'movement'));
+    await pumpEventQueue();
+    bloc.add(
+      const RecordingExcludeIntervalAdded(
+        labelTypeId: 'bad_segment',
+        startSegmentSampleIndex: 1,
+        endSegmentSampleIndex: 3,
+      ),
+    );
+    await pumpEventQueue();
+    bloc.add(const RecordingStopRequested());
+    await pumpEventQueue(times: 5);
+
+    final experimentJson = storage.experimentJson!;
+    final labels = experimentJson['labels']! as List<Object?>;
+    final stateLabel = labels[0]! as Map<String, Object?>;
+    final pointLabel = labels[1]! as Map<String, Object?>;
+    final excludeLabel = labels[2]! as Map<String, Object?>;
+
+    expect(labels, hasLength(3));
+    expect(stateLabel['kind'], 'state');
+    expect(stateLabel['label_type_id'], 'sleep');
+    expect(stateLabel['start_sample'], 3);
+    expect(stateLabel['end_sample'], 5);
+    expect(pointLabel['kind'], 'event');
+    expect(pointLabel['label_type_id'], 'movement');
+    expect(pointLabel['sample_index'], 4);
+    expect(excludeLabel['kind'], 'exclude');
+    expect(excludeLabel['start_sample'], 1);
+    expect(excludeLabel['end_sample'], 3);
+    expect(
+      storage.journal
+          .where((event) => '${event['type']}'.startsWith('annotation_'))
+          .map((event) => event['type']),
+      [
+        'annotation_created',
+        'annotation_updated',
+        'annotation_created',
+        'annotation_created',
+      ],
+    );
+  });
+
+  test('open state annotation is closed on stop', () async {
+    bloc.add(RecordingStartRequested(_startConfig()));
+    await pumpEventQueue();
+    bloc.add(const RecordingSamplesReceived([1, 2]));
+    await pumpEventQueue();
+    bloc.add(const RecordingStateLabelStarted(labelTypeId: 'sleep'));
+    await pumpEventQueue();
+    bloc.add(const RecordingSamplesReceived([3, 4, 5]));
+    await pumpEventQueue();
+
+    bloc.add(const RecordingStopRequested());
+    await pumpEventQueue(times: 5);
+
+    final labels = storage.experimentJson!['labels']! as List<Object?>;
+    final label = labels.single! as Map<String, Object?>;
+
+    expect(bloc.state.activeDraftLabel, isNull);
+    expect(label['start_sample'], 2);
+    expect(label['end_sample'], 5);
+    expect(label.containsKey('draft'), isFalse);
+  });
+
+  test('annotation can be deleted before final json is written', () async {
+    bloc.add(RecordingStartRequested(_startConfig()));
+    await pumpEventQueue();
+    bloc.add(const RecordingSamplesReceived([1, 2, 3]));
+    await pumpEventQueue();
+    bloc.add(const RecordingPointLabelAdded(labelTypeId: 'movement'));
+    await pumpEventQueue();
+    final labelId = bloc.state.labels.single.id;
+
+    bloc.add(RecordingAnnotationDeleted(labelId));
+    await pumpEventQueue();
+    bloc.add(const RecordingStopRequested());
+    await pumpEventQueue(times: 5);
+
+    expect(bloc.state.labels, isEmpty);
+    expect(storage.experimentJson!['labels'], isEmpty);
+    expect(
+      storage.journal.lastWhere(
+        (event) => event['type'] == 'annotation_deleted',
+      )['label_id'],
+      labelId,
+    );
+  });
+
+  test('open state annotation is closed on disconnect', () async {
+    bloc.add(RecordingStartRequested(_startConfig()));
+    await pumpEventQueue();
+    bloc.add(const RecordingSamplesReceived([1, 2]));
+    await pumpEventQueue();
+    bloc.add(const RecordingStateLabelStarted(labelTypeId: 'sleep'));
+    await pumpEventQueue();
+    bloc.add(const RecordingSamplesReceived([3]));
+    await pumpEventQueue();
+
+    bloc.add(const RecordingConnectionLost());
+    await pumpEventQueue(times: 5);
+
+    final label = bloc.state.labels.single;
+
+    expect(bloc.state.status, RecordingStatus.pausedByDisconnect);
+    expect(bloc.state.activeDraftLabel, isNull);
+    expect(label.isDraft, isFalse);
+    expect(label.globalStartSampleIndex, 2);
+    expect(label.globalEndSampleIndex, 3);
+    expect(
+      storage.journal
+          .where((event) => event['type'] == 'annotation_updated')
+          .length,
+      1,
+    );
+  });
+
   test('fbm commands call transport and write journal events', () async {
     bloc.add(RecordingStartRequested(_startConfig(pwmLevel: 20)));
     await pumpEventQueue();

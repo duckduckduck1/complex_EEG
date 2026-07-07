@@ -53,3 +53,58 @@ final class FbmPwmChanged extends RecordingEvent {
   @override
   List<Object?> get props => [pwmLevel];
 }
+
+final class RecordingStateLabelStarted extends RecordingEvent {
+  const RecordingStateLabelStarted({required this.labelTypeId, this.note});
+
+  final String labelTypeId;
+  final String? note;
+
+  @override
+  List<Object?> get props => [labelTypeId, note];
+}
+
+final class RecordingActiveStateLabelClosed extends RecordingEvent {
+  const RecordingActiveStateLabelClosed();
+}
+
+final class RecordingPointLabelAdded extends RecordingEvent {
+  const RecordingPointLabelAdded({required this.labelTypeId, this.note});
+
+  final String labelTypeId;
+  final String? note;
+
+  @override
+  List<Object?> get props => [labelTypeId, note];
+}
+
+final class RecordingExcludeIntervalAdded extends RecordingEvent {
+  const RecordingExcludeIntervalAdded({
+    required this.labelTypeId,
+    required this.startSegmentSampleIndex,
+    required this.endSegmentSampleIndex,
+    this.note,
+  });
+
+  final String labelTypeId;
+  final int startSegmentSampleIndex;
+  final int endSegmentSampleIndex;
+  final String? note;
+
+  @override
+  List<Object?> get props => [
+    labelTypeId,
+    startSegmentSampleIndex,
+    endSegmentSampleIndex,
+    note,
+  ];
+}
+
+final class RecordingAnnotationDeleted extends RecordingEvent {
+  const RecordingAnnotationDeleted(this.labelId);
+
+  final String labelId;
+
+  @override
+  List<Object?> get props => [labelId];
+}

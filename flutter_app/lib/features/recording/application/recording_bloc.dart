@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:iot/features/annotation/domain/annotation_models.dart';
 import 'package:iot/features/recording/domain/recording_models.dart';
 import 'package:iot/features/recording/domain/recording_ports.dart';
 
@@ -11,11 +12,13 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
     required StreamingFilterFactory filterFactory,
     required ExperimentIdGenerator idGenerator,
     required FbmTransport fbmTransport,
+    List<LabelType> labelTypes = defaultLabelTypes,
     RecordingClock clock = const SystemRecordingClock(),
   }) : _storage = storage,
        _filterFactory = filterFactory,
        _idGenerator = idGenerator,
        _fbmTransport = fbmTransport,
+       _labelTypes = {for (final type in labelTypes) type.id: type},
        _clock = clock,
        super(const RecordingState()) {
     on<RecordingStartRequested>(_onStartRequested);
@@ -26,18 +29,25 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
     on<FbmOnRequested>(_onFbmOnRequested);
     on<FbmOffRequested>(_onFbmOffRequested);
     on<FbmPwmChanged>(_onFbmPwmChanged);
+    on<RecordingStateLabelStarted>(_onStateLabelStarted);
+    on<RecordingActiveStateLabelClosed>(_onActiveStateLabelClosed);
+    on<RecordingPointLabelAdded>(_onPointLabelAdded);
+    on<RecordingExcludeIntervalAdded>(_onExcludeIntervalAdded);
+    on<RecordingAnnotationDeleted>(_onAnnotationDeleted);
   }
 
   final ExperimentStorage _storage;
   final StreamingFilterFactory _filterFactory;
   final ExperimentIdGenerator _idGenerator;
   final FbmTransport _fbmTransport;
+  final Map<String, LabelType> _labelTypes;
   final RecordingClock _clock;
 
   RecordingStartConfig? _config;
   StreamingFilter _filter = const PassThroughStreamingFilter();
   bool _connectionLostInProgress = false;
   bool _resumeAfterConnectionLost = false;
+  int _nextLabelIndex = 1;
 
   Future<void> _onStartRequested(
     RecordingStartRequested event,
@@ -145,6 +155,10 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
     emit(state.copyWith(status: RecordingStatus.stopping));
 
     try {
+      stateToFinalize = await _autoCloseActiveLabel(
+        stateToFinalize,
+        timestamp: _clock.now(),
+      );
       stateToFinalize = await _autoTurnFbmOff(
         stateToFinalize,
         reason: 'recording_stop',
@@ -177,8 +191,12 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
     _connectionLostInProgress = true;
     try {
       final lostAt = _clock.now();
-      final stateBeforeLost = await _autoTurnFbmOff(
+      var stateBeforeLost = await _autoCloseActiveLabel(
         state,
+        timestamp: lostAt,
+      );
+      stateBeforeLost = await _autoTurnFbmOff(
+        stateBeforeLost,
         allowUndelivered: true,
         reason: 'connection_lost',
       );
@@ -357,6 +375,185 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
     }
   }
 
+  Future<void> _onStateLabelStarted(
+    RecordingStateLabelStarted event,
+    Emitter<RecordingState> emit,
+  ) async {
+    if (state.status != RecordingStatus.recording ||
+        state.activeDraftLabel != null) {
+      return;
+    }
+    final type = _labelType(event.labelTypeId, AnnotationKind.state);
+    final segment = _activeSegment(state);
+    final experimentId = state.experimentId;
+    if (type == null || segment == null || experimentId == null) {
+      return;
+    }
+
+    try {
+      final position = _currentBoundaryPoint(state, segment);
+      final label = AnnotationLabel(
+        id: _nextLabelId(),
+        kind: AnnotationKind.state,
+        labelTypeId: type.id,
+        segmentId: segment.segmentId,
+        startSegmentSampleIndex: position.segmentSampleIndex,
+        globalStartSampleIndex: position.globalSampleIndex,
+        startedAtWallClock: position.wallClockTime,
+        note: event.note,
+        isDraft: true,
+      );
+      await _appendAnnotationJournal(
+        type: 'annotation_created',
+        experimentId: experimentId,
+        label: label,
+      );
+      emit(
+        state.copyWith(
+          labels: [...state.labels, label],
+          activeDraftLabel: label,
+        ),
+      );
+    } catch (error) {
+      emit(_annotationFailedState(error));
+    }
+  }
+
+  Future<void> _onActiveStateLabelClosed(
+    RecordingActiveStateLabelClosed event,
+    Emitter<RecordingState> emit,
+  ) async {
+    if (state.status != RecordingStatus.recording ||
+        state.activeDraftLabel == null) {
+      return;
+    }
+
+    try {
+      emit(await _autoCloseActiveLabel(state, timestamp: _clock.now()));
+    } catch (error) {
+      emit(_annotationFailedState(error));
+    }
+  }
+
+  Future<void> _onPointLabelAdded(
+    RecordingPointLabelAdded event,
+    Emitter<RecordingState> emit,
+  ) async {
+    if (state.status != RecordingStatus.recording) {
+      return;
+    }
+    final type = _labelType(event.labelTypeId, AnnotationKind.event);
+    final segment = _activeSegment(state);
+    final experimentId = state.experimentId;
+    if (type == null || segment == null || experimentId == null) {
+      return;
+    }
+
+    try {
+      final position = _currentSamplePoint(state, segment);
+      final label = AnnotationLabel(
+        id: _nextLabelId(),
+        kind: AnnotationKind.event,
+        labelTypeId: type.id,
+        segmentId: segment.segmentId,
+        startSegmentSampleIndex: position.segmentSampleIndex,
+        globalStartSampleIndex: position.globalSampleIndex,
+        startedAtWallClock: position.wallClockTime,
+        note: event.note,
+      );
+      await _appendAnnotationJournal(
+        type: 'annotation_created',
+        experimentId: experimentId,
+        label: label,
+      );
+      emit(state.copyWith(labels: [...state.labels, label]));
+    } catch (error) {
+      emit(_annotationFailedState(error));
+    }
+  }
+
+  Future<void> _onExcludeIntervalAdded(
+    RecordingExcludeIntervalAdded event,
+    Emitter<RecordingState> emit,
+  ) async {
+    if (state.status != RecordingStatus.recording) {
+      return;
+    }
+    final type = _labelType(event.labelTypeId, AnnotationKind.exclude);
+    final segment = _activeSegment(state);
+    final experimentId = state.experimentId;
+    if (type == null || segment == null || experimentId == null) {
+      return;
+    }
+    if (event.startSegmentSampleIndex < 0 ||
+        event.endSegmentSampleIndex <= event.startSegmentSampleIndex ||
+        segment.startSample + event.endSegmentSampleIndex > state.sampleCount) {
+      return;
+    }
+
+    try {
+      final timestamp = _clock.now();
+      final label = AnnotationLabel(
+        id: _nextLabelId(),
+        kind: AnnotationKind.exclude,
+        labelTypeId: type.id,
+        segmentId: segment.segmentId,
+        startSegmentSampleIndex: event.startSegmentSampleIndex,
+        globalStartSampleIndex:
+            segment.startSample + event.startSegmentSampleIndex,
+        startedAtWallClock: timestamp,
+        endSegmentSampleIndex: event.endSegmentSampleIndex,
+        globalEndSampleIndex: segment.startSample + event.endSegmentSampleIndex,
+        endedAtWallClock: timestamp,
+        note: event.note,
+      );
+      await _appendAnnotationJournal(
+        type: 'annotation_created',
+        experimentId: experimentId,
+        label: label,
+      );
+      emit(state.copyWith(labels: [...state.labels, label]));
+    } catch (error) {
+      emit(_annotationFailedState(error));
+    }
+  }
+
+  Future<void> _onAnnotationDeleted(
+    RecordingAnnotationDeleted event,
+    Emitter<RecordingState> emit,
+  ) async {
+    final experimentId = state.experimentId;
+    if (experimentId == null ||
+        !state.labels.any((label) => label.id == event.labelId)) {
+      return;
+    }
+
+    try {
+      await _storage.appendJournal(
+        _journalEvent(
+          type: 'annotation_deleted',
+          experimentId: experimentId,
+          timestamp: _clock.now(),
+          extra: {'label_id': event.labelId},
+        ),
+        flush: true,
+      );
+      emit(
+        state.copyWith(
+          labels: state.labels
+              .where((label) => label.id != event.labelId)
+              .toList(growable: false),
+          activeDraftLabel:
+              state.activeDraftLabel?.id == event.labelId
+                  ? null
+                  : state.activeDraftLabel,
+        ),
+      );
+    } catch (error) {
+      emit(_annotationFailedState(error));
+    }
+  }
+
   Future<RecordingState> _resumeFromPaused(RecordingState stateToResume) async {
     final experimentId = stateToResume.experimentId;
     if (experimentId == null || stateToResume.segments.isEmpty) {
@@ -450,6 +647,7 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
         config: config,
         segments: segments,
         gaps: stateToFinalize.gaps,
+        labels: stateToFinalize.labels,
         fbmEvents: stateToFinalize.fbmEvents,
       ),
     );
@@ -468,6 +666,7 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
     required RecordingStartConfig config,
     required List<RecordingSegment> segments,
     required List<RecordingGap> gaps,
+    required List<AnnotationLabel> labels,
     required List<RecordingFbmEvent> fbmEvents,
   }) {
     return {
@@ -487,7 +686,10 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
           .map((segment) => segment.toJson())
           .toList(growable: false),
       'gaps': gaps.map((gap) => gap.toJson()).toList(growable: false),
-      'labels': const <Object>[],
+      'labels': labels
+          .where((label) => !label.isDraft)
+          .map((label) => label.toExperimentJson())
+          .toList(growable: false),
       'fbm_events': fbmEvents
           .map((event) => event.toJson())
           .toList(growable: false),
@@ -526,6 +728,48 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
       sendCommand: true,
       allowUndelivered: allowUndelivered,
       reason: reason,
+    );
+  }
+
+  Future<RecordingState> _autoCloseActiveLabel(
+    RecordingState stateToUpdate, {
+    required DateTime timestamp,
+  }) async {
+    final draft = stateToUpdate.activeDraftLabel;
+    final experimentId = stateToUpdate.experimentId;
+    if (draft == null || experimentId == null) {
+      return stateToUpdate;
+    }
+    final segment = _activeSegment(stateToUpdate);
+    if (segment == null || segment.segmentId != draft.segmentId) {
+      return stateToUpdate;
+    }
+
+    final endSegmentSampleIndex =
+        stateToUpdate.sampleCount - segment.startSample;
+    if (endSegmentSampleIndex <= draft.startSegmentSampleIndex) {
+      return stateToUpdate.copyWith(activeDraftLabel: null);
+    }
+
+    final closed = draft.closeAt(
+      AnnotationPoint(
+        segmentId: segment.segmentId,
+        segmentStartSample: segment.startSample,
+        segmentEndSample: stateToUpdate.sampleCount,
+        segmentSampleIndex: endSegmentSampleIndex,
+        wallClockTime: timestamp,
+      ),
+    );
+    await _appendAnnotationJournal(
+      type: 'annotation_updated',
+      experimentId: experimentId,
+      label: closed,
+    );
+    return stateToUpdate.copyWith(
+      labels: stateToUpdate.labels
+          .map((label) => label.id == closed.id ? closed : label)
+          .toList(growable: false),
+      activeDraftLabel: null,
     );
   }
 
@@ -605,6 +849,71 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
       }
     }
     return null;
+  }
+
+  LabelType? _labelType(String id, AnnotationKind kind) {
+    final type = _labelTypes[id];
+    if (type == null || !type.isActive || type.kind != kind) {
+      return null;
+    }
+    return type;
+  }
+
+  AnnotationPoint _currentBoundaryPoint(
+    RecordingState stateToRead,
+    RecordingSegment segment,
+  ) {
+    return AnnotationPoint(
+      segmentId: segment.segmentId,
+      segmentStartSample: segment.startSample,
+      segmentEndSample: stateToRead.sampleCount,
+      segmentSampleIndex: stateToRead.sampleCount - segment.startSample,
+      wallClockTime: _clock.now(),
+    );
+  }
+
+  AnnotationPoint _currentSamplePoint(
+    RecordingState stateToRead,
+    RecordingSegment segment,
+  ) {
+    final globalSampleIndex = _globalSampleIndex(
+      segment: segment,
+      sampleCount: stateToRead.sampleCount,
+    );
+    return AnnotationPoint(
+      segmentId: segment.segmentId,
+      segmentStartSample: segment.startSample,
+      segmentEndSample: stateToRead.sampleCount,
+      segmentSampleIndex: globalSampleIndex - segment.startSample,
+      wallClockTime: _clock.now(),
+    );
+  }
+
+  String _nextLabelId() => 'label_${_nextLabelIndex++}';
+
+  Future<void> _appendAnnotationJournal({
+    required String type,
+    required String experimentId,
+    required AnnotationLabel label,
+  }) {
+    return _storage.appendJournal(
+      _journalEvent(
+        type: type,
+        experimentId: experimentId,
+        timestamp: _clock.now(),
+        segmentId: label.segmentId,
+        sampleIndex: label.globalStartSampleIndex,
+        extra: {'label': label.toJournalJson()},
+      ),
+      flush: true,
+    );
+  }
+
+  RecordingState _annotationFailedState(Object error) {
+    return state.copyWith(
+      status: RecordingStatus.failed,
+      lastError: RecordingFailure(error.toString()),
+    );
   }
 
   int _globalSampleIndex({
