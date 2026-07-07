@@ -10,8 +10,8 @@ class AnnotationBloc extends Bloc<AnnotationEvent, AnnotationState> {
     required String experimentId,
     required AnnotationJournal journal,
     required AnnotationIdGenerator idGenerator,
+    required List<LabelType> labelTypes,
     AnnotationClock clock = const SystemAnnotationClock(),
-    List<LabelType> labelTypes = defaultLabelTypes,
   }) : _experimentId = experimentId,
        _journal = journal,
        _idGenerator = idGenerator,
@@ -63,14 +63,16 @@ class AnnotationBloc extends Bloc<AnnotationEvent, AnnotationState> {
       isDraft: true,
     );
 
-    await _appendJournal('annotation_created', label);
-    emit(
-      state.copyWith(
-        labels: [...state.labels, label],
-        activeDraftLabel: label,
-        selectedLabelId: label.id,
-        validationError: null,
-      ),
+    await _persist(
+      emit,
+      action: () => _appendJournal('annotation_created', label),
+      onSuccess:
+          () => state.copyWith(
+            labels: [...state.labels, label],
+            activeDraftLabel: label,
+            selectedLabelId: label.id,
+            validationError: null,
+          ),
     );
   }
 
@@ -95,9 +97,9 @@ class AnnotationBloc extends Bloc<AnnotationEvent, AnnotationState> {
     final position = AnnotationPoint(
       segmentId: event.segmentId,
       segmentStartSample: segmentStartSample,
+      segmentEndSample: event.segmentEndSample,
       segmentSampleIndex: event.segmentEndSample - segmentStartSample,
       wallClockTime: event.wallClockTime,
-      segmentEndSample: event.segmentEndSample,
     );
     await _closeActiveState(position, emit);
   }
@@ -128,13 +130,15 @@ class AnnotationBloc extends Bloc<AnnotationEvent, AnnotationState> {
       note: event.note,
     );
 
-    await _appendJournal('annotation_created', label);
-    emit(
-      state.copyWith(
-        labels: [...state.labels, label],
-        selectedLabelId: label.id,
-        validationError: null,
-      ),
+    await _persist(
+      emit,
+      action: () => _appendJournal('annotation_created', label),
+      onSuccess:
+          () => state.copyWith(
+            labels: [...state.labels, label],
+            selectedLabelId: label.id,
+            validationError: null,
+          ),
     );
   }
 
@@ -167,13 +171,15 @@ class AnnotationBloc extends Bloc<AnnotationEvent, AnnotationState> {
       note: event.note,
     );
 
-    await _appendJournal('annotation_created', label);
-    emit(
-      state.copyWith(
-        labels: [...state.labels, label],
-        selectedLabelId: label.id,
-        validationError: null,
-      ),
+    await _persist(
+      emit,
+      action: () => _appendJournal('annotation_created', label),
+      onSuccess:
+          () => state.copyWith(
+            labels: [...state.labels, label],
+            selectedLabelId: label.id,
+            validationError: null,
+          ),
     );
   }
 
@@ -187,24 +193,27 @@ class AnnotationBloc extends Bloc<AnnotationEvent, AnnotationState> {
       return;
     }
 
-    await _journal.appendAnnotation({
-      'type': 'annotation_deleted',
-      'experiment_id': _experimentId,
-      'timestamp': _clock.now().toUtc().toIso8601String(),
-      'label_id': event.labelId,
-    });
-    emit(
-      state.copyWith(
-        labels: state.labels
-            .where((label) => label.id != event.labelId)
-            .toList(growable: false),
-        activeDraftLabel:
-            state.activeDraftLabel?.id == event.labelId
-                ? null
-                : state.activeDraftLabel,
-        selectedLabelId: null,
-        validationError: null,
-      ),
+    await _persist(
+      emit,
+      action:
+          () => _journal.appendAnnotation({
+            'type': 'annotation_deleted',
+            'experiment_id': _experimentId,
+            'timestamp': _clock.now().toUtc().toIso8601String(),
+            'label_id': event.labelId,
+          }),
+      onSuccess:
+          () => state.copyWith(
+            labels: state.labels
+                .where((label) => label.id != event.labelId)
+                .toList(growable: false),
+            activeDraftLabel:
+                state.activeDraftLabel?.id == event.labelId
+                    ? null
+                    : state.activeDraftLabel,
+            selectedLabelId: null,
+            validationError: null,
+          ),
     );
   }
 
@@ -238,17 +247,41 @@ class AnnotationBloc extends Bloc<AnnotationEvent, AnnotationState> {
     }
 
     final closed = draft.closeAt(end);
-    await _appendJournal('annotation_updated', closed);
-    emit(
-      state.copyWith(
-        labels: state.labels
-            .map((label) => label.id == closed.id ? closed : label)
-            .toList(growable: false),
-        activeDraftLabel: null,
-        selectedLabelId: closed.id,
-        validationError: null,
-      ),
+    await _persist(
+      emit,
+      action: () => _appendJournal('annotation_updated', closed),
+      onSuccess:
+          () => state.copyWith(
+            labels: state.labels
+                .map((label) => label.id == closed.id ? closed : label)
+                .toList(growable: false),
+            activeDraftLabel: null,
+            selectedLabelId: closed.id,
+            validationError: null,
+          ),
     );
+  }
+
+  Future<void> _persist(
+    Emitter<AnnotationState> emit, {
+    required Future<void> Function() action,
+    required AnnotationState Function() onSuccess,
+  }) async {
+    emit(state.copyWith(isSaving: true, validationError: null));
+    try {
+      await action();
+      emit(onSuccess().copyWith(isSaving: false));
+    } catch (error) {
+      emit(
+        state.copyWith(
+          isSaving: false,
+          validationError: _error(
+            AnnotationValidationCode.journalWriteFailed,
+            error.toString(),
+          ),
+        ),
+      );
+    }
   }
 
   LabelType? _typeFor(String id, AnnotationKind expectedKind) {
@@ -263,9 +296,7 @@ class AnnotationBloc extends Bloc<AnnotationEvent, AnnotationState> {
     if (point.segmentSampleIndex < 0) {
       return _error(AnnotationValidationCode.pointOutsideSegment);
     }
-    final segmentEndSample = point.segmentEndSample;
-    if (segmentEndSample != null &&
-        point.globalSampleIndex >= segmentEndSample) {
+    if (point.globalSampleIndex >= point.segmentEndSample) {
       return _error(AnnotationValidationCode.pointOutsideSegment);
     }
     return null;
@@ -276,7 +307,8 @@ class AnnotationBloc extends Bloc<AnnotationEvent, AnnotationState> {
     AnnotationPoint end,
   ) {
     if (start.segmentId != end.segmentId ||
-        start.segmentStartSample != end.segmentStartSample) {
+        start.segmentStartSample != end.segmentStartSample ||
+        start.segmentEndSample != end.segmentEndSample) {
       return _error(AnnotationValidationCode.segmentMismatch);
     }
     if (end.segmentSampleIndex <= start.segmentSampleIndex) {
@@ -285,8 +317,7 @@ class AnnotationBloc extends Bloc<AnnotationEvent, AnnotationState> {
     if (start.segmentSampleIndex < 0) {
       return _error(AnnotationValidationCode.intervalOutsideSegment);
     }
-    final segmentEndSample = end.segmentEndSample ?? start.segmentEndSample;
-    if (segmentEndSample != null && end.globalSampleIndex > segmentEndSample) {
+    if (end.globalSampleIndex > end.segmentEndSample) {
       return _error(AnnotationValidationCode.intervalOutsideSegment);
     }
     return null;
@@ -320,7 +351,7 @@ class AnnotationBloc extends Bloc<AnnotationEvent, AnnotationState> {
       'type': type,
       'experiment_id': _experimentId,
       'timestamp': _clock.now().toUtc().toIso8601String(),
-      'label': label.toJson(),
+      'label': label.toJournalJson(),
     });
   }
 }

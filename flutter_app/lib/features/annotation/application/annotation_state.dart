@@ -12,6 +12,7 @@ enum AnnotationValidationCode {
   intervalOutsideSegment,
   emptyInterval,
   labelNotFound,
+  journalWriteFailed,
 }
 
 class AnnotationValidationError extends Equatable {

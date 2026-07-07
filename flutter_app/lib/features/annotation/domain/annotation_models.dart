@@ -107,16 +107,16 @@ class AnnotationPoint extends Equatable {
   const AnnotationPoint({
     required this.segmentId,
     required this.segmentStartSample,
+    required this.segmentEndSample,
     required this.segmentSampleIndex,
     required this.wallClockTime,
-    this.segmentEndSample,
   });
 
   final String segmentId;
   final int segmentStartSample;
+  final int segmentEndSample;
   final int segmentSampleIndex;
   final DateTime wallClockTime;
-  final int? segmentEndSample;
 
   int get globalSampleIndex => segmentStartSample + segmentSampleIndex;
 
@@ -193,7 +193,7 @@ class AnnotationLabel extends Equatable {
     );
   }
 
-  Map<String, Object?> toJson() {
+  Map<String, Object?> toJournalJson() {
     final json = <String, Object?>{
       'label_id': id,
       'kind': kind.name,
@@ -223,6 +223,15 @@ class AnnotationLabel extends Equatable {
       });
     }
 
+    return json;
+  }
+
+  Map<String, Object?> toExperimentJson() {
+    if (!isPoint &&
+        (endSegmentSampleIndex == null || globalEndSampleIndex == null)) {
+      throw StateError('Draft interval label cannot be written to experiment');
+    }
+    final json = toJournalJson()..remove('draft');
     return json;
   }
 

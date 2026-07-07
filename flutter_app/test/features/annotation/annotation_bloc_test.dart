@@ -15,6 +15,7 @@ void main() {
       experimentId: 'exp_annotation_test',
       journal: journal,
       idGenerator: _SequenceAnnotationIdGenerator(),
+      labelTypes: defaultLabelTypes,
       clock: _FakeAnnotationClock(),
     );
   });
@@ -43,7 +44,7 @@ void main() {
     await pumpEventQueue();
 
     final label = bloc.state.labels.single;
-    final json = label.toJson();
+    final json = label.toExperimentJson();
 
     expect(bloc.state.activeDraftLabel, isNull);
     expect(label.isDraft, isFalse);
@@ -78,6 +79,34 @@ void main() {
     expect(journal.events, hasLength(1));
   });
 
+  test('unknown label type is rejected', () async {
+    bloc.add(
+      StateLabelStarted(labelTypeId: 'unknown', position: _point(local: 10)),
+    );
+    await pumpEventQueue();
+
+    expect(bloc.state.labels, isEmpty);
+    expect(
+      bloc.state.validationError?.code,
+      AnnotationValidationCode.unknownLabelType,
+    );
+    expect(journal.events, isEmpty);
+  });
+
+  test('wrong label kind is rejected', () async {
+    bloc.add(
+      StateLabelStarted(labelTypeId: 'movement', position: _point(local: 10)),
+    );
+    await pumpEventQueue();
+
+    expect(bloc.state.labels, isEmpty);
+    expect(
+      bloc.state.validationError?.code,
+      AnnotationValidationCode.wrongLabelKind,
+    );
+    expect(journal.events, isEmpty);
+  });
+
   test('point event and exclude interval are written as labels', () async {
     bloc.add(
       PointEventLabelAdded(
@@ -97,8 +126,8 @@ void main() {
     );
     await pumpEventQueue();
 
-    final pointJson = bloc.state.labels.first.toJson();
-    final excludeJson = bloc.state.labels.last.toJson();
+    final pointJson = bloc.state.labels.first.toExperimentJson();
+    final excludeJson = bloc.state.labels.last.toExperimentJson();
 
     expect(pointJson['kind'], AnnotationKind.event.name);
     expect(pointJson['sample_index'], 120);
@@ -131,6 +160,59 @@ void main() {
     expect(journal.events, isEmpty);
   });
 
+  test('empty interval is rejected', () async {
+    bloc.add(
+      ExcludeIntervalLabelAdded(
+        labelTypeId: 'bad_segment',
+        start: _point(local: 30),
+        end: _point(local: 30),
+      ),
+    );
+    await pumpEventQueue();
+
+    expect(bloc.state.labels, isEmpty);
+    expect(
+      bloc.state.validationError?.code,
+      AnnotationValidationCode.emptyInterval,
+    );
+    expect(journal.events, isEmpty);
+  });
+
+  test('interval across different segment snapshots is rejected', () async {
+    bloc.add(
+      ExcludeIntervalLabelAdded(
+        labelTypeId: 'bad_segment',
+        start: _point(local: 30, segmentEndSample: 200),
+        end: _point(local: 45, segmentEndSample: 220),
+      ),
+    );
+    await pumpEventQueue();
+
+    expect(bloc.state.labels, isEmpty);
+    expect(
+      bloc.state.validationError?.code,
+      AnnotationValidationCode.segmentMismatch,
+    );
+    expect(journal.events, isEmpty);
+  });
+
+  test('point outside segment is rejected', () async {
+    bloc.add(
+      PointEventLabelAdded(
+        labelTypeId: 'movement',
+        position: _point(local: 100, segmentEndSample: 200),
+      ),
+    );
+    await pumpEventQueue();
+
+    expect(bloc.state.labels, isEmpty);
+    expect(
+      bloc.state.validationError?.code,
+      AnnotationValidationCode.pointOutsideSegment,
+    );
+    expect(journal.events, isEmpty);
+  });
+
   test('open state closes at segment end', () async {
     bloc.add(
       StateLabelStarted(labelTypeId: 'sleep', position: _point(local: 10)),
@@ -146,11 +228,48 @@ void main() {
     );
     await pumpEventQueue();
 
-    final json = bloc.state.labels.single.toJson();
+    final json = bloc.state.labels.single.toExperimentJson();
 
     expect(bloc.state.activeDraftLabel, isNull);
     expect(json['end_sample'], 150);
     expect(json['end_segment_sample_index'], 50);
+  });
+
+  test('closing without active state is rejected', () async {
+    bloc.add(ActiveStateLabelClosed(position: _point(local: 20)));
+    await pumpEventQueue();
+
+    expect(
+      bloc.state.validationError?.code,
+      AnnotationValidationCode.noActiveState,
+    );
+    expect(journal.events, isEmpty);
+  });
+
+  test('closing active state in another segment is rejected', () async {
+    bloc.add(
+      StateLabelStarted(labelTypeId: 'sleep', position: _point(local: 10)),
+    );
+    await pumpEventQueue();
+
+    bloc.add(
+      ActiveStateLabelClosed(
+        position: _point(
+          local: 20,
+          segmentId: 'seg_2',
+          segmentStartSample: 200,
+          segmentEndSample: 300,
+        ),
+      ),
+    );
+    await pumpEventQueue();
+
+    expect(bloc.state.activeDraftLabel, isNotNull);
+    expect(
+      bloc.state.validationError?.code,
+      AnnotationValidationCode.segmentMismatch,
+    );
+    expect(journal.events, hasLength(1));
   });
 
   test('delete removes label and writes journal event', () async {
@@ -172,30 +291,83 @@ void main() {
     expect(journal.events.last['label_id'], labelId);
     expect(journal.events.last['timestamp'], '2026-01-01T11:00:00.000Z');
   });
+
+  test('delete unknown label is rejected', () async {
+    bloc.add(const AnnotationDeleted('missing'));
+    await pumpEventQueue();
+
+    expect(
+      bloc.state.validationError?.code,
+      AnnotationValidationCode.labelNotFound,
+    );
+    expect(journal.events, isEmpty);
+  });
+
+  test('journal write failure is kept in typed state', () async {
+    journal.failNextWrite = true;
+
+    bloc.add(
+      PointEventLabelAdded(
+        labelTypeId: 'movement',
+        position: _point(local: 20),
+      ),
+    );
+    await pumpEventQueue();
+
+    expect(bloc.state.labels, isEmpty);
+    expect(bloc.state.isSaving, isFalse);
+    expect(
+      bloc.state.validationError?.code,
+      AnnotationValidationCode.journalWriteFailed,
+    );
+  });
+
+  test(
+    'draft state label can be journaled but not written to experiment',
+    () async {
+      bloc.add(
+        StateLabelStarted(labelTypeId: 'sleep', position: _point(local: 10)),
+      );
+      await pumpEventQueue();
+
+      final draft = bloc.state.activeDraftLabel!;
+      final journalLabel =
+          journal.events.single['label']! as Map<String, Object?>;
+
+      expect(journalLabel['draft'], isTrue);
+      expect(() => draft.toExperimentJson(), throwsStateError);
+    },
+  );
 }
 
 AnnotationPoint _point({
   required int local,
+  String segmentId = 'seg_1',
   int segmentStartSample = 100,
-  int? segmentEndSample = 200,
+  int segmentEndSample = 200,
 }) {
   return AnnotationPoint(
-    segmentId: 'seg_1',
+    segmentId: segmentId,
     segmentStartSample: segmentStartSample,
+    segmentEndSample: segmentEndSample,
     segmentSampleIndex: local,
     wallClockTime: DateTime.utc(2026, 1, 1, 10, 0, local),
-    segmentEndSample: segmentEndSample,
   );
 }
 
 class _MemoryAnnotationJournal implements AnnotationJournal {
   final List<Map<String, Object?>> events = <Map<String, Object?>>[];
+  bool failNextWrite = false;
 
   @override
   Future<void> appendAnnotation(
     Map<String, Object?> event, {
     bool flush = true,
   }) async {
+    if (failNextWrite) {
+      failNextWrite = false;
+      throw StateError('disk full');
+    }
     events.add(event);
   }
 }
