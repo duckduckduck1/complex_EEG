@@ -30,6 +30,7 @@ class _RecordingAnnotationDialogState extends State<RecordingAnnotationDialog> {
   final _noteController = TextEditingController();
   final _excludeStartController = TextEditingController(text: '0');
   final _excludeEndController = TextEditingController(text: '0');
+  String? _excludeError;
 
   @override
   void dispose() {
@@ -50,9 +51,22 @@ class _RecordingAnnotationDialogState extends State<RecordingAnnotationDialog> {
           child: BlocBuilder<RecordingBloc, RecordingState>(
             builder: (context, state) {
               final canAnnotate = state.status == RecordingStatus.recording;
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
+              final activeSegment =
+                  state.activeSegmentId == null
+                      ? null
+                      : state.segments
+                          .where(
+                            (segment) =>
+                                segment.segmentId == state.activeSegmentId,
+                          )
+                          .firstOrNull;
+              final currentSegmentSampleCount =
+                  activeSegment == null
+                      ? null
+                      : state.sampleCount - activeSegment.startSample;
+              return ListView(
+                shrinkWrap: true,
+                padding: EdgeInsets.zero,
                 children: [
                   Row(
                     children: [
@@ -78,6 +92,7 @@ class _RecordingAnnotationDialogState extends State<RecordingAnnotationDialog> {
                   ),
                   const SizedBox(height: 16),
                   TextField(
+                    key: const Key('recording-annotation-note-field'),
                     controller: _noteController,
                     decoration: const InputDecoration(
                       labelText: 'Комментарий',
@@ -90,14 +105,14 @@ class _RecordingAnnotationDialogState extends State<RecordingAnnotationDialog> {
                   _StateButtons(
                     enabled: canAnnotate,
                     activeLabelTypeId: state.activeDraftLabel?.labelTypeId,
-                    note: _noteController.text,
+                    noteController: _noteController,
                   ),
                   const SizedBox(height: 16),
                   _SectionTitle(text: 'Событие'),
                   const SizedBox(height: 8),
                   _EventButtons(
                     enabled: canAnnotate,
-                    note: _noteController.text,
+                    noteController: _noteController,
                   ),
                   const SizedBox(height: 16),
                   _SectionTitle(text: 'Бракованный интервал'),
@@ -106,12 +121,19 @@ class _RecordingAnnotationDialogState extends State<RecordingAnnotationDialog> {
                     enabled: canAnnotate,
                     startController: _excludeStartController,
                     endController: _excludeEndController,
-                    note: _noteController.text,
+                    noteController: _noteController,
+                    maxSegmentSampleIndex: currentSegmentSampleCount,
+                    errorText: _excludeError,
+                    onValidationError:
+                        (message) => setState(() => _excludeError = message),
                   ),
                   const SizedBox(height: 16),
                   _SectionTitle(text: 'Список'),
                   const SizedBox(height: 8),
-                  Expanded(child: _LabelsList(labels: state.labels)),
+                  SizedBox(
+                    height: state.labels.isEmpty ? 96 : 180,
+                    child: _LabelsList(labels: state.labels),
+                  ),
                 ],
               );
             },
@@ -126,12 +148,12 @@ class _StateButtons extends StatelessWidget {
   const _StateButtons({
     required this.enabled,
     required this.activeLabelTypeId,
-    required this.note,
+    required this.noteController,
   });
 
   final bool enabled;
   final String? activeLabelTypeId;
-  final String note;
+  final TextEditingController noteController;
 
   @override
   Widget build(BuildContext context) {
@@ -150,7 +172,7 @@ class _StateButtons extends StatelessWidget {
                     ? () => bloc.add(
                       RecordingStateLabelStarted(
                         labelTypeId: type.id,
-                        note: _blankToNull(note),
+                        note: _blankToNull(noteController.text),
                       ),
                     )
                     : null,
@@ -170,10 +192,10 @@ class _StateButtons extends StatelessWidget {
 }
 
 class _EventButtons extends StatelessWidget {
-  const _EventButtons({required this.enabled, required this.note});
+  const _EventButtons({required this.enabled, required this.noteController});
 
   final bool enabled;
-  final String note;
+  final TextEditingController noteController;
 
   @override
   Widget build(BuildContext context) {
@@ -192,7 +214,7 @@ class _EventButtons extends StatelessWidget {
                     ? () => bloc.add(
                       RecordingPointLabelAdded(
                         labelTypeId: type.id,
-                        note: _blankToNull(note),
+                        note: _blankToNull(noteController.text),
                       ),
                     )
                     : null,
@@ -208,59 +230,100 @@ class _ExcludeIntervalControls extends StatelessWidget {
     required this.enabled,
     required this.startController,
     required this.endController,
-    required this.note,
+    required this.noteController,
+    required this.maxSegmentSampleIndex,
+    required this.errorText,
+    required this.onValidationError,
   });
 
   final bool enabled;
   final TextEditingController startController;
   final TextEditingController endController;
-  final String note;
+  final TextEditingController noteController;
+  final int? maxSegmentSampleIndex;
+  final String? errorText;
+  final ValueChanged<String?> onValidationError;
 
   @override
   Widget build(BuildContext context) {
     final bloc = context.read<RecordingBloc>();
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(
-          width: 120,
-          child: TextField(
-            controller: startController,
-            enabled: enabled,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(labelText: 'Старт'),
+        Row(
+          children: [
+            SizedBox(
+              width: 120,
+              child: TextField(
+                key: const Key('recording-annotation-exclude-start-field'),
+                controller: startController,
+                enabled: enabled,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Старт'),
+              ),
+            ),
+            const SizedBox(width: 10),
+            SizedBox(
+              width: 120,
+              child: TextField(
+                key: const Key('recording-annotation-exclude-end-field'),
+                controller: endController,
+                enabled: enabled,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Конец'),
+              ),
+            ),
+            const SizedBox(width: 10),
+            FilledButton.tonalIcon(
+              key: const Key('recording-annotation-add-exclude'),
+              onPressed:
+                  enabled
+                      ? () {
+                        final start = int.tryParse(startController.text.trim());
+                        final end = int.tryParse(endController.text.trim());
+                        if (start == null || end == null) {
+                          onValidationError('Введите числовые границы');
+                          return;
+                        }
+                        if (start < 0 || end <= start) {
+                          onValidationError(
+                            'Интервал должен быть непустым: start < end',
+                          );
+                          return;
+                        }
+                        final maxIndex = maxSegmentSampleIndex;
+                        if (maxIndex != null && end > maxIndex) {
+                          onValidationError(
+                            'Конец интервала выходит за текущий сегмент',
+                          );
+                          return;
+                        }
+                        onValidationError(null);
+                        bloc.add(
+                          RecordingExcludeIntervalAdded(
+                            labelTypeId: 'bad_segment',
+                            startSegmentSampleIndex: start,
+                            endSegmentSampleIndex: end,
+                            note: _blankToNull(noteController.text),
+                          ),
+                        );
+                      }
+                      : null,
+              icon: const Icon(Icons.block_rounded),
+              label: const Text('Добавить брак'),
+            ),
+          ],
+        ),
+        if (errorText != null) ...[
+          const SizedBox(height: 6),
+          Text(
+            errorText!,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.error,
+              fontWeight: FontWeight.w700,
+            ),
           ),
-        ),
-        const SizedBox(width: 10),
-        SizedBox(
-          width: 120,
-          child: TextField(
-            controller: endController,
-            enabled: enabled,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(labelText: 'Конец'),
-          ),
-        ),
-        const SizedBox(width: 10),
-        FilledButton.tonalIcon(
-          onPressed:
-              enabled
-                  ? () {
-                    final start = int.tryParse(startController.text.trim());
-                    final end = int.tryParse(endController.text.trim());
-                    if (start == null || end == null) return;
-                    bloc.add(
-                      RecordingExcludeIntervalAdded(
-                        labelTypeId: 'bad_segment',
-                        startSegmentSampleIndex: start,
-                        endSegmentSampleIndex: end,
-                        note: _blankToNull(note),
-                      ),
-                    );
-                  }
-                  : null,
-          icon: const Icon(Icons.block_rounded),
-          label: const Text('Добавить брак'),
-        ),
+        ],
       ],
     );
   }

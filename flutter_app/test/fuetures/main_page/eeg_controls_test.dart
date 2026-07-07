@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:iot/features/annotation/domain/annotation_models.dart';
+import 'package:iot/features/annotation/presentation/recording_annotation_dialog.dart';
 import 'package:iot/features/recording/application/recording_bloc.dart';
 import 'package:iot/features/recording/domain/recording_models.dart';
 import 'package:iot/features/recording/domain/recording_ports.dart';
@@ -151,6 +154,7 @@ void main() {
 
   testWidgets('recording strip exposes fbm and pwm controls', (tester) async {
     final recordingBloc = _createRecordingBloc();
+    var annotationsPressed = false;
     addTearDown(() async {
       if (!recordingBloc.isClosed) {
         await recordingBloc.close();
@@ -169,6 +173,7 @@ void main() {
         RecordingReservationStrip(
           recordingBloc: recordingBloc,
           onStartPressed: () {},
+          onAnnotationsPressed: () => annotationsPressed = true,
         ),
         width: 760,
       ),
@@ -185,6 +190,85 @@ void main() {
 
     expect(recordingBloc.state.fbmOn, isTrue);
     expect(find.text('Свет выкл'), findsOneWidget);
+
+    await tester.tap(find.text('Метки'));
+    await tester.pump();
+    expect(annotationsPressed, isTrue);
+  });
+
+  testWidgets('recording annotation dialog keeps note and validates interval', (
+    tester,
+  ) async {
+    final recordingBloc = _createRecordingBloc();
+    addTearDown(() async {
+      if (!recordingBloc.isClosed) {
+        await recordingBloc.close();
+      }
+    });
+
+    recordingBloc.add(
+      const RecordingStartRequested(
+        RecordingStartConfig(rootDirectory: 'memory-root', pwmLevel: 50),
+      ),
+    );
+    await tester.pump();
+    recordingBloc.add(const RecordingSamplesReceived([1, 2, 3, 4, 5]));
+    await tester.pump();
+
+    await tester.pumpWidget(
+      wrap(
+        BlocProvider<RecordingBloc>.value(
+          value: recordingBloc,
+          child: const RecordingAnnotationDialog(),
+        ),
+        width: 760,
+      ),
+    );
+
+    final noteField = find.byKey(const Key('recording-annotation-note-field'));
+    final excludeStartField = find.byKey(
+      const Key('recording-annotation-exclude-start-field'),
+    );
+    final excludeEndField = find.byKey(
+      const Key('recording-annotation-exclude-end-field'),
+    );
+    final addExcludeButton = find.byKey(
+      const Key('recording-annotation-add-exclude'),
+    );
+
+    await tester.enterText(noteField, 'заметка оператора');
+    await tester.tap(find.text('Движение'));
+    await tester.pump();
+
+    expect(recordingBloc.state.labels, hasLength(1));
+    expect(recordingBloc.state.labels.single.kind, AnnotationKind.event);
+    expect(recordingBloc.state.labels.single.note, 'заметка оператора');
+
+    await tester.ensureVisible(excludeStartField);
+    await tester.enterText(excludeStartField, '4');
+    await tester.ensureVisible(excludeEndField);
+    await tester.enterText(excludeEndField, '2');
+    await tester.ensureVisible(addExcludeButton);
+    await tester.tap(addExcludeButton);
+    await tester.pump();
+
+    expect(
+      find.text('Интервал должен быть непустым: start < end'),
+      findsOneWidget,
+    );
+    expect(recordingBloc.state.labels, hasLength(1));
+
+    await tester.ensureVisible(excludeStartField);
+    await tester.enterText(excludeStartField, '1');
+    await tester.ensureVisible(excludeEndField);
+    await tester.enterText(excludeEndField, '3');
+    await tester.ensureVisible(addExcludeButton);
+    await tester.tap(addExcludeButton);
+    await tester.pump();
+
+    expect(recordingBloc.state.labels, hasLength(2));
+    expect(recordingBloc.state.labels.last.kind, AnnotationKind.exclude);
+    expect(recordingBloc.state.labels.last.note, 'заметка оператора');
   });
 }
 
