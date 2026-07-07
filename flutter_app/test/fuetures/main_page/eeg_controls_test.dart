@@ -176,6 +176,7 @@ void main() {
 
     expect(find.text('Свет вкл'), findsOneWidget);
     expect(find.text('ШИМ 50'), findsOneWidget);
+    expect(find.text('Метки'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
     await tester.tap(find.text('Свет вкл'));

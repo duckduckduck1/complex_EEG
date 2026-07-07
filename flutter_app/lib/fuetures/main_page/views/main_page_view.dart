@@ -5,6 +5,7 @@ import 'package:iot/features/devices/application/sessions_cubit.dart';
 import 'package:iot/features/devices/presentation/blocs/device_connection_event.dart';
 import 'package:iot/features/devices/presentation/device_display_name.dart';
 import 'package:iot/features/navigation/navigation_cubit.dart';
+import 'package:iot/features/annotation/presentation/recording_annotation_dialog.dart';
 import 'package:iot/features/recording/application/recording_bloc.dart';
 import 'package:iot/features/recording/application/recording_bloc_factory.dart';
 import 'package:iot/features/recording/data/device_connection_fbm_transport.dart';
@@ -66,6 +67,13 @@ class _MainPageState extends State<MainPage> with TickerProviderStateMixin {
     if (config != null && mounted) {
       recordingBloc.add(RecordingStartRequested(config));
     }
+  }
+
+  Future<void> _openAnnotations(RecordingBloc recordingBloc) {
+    return showRecordingAnnotationDialog(
+      context: context,
+      recordingBloc: recordingBloc,
+    );
   }
 
   @override
@@ -142,6 +150,10 @@ class _MainPageState extends State<MainPage> with TickerProviderStateMixin {
                           recordingBloc == null
                               ? null
                               : () => _startRecording(recordingBloc),
+                      onAnnotationsPressed:
+                          recordingBloc == null
+                              ? null
+                              : () => _openAnnotations(recordingBloc),
                       onReconnectPressed:
                           connectionBloc == null
                               ? null

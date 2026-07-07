@@ -8,11 +8,13 @@ class RecordingReservationStrip extends StatelessWidget {
     super.key,
     required this.recordingBloc,
     required this.onStartPressed,
+    this.onAnnotationsPressed,
     this.onReconnectPressed,
   });
 
   final RecordingBloc? recordingBloc;
   final VoidCallback? onStartPressed;
+  final VoidCallback? onAnnotationsPressed;
   final VoidCallback? onReconnectPressed;
 
   @override
@@ -42,6 +44,7 @@ class RecordingReservationStrip extends StatelessWidget {
                         : const FbmOnRequested(),
                   ),
               onPwmChanged: (value) => bloc.add(FbmPwmChanged(value)),
+              onAnnotationsPressed: onAnnotationsPressed,
             ),
             RecordingStatus.pausedByDisconnect => _PausedControls(
               onReconnectPressed: onReconnectPressed,
@@ -226,12 +229,14 @@ class _RecordingControls extends StatelessWidget {
   final VoidCallback onStop;
   final VoidCallback onToggleFbm;
   final ValueChanged<int> onPwmChanged;
+  final VoidCallback? onAnnotationsPressed;
 
   const _RecordingControls({
     required this.state,
     required this.onStop,
     required this.onToggleFbm,
     required this.onPwmChanged,
+    required this.onAnnotationsPressed,
   });
 
   @override
@@ -258,6 +263,12 @@ class _RecordingControls extends StatelessWidget {
           label: segmentLabel,
           color: colorScheme.primary,
         ),
+        if (state.activeDraftLabel != null)
+          _StatusToken(
+            icon: Icons.sell_outlined,
+            label: 'Метка: ${state.activeDraftLabel!.labelTypeId}',
+            color: colorScheme.primary,
+          ),
         FilledButton.tonalIcon(
           onPressed: onToggleFbm,
           icon: Icon(state.fbmOn ? Icons.lightbulb : Icons.lightbulb_outline),
@@ -267,6 +278,11 @@ class _RecordingControls extends StatelessWidget {
           value: state.pwmLevel ?? 50,
           enabled: state.status == RecordingStatus.recording,
           onChanged: onPwmChanged,
+        ),
+        OutlinedButton.icon(
+          onPressed: onAnnotationsPressed,
+          icon: const Icon(Icons.sell_outlined),
+          label: const Text('Метки'),
         ),
         OutlinedButton.icon(
           onPressed: onStop,
