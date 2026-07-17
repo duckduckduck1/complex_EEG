@@ -1,8 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:eeg_app_max30003_stm32/features/devices/domain/ble_adapter.dart';
 import 'package:eeg_app_max30003_stm32/features/devices/domain/ble_device.dart';
@@ -13,14 +11,7 @@ import 'package:eeg_app_max30003_stm32/features/recording/application/recording_
 import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_ports.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/device_eeg_tab.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/eeg_widget.dart';
-import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/tabs/bloc/tab_bloc.dart';
-
-class _TestVSync implements TickerProvider {
-  const _TestVSync();
-
-  @override
-  Ticker createTicker(TickerCallback onTick) => Ticker(onTick);
-}
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/tabs/tab_active_scope.dart';
 
 class _FakeConnection implements BleConnection {
   final StreamController<List<int>> _packets =
@@ -59,35 +50,21 @@ void main() {
     (tester) async {
       final connectionBloc = DeviceConnectionBloc(adapter: _FakeAdapter());
       final recordingBloc = _createRecordingBloc();
-      final tabBloc = TabBloc(vsync: const _TestVSync());
       addTearDown(connectionBloc.close);
-      addTearDown(tabBloc.close);
       addTearDown(() async {
         if (!recordingBloc.isClosed) {
           await recordingBloc.close();
         }
       });
-      // Регистрируем вкладку в TabBloc, чтобы она считалась активной и строила
-      // график, а не заглушку.
-      tabBloc.add(
-        NewTabAdded(
-          newTab: const Text('t'),
-          content: const SizedBox(),
-          connectionBloc: connectionBloc,
-          recordingBloc: recordingBloc,
-        ),
-      );
       connectionBloc.add(const ConnectRequested(BleDeviceId('AA:BB:CC')));
       await tester.pump();
 
+      // Без TabActiveScope вкладка считается активной — строит график.
       await tester.pumpWidget(
         MaterialApp(
-          home: BlocProvider<TabBloc>.value(
-            value: tabBloc,
-            child: DeviceEegTab(
-              connection: connectionBloc,
-              recordingBloc: recordingBloc,
-            ),
+          home: DeviceEegTab(
+            connection: connectionBloc,
+            recordingBloc: recordingBloc,
           ),
         ),
       );
@@ -111,36 +88,21 @@ void main() {
   testWidgets('неактивная вкладка показывает заглушку вместо графика', (
     tester,
   ) async {
-    final activeConn = DeviceConnectionBloc(adapter: _FakeAdapter());
-    final activeRec = _createRecordingBloc();
-    final otherConn = DeviceConnectionBloc(adapter: _FakeAdapter());
-    final otherRec = _createRecordingBloc();
-    final tabBloc = TabBloc(vsync: const _TestVSync());
-    addTearDown(activeConn.close);
-    addTearDown(otherConn.close);
-    addTearDown(tabBloc.close);
+    final connectionBloc = DeviceConnectionBloc(adapter: _FakeAdapter());
+    final recordingBloc = _createRecordingBloc();
+    addTearDown(connectionBloc.close);
     addTearDown(() async {
-      if (!activeRec.isClosed) await activeRec.close();
-      if (!otherRec.isClosed) await otherRec.close();
+      if (!recordingBloc.isClosed) await recordingBloc.close();
     });
-
-    // Активна зарегистрированная вкладка; DeviceEegTab строим для другого,
-    // незарегистрированного подключения — значит вкладка неактивна.
-    tabBloc.add(
-      NewTabAdded(
-        newTab: const Text('active'),
-        content: const SizedBox(),
-        connectionBloc: activeConn,
-        recordingBloc: activeRec,
-      ),
-    );
-    await tester.pump();
 
     await tester.pumpWidget(
       MaterialApp(
-        home: BlocProvider<TabBloc>.value(
-          value: tabBloc,
-          child: DeviceEegTab(connection: otherConn, recordingBloc: otherRec),
+        home: TabActiveScope(
+          active: false,
+          child: DeviceEegTab(
+            connection: connectionBloc,
+            recordingBloc: recordingBloc,
+          ),
         ),
       ),
     );

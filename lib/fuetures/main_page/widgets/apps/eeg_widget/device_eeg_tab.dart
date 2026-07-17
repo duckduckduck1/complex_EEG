@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:eeg_app_max30003_stm32/features/devices/presentation/blocs/device_connection_bloc.dart';
 import 'package:eeg_app_max30003_stm32/features/recording/application/recording_bloc.dart';
 import 'package:eeg_app_max30003_stm32/features/recording/application/recording_bridge.dart';
@@ -9,7 +8,7 @@ import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_model
 import 'package:eeg_app_max30003_stm32/fuetures/ble_page/bloc/device_eeg_bridge.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/bloc/rt_eeg_data_bloc.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/eeg_widget.dart';
-import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/tabs/bloc/tab_bloc.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/tabs/tab_active_scope.dart';
 
 /// Вкладка живого графика одного подключённого устройства.
 ///
@@ -79,26 +78,14 @@ class _DeviceEegTabState extends State<DeviceEegTab> {
     super.dispose();
   }
 
-  /// Активна ли эта вкладка сейчас. Идентичность вкладки — по её [connection]:
-  /// сравнивать по индексу нельзя, индексы сдвигаются при закрытии соседних.
-  bool _isActiveTab(TabState state) {
-    final index = state.connectionBlocs.indexOf(widget.connection);
-    return index >= 0 && index == state.currentIndex;
-  }
-
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<TabBloc, TabState>(
-      buildWhen:
-          (previous, current) =>
-              _isActiveTab(previous) != _isActiveTab(current),
-      builder: (context, state) {
-        if (!_isActiveTab(state)) {
-          return const _InactiveTabPlaceholder();
-        }
-        return EegWidget(rtEegDataBloc: _rtEegDataBloc);
-      },
-    );
+    // Активность приходит от IndexedStack по позиции вкладки, а не по устройству:
+    // два таба могут смотреть на одно подключение.
+    if (!TabActiveScope.of(context)) {
+      return const _InactiveTabPlaceholder();
+    }
+    return EegWidget(rtEegDataBloc: _rtEegDataBloc);
   }
 }
 
