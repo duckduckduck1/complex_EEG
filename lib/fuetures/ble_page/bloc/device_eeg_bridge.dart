@@ -10,10 +10,15 @@ import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widge
 ///
 /// Пока подключение находится в статусе `connected`, мост декодирует сырые
 /// payload'ы из `connection.activeConnection!.packets` в отсчёты [EegSample]
-/// (см. `docs/reference/device_packet.md`) и прокидывает их как
-/// `NewEegDataReceived` в живой график. При выходе из `connected` (обрыв,
+/// (см. `docs/reference/device_packet.md`) и прокидывает их пачкой как
+/// `NewEegSamplesReceived` в живой график. При выходе из `connected` (обрыв,
 /// ручное отключение, ошибка) подписка на пакеты отменяется — декодер не
 /// переживает разрыв, новый экземпляр создаётся на каждое новое подключение.
+///
+/// [setActive] гасит визуализацию, когда вкладка устройства неактивна: пока
+/// `active == false`, пакеты не декодируются и график не обновляется, чтобы
+/// скрытые вкладки не жгли CPU на FFT и фильтрах. **Запись это не затрагивает** —
+/// её ведёт отдельный `RecordingBridge`, который работает всегда.
 ///
 /// Мост не выполняет автоматическое переподключение — это уже задача
 /// [DeviceConnectionBloc]; он только реагирует на его состояния.
@@ -37,6 +42,14 @@ class DeviceEegBridge {
   StreamSubscription<DeviceConnectionState>? _connectionSub;
   StreamSubscription<List<int>>? _packetsSub;
   bool _attached = false;
+  bool _active = true;
+
+  /// Включает/выключает подачу данных в живой график. Неактивная вкладка
+  /// перестаёт кормить [RtEegDataBloc]; подписка на пакеты остаётся, но payload
+  /// просто отбрасывается, поэтому включение обратно мгновенно.
+  void setActive({required bool active}) {
+    _active = active;
+  }
 
   void _onConnectionState(DeviceConnectionState state) {
     if (state.status == DeviceConnectionStatus.connected) {
@@ -46,12 +59,17 @@ class DeviceEegBridge {
       _attached = true;
       final decoder = BleSampleDecoder(config: _config);
       _packetsSub = connection.packets.listen((payload) {
+        // Декодируем всегда, чтобы не сбить побайтовое выравнивание при возврате
+        // на вкладку; в неактивном состоянии просто не кормим график.
         final samples = decoder.addPayload(payload);
-        for (final sample in samples) {
-          _rtEegDataBloc.add(
-            NewEegDataReceived(newEegData: sample.valueMicrovolts.toDouble()),
-          );
-        }
+        if (!_active || samples.isEmpty) return;
+        _rtEegDataBloc.add(
+          NewEegSamplesReceived(
+            samples: [
+              for (final sample in samples) sample.valueMicrovolts.toDouble(),
+            ],
+          ),
+        );
       });
     } else {
       _detach();

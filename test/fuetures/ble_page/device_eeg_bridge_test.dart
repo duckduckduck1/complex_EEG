@@ -68,24 +68,20 @@ void main() {
   late _FakeAdapter adapter;
   late DeviceConnectionBloc connectionBloc;
   late RtEegDataBloc rtEegDataBloc;
-  late List<double> received;
-  late StreamSubscription rtSub;
+
+  int windowLength() {
+    final state = rtEegDataBloc.state;
+    return state is DataUpdated ? state.newData.length : 0;
+  }
 
   setUp(() {
     connection = _FakeConnection();
     adapter = _FakeAdapter(connection: connection);
     connectionBloc = DeviceConnectionBloc(adapter: adapter);
     rtEegDataBloc = RtEegDataBloc(250);
-    received = <double>[];
-    rtSub = rtEegDataBloc.stream.listen((state) {
-      if (state is DataUpdated && state.newData.isNotEmpty) {
-        received.add(state.newData.last.y);
-      }
-    });
   });
 
   tearDown(() async {
-    await rtSub.cancel();
     await connectionBloc.close();
     await rtEegDataBloc.close();
     await connection.close();
@@ -105,7 +101,8 @@ void main() {
       connection.addPayload([..._encodeSample(100), ..._encodeSample(-50)]);
       await pumpEventQueue();
 
-      expect(received, hasLength(2));
+      // Пачка из двух отсчётов — одно окно графика длиной 2.
+      expect(windowLength(), 2);
 
       await bridge.dispose();
     },
@@ -124,7 +121,7 @@ void main() {
 
       connection.addPayload(_encodeSample(10));
       await pumpEventQueue();
-      expect(received, hasLength(1));
+      expect(windowLength(), 1);
 
       connection.dropFromDevice();
       await pumpEventQueue();
@@ -134,11 +131,35 @@ void main() {
       connection.addPayload(_encodeSample(20));
       await pumpEventQueue();
 
-      expect(received, hasLength(1));
+      expect(windowLength(), 1);
 
       await bridge.dispose();
     },
   );
+
+  test('неактивная вкладка не кормит график, активная возобновляет', () async {
+    final bridge = DeviceEegBridge(
+      connection: connectionBloc,
+      rtEegDataBloc: rtEegDataBloc,
+    );
+
+    connectionBloc.add(const ConnectRequested(deviceId));
+    await pumpEventQueue();
+
+    bridge.setActive(active: false);
+    connection.addPayload(_encodeSample(10));
+    await pumpEventQueue();
+    // Пока неактивна — данные в график не идут.
+    expect(windowLength(), 0);
+
+    bridge.setActive(active: true);
+    connection.addPayload(_encodeSample(20));
+    await pumpEventQueue();
+    // Возобновили — новый отсчёт дошёл.
+    expect(windowLength(), 1);
+
+    await bridge.dispose();
+  });
 
   test('dispose отменяет подписку на состояние подключения', () async {
     final bridge = DeviceEegBridge(
@@ -154,6 +175,6 @@ void main() {
     connection.addPayload(_encodeSample(10));
     await pumpEventQueue();
 
-    expect(received, isEmpty);
+    expect(windowLength(), 0);
   });
 }

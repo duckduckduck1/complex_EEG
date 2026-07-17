@@ -31,6 +31,7 @@ class RtEegDataBloc extends Bloc<RtEegData, RtEegState> {
   final List<FlSpot> _alphaPowerOverTime = [];
   final List<FlSpot> _betaPowerOverTime = [];
   int _lastBandUpdateTime = 0;
+  int _lastFftSample = 0;
 
   int sampleCounter = 0;
   final processor = SignalProcessor(1024, 250.0, FillterSettings());
@@ -40,64 +41,78 @@ class RtEegDataBloc extends Bloc<RtEegData, RtEegState> {
     FillterSettings(),
   );
   int bufferSize = 1024;
-  int fftFlag = 0;
   double minFreqY = -60;
 
   RtEegDataBloc(this.sampleRate) : super(DataInitial()) {
-    on<NewEegDataReceived>(_onNewData);
+    on<NewEegSamplesReceived>(_onNewSamples);
     on<NewSettings>(_onNewFilter);
     on<RtEegResetRequested>(_onResetRequested);
   }
 
-  void _onNewData(NewEegDataReceived event, Emitter<RtEegState> emit) {
+  void _onNewSamples(NewEegSamplesReceived event, Emitter<RtEegState> emit) {
+    if (event.samples.isEmpty) {
+      return;
+    }
     try {
-      // Обновляем raw data
+      // Дешёвая покадровая бухгалтерия по каждому отсчёту: сырой буфер, точки
+      // времени, ритмы раз в секунду. Дорогое (фильтрация всего буфера, emit,
+      // FFT) вынесено ниже — раз на всю пачку.
+      for (final value in event.samples) {
+        _eegData.add(value);
+        if (_eegData.length > bufferSize) {
+          _eegData = _eegData.sublist(_eegData.length - bufferSize);
+        }
 
-      _eegData.add(event.newEegData);
+        timePlotData.add(FlSpot(sampleCounter / sampleRate, value));
+        if (timePlotData.length > bufferSize) {
+          timePlotData = timePlotData.sublist(timePlotData.length - bufferSize);
+        }
 
-      if (_eegData.length > bufferSize) {
-        _eegData = _eegData.sublist(_eegData.length - bufferSize);
+        if (sampleCounter - _lastBandUpdateTime >= sampleRate) {
+          _lastBandUpdateTime = sampleCounter;
+          final bandPowers = processor.computeBandPowers(filtSpectrum);
+          _deltaPowerOverTime.add(
+            FlSpot(sampleCounter / sampleRate, bandPowers['Delta'] ?? 0),
+          );
+          _thetaPowerOverTime.add(
+            FlSpot(sampleCounter / sampleRate, bandPowers['Theta'] ?? 0),
+          );
+          _alphaPowerOverTime.add(
+            FlSpot(sampleCounter / sampleRate, bandPowers['Alpha'] ?? 0),
+          );
+          _betaPowerOverTime.add(
+            FlSpot(sampleCounter / sampleRate, bandPowers['Beta'] ?? 0),
+          );
+          if (_deltaPowerOverTime.length > 60) {
+            _deltaPowerOverTime.removeAt(0);
+            _thetaPowerOverTime.removeAt(0);
+            _alphaPowerOverTime.removeAt(0);
+            _betaPowerOverTime.removeAt(0);
+          }
+        }
+        sampleCounter++;
       }
+
+      // Раз на пачку: перефильтровать буфер и пересобрать отфильтрованный график
+      // по тем же x, что у сырого окна.
       _fillterEegData = processor.filterSignal(_eegData);
       if (_fillterEegData.length > bufferSize) {
         _fillterEegData = _fillterEegData.sublist(
           _fillterEegData.length - bufferSize,
         );
       }
-
-      timePlotData.add(FlSpot(sampleCounter / sampleRate, _eegData.last));
-      fitDataPlot.add(FlSpot(sampleCounter / sampleRate, _fillterEegData.last));
-      if (timePlotData.length > bufferSize) {
-        timePlotData = timePlotData.sublist(timePlotData.length - bufferSize);
-        fitDataPlot = fitDataPlot.sublist(fitDataPlot.length - bufferSize);
-      }
-
-      if (sampleCounter - _lastBandUpdateTime >= sampleRate) {
-        _lastBandUpdateTime = sampleCounter;
-        final bandPowers = processor.computeBandPowers(filtSpectrum);
-
-        _deltaPowerOverTime.add(
-          FlSpot(sampleCounter / sampleRate, bandPowers['Delta'] ?? 0),
-        );
-        _thetaPowerOverTime.add(
-          FlSpot(sampleCounter / sampleRate, bandPowers['Theta'] ?? 0),
-        );
-        _alphaPowerOverTime.add(
-          FlSpot(sampleCounter / sampleRate, bandPowers['Alpha'] ?? 0),
-        );
-        _betaPowerOverTime.add(
-          FlSpot(sampleCounter / sampleRate, bandPowers['Beta'] ?? 0),
-        );
-
-        // Ограничиваем размер буфера (например, последние 60 секунд)
-        if (_deltaPowerOverTime.length > 60) {
-          _deltaPowerOverTime.removeAt(0);
-          _thetaPowerOverTime.removeAt(0);
-          _alphaPowerOverTime.removeAt(0);
-          _betaPowerOverTime.removeAt(0);
-        }
-      }
-      sampleCounter++;
+      final window = timePlotData.length;
+      final filteredTail = _fillterEegData.length - window;
+      fitDataPlot = [
+        for (var i = 0; i < window; i++)
+          FlSpot(
+            timePlotData[i].x,
+            (filteredTail + i) >= 0 &&
+                    (filteredTail + i) < _fillterEegData.length
+                ? _fillterEegData[filteredTail + i]
+                : 0,
+          ),
+      ];
 
       emit(
         DataUpdated(
@@ -111,14 +126,15 @@ class RtEegDataBloc extends Bloc<RtEegData, RtEegState> {
           betaPower: _betaPowerOverTime,
         ),
       );
-      if (fftFlag == 128) {
+
+      // Спектр считаем не чаще, чем раз в ~128 отсчётов: FFT дорогой.
+      if (sampleCounter - _lastFftSample >= 128) {
+        _lastFftSample = sampleCounter;
         freqPlotData = processor.computeFrequencySpectrum(_eegData);
         filtSpectrum = processor.computeFrequencySpectrum(_fillterEegData);
-      } else {
-        fftFlag++;
       }
     } catch (_) {
-      // Сбойный отсчёт пропускаем: real-time поток не должен падать целиком
+      // Сбойную пачку пропускаем: real-time поток не должен падать целиком
       // из-за одной некорректной точки.
     }
   }
@@ -140,8 +156,8 @@ class RtEegDataBloc extends Bloc<RtEegData, RtEegState> {
     _alphaPowerOverTime.clear();
     _betaPowerOverTime.clear();
     _lastBandUpdateTime = 0;
+    _lastFftSample = 0;
     sampleCounter = 0;
-    fftFlag = 0;
     emit(DataInitial());
   }
 }
