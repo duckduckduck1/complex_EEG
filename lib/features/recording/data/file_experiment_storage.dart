@@ -14,6 +14,12 @@ import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_ports
 /// отсчёт при 250 Гц; критичные события журнала пишутся с немедленным flush.
 /// `experiment.json` собирается один раз при остановке и пишется атомарно —
 /// через временный файл и переименование.
+///
+/// Операции с `signal.bin` идут через очередь ([_synchronized]): `RandomAccessFile`
+/// не допускает двух одновременных async-операций, а `RecordingBloc` по умолчанию
+/// обрабатывает события конкурентно, поэтому flush из приёма отсчётов мог
+/// наложиться на flush из остановки/обрыва («async operation is currently
+/// pending»). Очередь сериализует записи независимо от порядка вызовов.
 class FileExperimentStorage implements ExperimentStorage {
   FileExperimentStorage({this.flushInterval = const Duration(seconds: 10)});
 
@@ -24,6 +30,22 @@ class FileExperimentStorage implements ExperimentStorage {
   IOSink? _journalSink;
   final List<int> _pendingSamples = <int>[];
   DateTime _lastSignalFlush = DateTime.fromMillisecondsSinceEpoch(0);
+  Future<void> _fileQueue = Future<void>.value();
+
+  /// Ставит [action] в очередь файловых операций: следующая ждёт завершения
+  /// предыдущей (успех или ошибка), поэтому две записи в `signal.bin` никогда
+  /// не идут одновременно.
+  Future<T> _synchronized<T>(Future<T> Function() action) {
+    final completer = Completer<T>();
+    _fileQueue = _fileQueue.then((_) async {
+      try {
+        completer.complete(await action());
+      } catch (error, stackTrace) {
+        completer.completeError(error, stackTrace);
+      }
+    });
+    return completer.future;
+  }
 
   @override
   Future<void> createExperiment({
@@ -80,7 +102,9 @@ class FileExperimentStorage implements ExperimentStorage {
   }
 
   @override
-  Future<void> flush() async {
+  Future<void> flush() => _synchronized(_flushLocked);
+
+  Future<void> _flushLocked() async {
     final signalFile = _signalFile;
     if (signalFile == null) {
       return;
@@ -119,14 +143,18 @@ class FileExperimentStorage implements ExperimentStorage {
 
   @override
   Future<void> close() async {
-    await flush();
-    await _signalFile?.close();
-    await _journalSink?.flush();
-    await _journalSink?.close();
-    _signalFile = null;
-    _journalSink = null;
-    _experimentDirectory = null;
-    _pendingSamples.clear();
+    // Дозаписать хвост и закрыть хендлы в той же очереди, чтобы закрытие не
+    // наложилось на незавершённый flush из потока отсчётов.
+    await _synchronized(() async {
+      await _flushLocked();
+      await _signalFile?.close();
+      await _journalSink?.flush();
+      await _journalSink?.close();
+      _signalFile = null;
+      _journalSink = null;
+      _experimentDirectory = null;
+      _pendingSamples.clear();
+    });
   }
 
   void _ensureOpen() {
