@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:eeg_app_max30003_stm32/features/annotation/domain/annotation_models.dart';
 import 'package:eeg_app_max30003_stm32/features/recording/application/recording_bloc.dart';
 import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_models.dart';
 
@@ -44,6 +45,12 @@ class RecordingReservationStrip extends StatelessWidget {
                         : const FbmOnRequested(),
                   ),
               onPwmChanged: (value) => bloc.add(FbmPwmChanged(value)),
+              onStartState:
+                  (id) => bloc.add(RecordingStateLabelStarted(labelTypeId: id)),
+              onCloseState:
+                  () => bloc.add(const RecordingActiveStateLabelClosed()),
+              onAddEvent:
+                  (id) => bloc.add(RecordingPointLabelAdded(labelTypeId: id)),
               onAnnotationsPressed: onAnnotationsPressed,
             ),
             RecordingStatus.pausedByDisconnect => _PausedControls(
@@ -229,6 +236,9 @@ class _RecordingControls extends StatelessWidget {
   final VoidCallback onStop;
   final VoidCallback onToggleFbm;
   final ValueChanged<int> onPwmChanged;
+  final ValueChanged<String> onStartState;
+  final VoidCallback onCloseState;
+  final ValueChanged<String> onAddEvent;
   final VoidCallback? onAnnotationsPressed;
 
   const _RecordingControls({
@@ -236,6 +246,9 @@ class _RecordingControls extends StatelessWidget {
     required this.onStop,
     required this.onToggleFbm,
     required this.onPwmChanged,
+    required this.onStartState,
+    required this.onCloseState,
+    required this.onAddEvent,
     required this.onAnnotationsPressed,
   });
 
@@ -245,7 +258,7 @@ class _RecordingControls extends StatelessWidget {
     final segmentLabel = state.activeSegmentId ?? 'seg_1';
     return Wrap(
       crossAxisAlignment: WrapCrossAlignment.center,
-      spacing: 14,
+      spacing: 12,
       runSpacing: 8,
       children: [
         _StatusToken(
@@ -263,12 +276,6 @@ class _RecordingControls extends StatelessWidget {
           label: segmentLabel,
           color: colorScheme.primary,
         ),
-        if (state.activeDraftLabel != null)
-          _StatusToken(
-            icon: Icons.sell_outlined,
-            label: 'Метка: ${state.activeDraftLabel!.labelTypeId}',
-            color: colorScheme.primary,
-          ),
         FilledButton.tonalIcon(
           onPressed: onToggleFbm,
           icon: Icon(state.fbmOn ? Icons.lightbulb : Icons.lightbulb_outline),
@@ -279,10 +286,17 @@ class _RecordingControls extends StatelessWidget {
           enabled: state.status == RecordingStatus.recording,
           onChanged: onPwmChanged,
         ),
+        _StatePicker(
+          activeDraft: state.activeDraftLabel,
+          elapsedSampleCount: state.sampleCount,
+          onStartState: onStartState,
+          onCloseState: onCloseState,
+        ),
+        _EventPicker(onAddEvent: onAddEvent),
         OutlinedButton.icon(
           onPressed: onAnnotationsPressed,
-          icon: const Icon(Icons.sell_outlined),
-          label: const Text('Метки'),
+          icon: const Icon(Icons.list_alt_outlined),
+          label: const Text('Список'),
         ),
         OutlinedButton.icon(
           onPressed: onStop,
@@ -292,6 +306,103 @@ class _RecordingControls extends StatelessWidget {
       ],
     );
   }
+}
+
+/// Выкатывающийся список состояний. Пока метка не открыта — кнопка «Метка»
+/// разворачивает прокручиваемый список; выбор запускает состояние. Пока метка
+/// идёт — кнопка окрашивается в цвет метки и превращается в «стоп» с таймером
+/// в секундах от начала состояния. Переключение состояний закрывает предыдущее
+/// автоматически (это делает RecordingBloc), поэтому оператору не нужно думать
+/// про «закрыть».
+class _StatePicker extends StatelessWidget {
+  final AnnotationLabel? activeDraft;
+  final int elapsedSampleCount;
+  final ValueChanged<String> onStartState;
+  final VoidCallback onCloseState;
+
+  const _StatePicker({
+    required this.activeDraft,
+    required this.elapsedSampleCount,
+    required this.onStartState,
+    required this.onCloseState,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final draft = activeDraft;
+    if (draft != null) {
+      final type = _labelType(draft.labelTypeId);
+      final color = _colorOf(type, Theme.of(context).colorScheme.primary);
+      final elapsed = _formatDuration(
+        elapsedSampleCount - draft.globalStartSampleIndex,
+      );
+      return FilledButton.icon(
+        onPressed: onCloseState,
+        style: FilledButton.styleFrom(
+          backgroundColor: color,
+          foregroundColor: const Color(0xFF0D1117),
+        ),
+        icon: const Icon(Icons.stop_rounded),
+        label: Text('${type?.displayName ?? draft.labelTypeId} · $elapsed'),
+      );
+    }
+
+    return MenuAnchor(
+      menuChildren: _labelMenuItems(context, _statesInOrder, onStartState),
+      builder:
+          (context, controller, _) => OutlinedButton.icon(
+            onPressed:
+                () =>
+                    controller.isOpen ? controller.close() : controller.open(),
+            icon: const Icon(Icons.sell_outlined),
+            label: const Text('Метка'),
+          ),
+    );
+  }
+}
+
+/// Быстрые точечные события: один клик — метка на текущем отсчёте.
+class _EventPicker extends StatelessWidget {
+  final ValueChanged<String> onAddEvent;
+
+  const _EventPicker({required this.onAddEvent});
+
+  @override
+  Widget build(BuildContext context) {
+    return MenuAnchor(
+      menuChildren: _labelMenuItems(context, _eventsInOrder, onAddEvent),
+      builder:
+          (context, controller, _) => OutlinedButton.icon(
+            onPressed:
+                () =>
+                    controller.isOpen ? controller.close() : controller.open(),
+            icon: const Icon(Icons.bolt_outlined),
+            label: const Text('Событие'),
+          ),
+    );
+  }
+}
+
+/// Пункты выкатывающегося списка: цветная точка + название. Меню само крутится
+/// колесиком, если длинное. Общее для состояний и событий.
+List<Widget> _labelMenuItems(
+  BuildContext context,
+  List<LabelType> types,
+  ValueChanged<String> onSelected,
+) {
+  final fallback = Theme.of(context).colorScheme.primary;
+  return [
+    for (final type in types)
+      MenuItemButton(
+        onPressed: () => onSelected(type.id),
+        leadingIcon: Icon(
+          Icons.circle,
+          size: 12,
+          color: _colorOf(type, fallback),
+        ),
+        child: SizedBox(width: 176, child: Text(type.displayName)),
+      ),
+  ];
 }
 
 class _PwmControl extends StatelessWidget {
@@ -396,8 +507,37 @@ class _StatusToken extends StatelessWidget {
 }
 
 String _formatDuration(int sampleCount) {
-  final seconds = sampleCount ~/ 250;
+  final seconds = (sampleCount < 0 ? 0 : sampleCount) ~/ 250;
   final minutes = seconds ~/ 60;
   final restSeconds = seconds % 60;
   return '${minutes.toString().padLeft(2, '0')}:${restSeconds.toString().padLeft(2, '0')}';
+}
+
+final List<LabelType> _statesInOrder = defaultLabelTypes
+  .where((type) => type.kind == AnnotationKind.state && type.isActive)
+  .toList(growable: false)..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+
+final List<LabelType> _eventsInOrder = defaultLabelTypes
+  .where((type) => type.kind == AnnotationKind.event && type.isActive)
+  .toList(growable: false)..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+
+LabelType? _labelType(String id) {
+  for (final type in defaultLabelTypes) {
+    if (type.id == id) {
+      return type;
+    }
+  }
+  return null;
+}
+
+Color _colorOf(LabelType? type, Color fallback) {
+  if (type == null) {
+    return fallback;
+  }
+  final hex = type.colorHex.replaceFirst('#', '');
+  final value = int.tryParse(hex, radix: 16);
+  if (value == null || hex.length != 6) {
+    return fallback;
+  }
+  return Color(0xFF000000 | value);
 }

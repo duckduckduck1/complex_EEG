@@ -65,6 +65,7 @@ class _RecordingAnnotationDialogState extends State<RecordingAnnotationDialog> {
                       ? null
                       : state.sampleCount - activeSegment.startSample;
               return ListView(
+                key: const Key('recording-annotation-scroll'),
                 shrinkWrap: true,
                 padding: EdgeInsets.zero,
                 children: [
@@ -77,7 +78,7 @@ class _RecordingAnnotationDialogState extends State<RecordingAnnotationDialog> {
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          'Метки эксперимента',
+                          'Список меток и брак',
                           style: theme.textTheme.titleLarge?.copyWith(
                             fontWeight: FontWeight.w800,
                           ),
@@ -98,21 +99,6 @@ class _RecordingAnnotationDialogState extends State<RecordingAnnotationDialog> {
                       labelText: 'Комментарий',
                       prefixIcon: Icon(Icons.notes_rounded),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  _SectionTitle(text: 'Состояние'),
-                  const SizedBox(height: 8),
-                  _StateButtons(
-                    enabled: canAnnotate,
-                    activeLabelTypeId: state.activeDraftLabel?.labelTypeId,
-                    noteController: _noteController,
-                  ),
-                  const SizedBox(height: 16),
-                  _SectionTitle(text: 'Событие'),
-                  const SizedBox(height: 8),
-                  _EventButtons(
-                    enabled: canAnnotate,
-                    noteController: _noteController,
                   ),
                   const SizedBox(height: 16),
                   _SectionTitle(text: 'Бракованный интервал'),
@@ -140,87 +126,6 @@ class _RecordingAnnotationDialogState extends State<RecordingAnnotationDialog> {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _StateButtons extends StatelessWidget {
-  const _StateButtons({
-    required this.enabled,
-    required this.activeLabelTypeId,
-    required this.noteController,
-  });
-
-  final bool enabled;
-  final String? activeLabelTypeId;
-  final TextEditingController noteController;
-
-  @override
-  Widget build(BuildContext context) {
-    final bloc = context.read<RecordingBloc>();
-    final stateTypes = defaultLabelTypes
-        .where((type) => type.kind == AnnotationKind.state)
-        .toList(growable: false);
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        for (final type in stateTypes)
-          FilledButton.tonal(
-            onPressed:
-                enabled && activeLabelTypeId == null
-                    ? () => bloc.add(
-                      RecordingStateLabelStarted(
-                        labelTypeId: type.id,
-                        note: _blankToNull(noteController.text),
-                      ),
-                    )
-                    : null,
-            child: Text(type.displayName),
-          ),
-        OutlinedButton.icon(
-          onPressed:
-              enabled && activeLabelTypeId != null
-                  ? () => bloc.add(const RecordingActiveStateLabelClosed())
-                  : null,
-          icon: const Icon(Icons.stop_circle_outlined),
-          label: const Text('Закрыть активную'),
-        ),
-      ],
-    );
-  }
-}
-
-class _EventButtons extends StatelessWidget {
-  const _EventButtons({required this.enabled, required this.noteController});
-
-  final bool enabled;
-  final TextEditingController noteController;
-
-  @override
-  Widget build(BuildContext context) {
-    final bloc = context.read<RecordingBloc>();
-    final eventTypes = defaultLabelTypes
-        .where((type) => type.kind == AnnotationKind.event)
-        .toList(growable: false);
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        for (final type in eventTypes)
-          OutlinedButton(
-            onPressed:
-                enabled
-                    ? () => bloc.add(
-                      RecordingPointLabelAdded(
-                        labelTypeId: type.id,
-                        note: _blankToNull(noteController.text),
-                      ),
-                    )
-                    : null,
-            child: Text(type.displayName),
-          ),
-      ],
     );
   }
 }
@@ -394,13 +299,28 @@ IconData _iconFor(AnnotationKind kind) {
   };
 }
 
+// Отсчёты переводим в секунды для наглядности: оператор мыслит временем, а не
+// семплами. Частота дискретизации фиксирована прошивкой стенда.
+const _sampleRateHz = 250;
+
+String _clock(int sampleIndex) {
+  final seconds = (sampleIndex < 0 ? 0 : sampleIndex) ~/ _sampleRateHz;
+  final minutes = seconds ~/ 60;
+  final restSeconds = seconds % 60;
+  return '${minutes.toString().padLeft(2, '0')}:${restSeconds.toString().padLeft(2, '0')}';
+}
+
 String _rangeText(AnnotationLabel label) {
   if (label.isPoint) {
-    return 'seg ${label.segmentId}, sample ${label.startSegmentSampleIndex}';
+    return '${label.segmentId} · ${_clock(label.startSegmentSampleIndex)}';
   }
   final end = label.endSegmentSampleIndex;
-  final suffix = label.isDraft ? ' · открыта' : '';
-  return 'seg ${label.segmentId}, ${label.startSegmentSampleIndex}–${end ?? '?'}$suffix';
+  if (label.isDraft || end == null) {
+    return '${label.segmentId} · ${_clock(label.startSegmentSampleIndex)} · открыта';
+  }
+  final durationSeconds =
+      (end - label.startSegmentSampleIndex) ~/ _sampleRateHz;
+  return '${label.segmentId} · ${_clock(label.startSegmentSampleIndex)}–${_clock(end)} · $durationSeconds с';
 }
 
 String? _blankToNull(String value) {
