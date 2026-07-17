@@ -189,7 +189,7 @@ void main() {
     await pumpEventQueue();
     bloc.add(const RecordingActiveStateLabelClosed());
     await pumpEventQueue();
-    bloc.add(const RecordingPointLabelAdded(labelTypeId: 'movement'));
+    bloc.add(const RecordingPointLabelAdded(labelTypeId: 'startle'));
     await pumpEventQueue();
     bloc.add(
       const RecordingExcludeIntervalAdded(
@@ -214,7 +214,7 @@ void main() {
     expect(stateLabel['start_sample'], 3);
     expect(stateLabel['end_sample'], 5);
     expect(pointLabel['kind'], 'event');
-    expect(pointLabel['label_type_id'], 'movement');
+    expect(pointLabel['label_type_id'], 'startle');
     expect(pointLabel['sample_index'], 4);
     expect(excludeLabel['kind'], 'exclude');
     expect(excludeLabel['start_sample'], 1);
@@ -259,7 +259,7 @@ void main() {
     await pumpEventQueue();
     bloc.add(const RecordingSamplesReceived([1, 2, 3]));
     await pumpEventQueue();
-    bloc.add(const RecordingPointLabelAdded(labelTypeId: 'movement'));
+    bloc.add(const RecordingPointLabelAdded(labelTypeId: 'startle'));
     await pumpEventQueue();
     final labelId = bloc.state.labels.single.id;
 
