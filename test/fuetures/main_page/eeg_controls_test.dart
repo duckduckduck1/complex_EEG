@@ -152,7 +152,9 @@ void main() {
     expect(recordingBloc.state.status, RecordingStatus.stopped);
   });
 
-  testWidgets('recording strip exposes fbm and pwm controls', (tester) async {
+  testWidgets('recording strip exposes controls and annotation pickers', (
+    tester,
+  ) async {
     final recordingBloc = _createRecordingBloc();
     var annotationsPressed = false;
     addTearDown(() async {
@@ -175,13 +177,15 @@ void main() {
           onStartPressed: () {},
           onAnnotationsPressed: () => annotationsPressed = true,
         ),
-        width: 760,
+        width: 900,
       ),
     );
 
     expect(find.text('Свет вкл'), findsOneWidget);
     expect(find.text('ШИМ 50'), findsOneWidget);
-    expect(find.text('Метки'), findsOneWidget);
+    expect(find.text('Метка'), findsOneWidget);
+    expect(find.text('Событие'), findsOneWidget);
+    expect(find.text('Список'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
     await tester.tap(find.text('Свет вкл'));
@@ -191,12 +195,91 @@ void main() {
     expect(recordingBloc.state.fbmOn, isTrue);
     expect(find.text('Свет выкл'), findsOneWidget);
 
-    await tester.tap(find.text('Метки'));
+    await tester.tap(find.text('Список'));
     await tester.pump();
     expect(annotationsPressed, isTrue);
   });
 
-  testWidgets('recording annotation dialog keeps note and validates interval', (
+  testWidgets('state picker starts a state and toggles the button to stop', (
+    tester,
+  ) async {
+    final recordingBloc = _createRecordingBloc();
+    addTearDown(() async {
+      if (!recordingBloc.isClosed) {
+        await recordingBloc.close();
+      }
+    });
+
+    recordingBloc.add(
+      const RecordingStartRequested(
+        RecordingStartConfig(rootDirectory: 'memory-root', pwmLevel: 50),
+      ),
+    );
+    await tester.pump();
+
+    await tester.pumpWidget(
+      wrap(
+        RecordingReservationStrip(
+          recordingBloc: recordingBloc,
+          onStartPressed: () {},
+        ),
+        width: 900,
+      ),
+    );
+
+    // Выкатываем список состояний и запускаем «Спит».
+    await tester.tap(find.text('Метка'));
+    await tester.pumpAndSettle();
+    expect(find.text('Спит'), findsOneWidget);
+
+    await tester.tap(find.text('Спит'));
+    await tester.pumpAndSettle();
+
+    expect(recordingBloc.state.activeDraftLabel, isNotNull);
+    expect(recordingBloc.state.activeDraftLabel!.labelTypeId, 'sleep');
+    // Кнопка «Метка» превратилась в активную метку с таймером.
+    expect(find.text('Метка'), findsNothing);
+    expect(find.textContaining('Спит'), findsOneWidget);
+  });
+
+  testWidgets('event picker adds a point event on one tap', (tester) async {
+    final recordingBloc = _createRecordingBloc();
+    addTearDown(() async {
+      if (!recordingBloc.isClosed) {
+        await recordingBloc.close();
+      }
+    });
+
+    recordingBloc.add(
+      const RecordingStartRequested(
+        RecordingStartConfig(rootDirectory: 'memory-root', pwmLevel: 50),
+      ),
+    );
+    await tester.pump();
+    recordingBloc.add(const RecordingSamplesReceived([1, 2, 3]));
+    await tester.pump();
+
+    await tester.pumpWidget(
+      wrap(
+        RecordingReservationStrip(
+          recordingBloc: recordingBloc,
+          onStartPressed: () {},
+        ),
+        width: 900,
+      ),
+    );
+
+    await tester.tap(find.text('Событие'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Вздрогнула'));
+    await tester.pumpAndSettle();
+
+    expect(recordingBloc.state.labels, hasLength(1));
+    expect(recordingBloc.state.labels.single.kind, AnnotationKind.event);
+    expect(recordingBloc.state.labels.single.labelTypeId, 'startle');
+  });
+
+  testWidgets('annotation list dialog validates exclude interval', (
     tester,
   ) async {
     final recordingBloc = _createRecordingBloc();
@@ -237,25 +320,8 @@ void main() {
     );
 
     await tester.enterText(noteField, 'заметка оператора');
-    await tester.tap(find.text('Вздрогнула'));
-    await tester.pump();
-
-    expect(recordingBloc.state.labels, hasLength(1));
-    expect(recordingBloc.state.labels.single.kind, AnnotationKind.event);
-    expect(recordingBloc.state.labels.single.note, 'заметка оператора');
-
-    // Словарь стал больше, и поля брака ушли ниже сгиба — сначала прокручиваем
-    // список диалога, иначе ListView их ещё не построил.
-    await tester.dragUntilVisible(
-      excludeStartField,
-      find.byKey(const Key('recording-annotation-scroll')),
-      const Offset(0, -80),
-    );
-    await tester.ensureVisible(excludeStartField);
     await tester.enterText(excludeStartField, '4');
-    await tester.ensureVisible(excludeEndField);
     await tester.enterText(excludeEndField, '2');
-    await tester.ensureVisible(addExcludeButton);
     await tester.tap(addExcludeButton);
     await tester.pump();
 
@@ -263,19 +329,16 @@ void main() {
       find.text('Интервал должен быть непустым: start < end'),
       findsOneWidget,
     );
-    expect(recordingBloc.state.labels, hasLength(1));
+    expect(recordingBloc.state.labels, isEmpty);
 
-    await tester.ensureVisible(excludeStartField);
     await tester.enterText(excludeStartField, '1');
-    await tester.ensureVisible(excludeEndField);
     await tester.enterText(excludeEndField, '3');
-    await tester.ensureVisible(addExcludeButton);
     await tester.tap(addExcludeButton);
     await tester.pump();
 
-    expect(recordingBloc.state.labels, hasLength(2));
-    expect(recordingBloc.state.labels.last.kind, AnnotationKind.exclude);
-    expect(recordingBloc.state.labels.last.note, 'заметка оператора');
+    expect(recordingBloc.state.labels, hasLength(1));
+    expect(recordingBloc.state.labels.single.kind, AnnotationKind.exclude);
+    expect(recordingBloc.state.labels.single.note, 'заметка оператора');
   });
 }
 
