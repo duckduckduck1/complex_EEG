@@ -1,8 +1,0 @@
-# Example only. Do not use this file as real secrets.
-# Create encrypted vault.yml with:
-# ansible-vault create infra/ansible/inventories/local_vm/group_vars/vault.yml
-
-vault_postgres_password: change_me
-vault_auth_secret: change_me
-vault_grafana_admin_password: change_me
-vault_alertmanager_token: change_me

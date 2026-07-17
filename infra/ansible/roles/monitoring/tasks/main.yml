@@ -1,3 +1,0 @@
-- name: Monitoring role placeholder
-  ansible.builtin.debug:
-    msg: "TODO: install Prometheus, Grafana and exporter configuration"

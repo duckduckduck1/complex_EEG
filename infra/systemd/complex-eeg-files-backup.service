@@ -1,9 +1,0 @@
-[Unit]
-Description=complex_eeg files backup
-
-[Service]
-Type=oneshot
-User=deploy
-Group=complex_eeg
-EnvironmentFile=/opt/complex_eeg/config/.env
-ExecStart=/opt/complex_eeg/scripts/backup/backup_files.sh

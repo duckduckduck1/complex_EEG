@@ -1,3 +1,0 @@
-- name: Deploy role placeholder
-  ansible.builtin.debug:
-    msg: "TODO: copy compose files and restart application services"

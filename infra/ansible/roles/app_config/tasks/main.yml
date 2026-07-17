@@ -1,3 +1,0 @@
-- name: Application configuration role placeholder
-  ansible.builtin.debug:
-    msg: "TODO: render /opt/complex_eeg/config/.env from group_vars and vault"
