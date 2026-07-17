@@ -16,7 +16,7 @@ class MainApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'EEG app (MAX30003 + STM32)',
       theme: theme,
       home: MultiRepositoryProvider(
         providers: [

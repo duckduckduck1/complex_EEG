@@ -10,6 +10,15 @@ Windows-приложение на Flutter для нейробиологичес�
 
 Подробнее — в [продуктовом видении](docs/vision.md).
 
+## Железо
+
+Устройство собрано на АЦП **MAX30003** и микроконтроллере **STM32**; связь с ПК —
+по BLE через модуль JDY-16. Прошивка и схемотехника плат живут в отдельном
+репозитории — [duckduckduck1/Test_eeg](https://github.com/duckduckduck1/Test_eeg).
+Даташит АЦП лежит в [docs/manuals/max30003.pdf](docs/manuals/max30003.pdf), а
+контракт обмена с устройством — в
+[docs/reference/device_packet.md](docs/reference/device_packet.md).
+
 ## Структура репозитория
 
 | Путь | Что это |
