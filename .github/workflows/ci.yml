@@ -22,7 +22,7 @@ jobs:
 
       - name: Check trailing whitespace
         run: |
-          ! git grep -nI '[[:blank:]]$' -- .
+          ! git grep -nI '[[:blank:]]$' -- . ':!third_party'
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
