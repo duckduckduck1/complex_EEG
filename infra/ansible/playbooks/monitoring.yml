@@ -1,5 +1,0 @@
-- name: Configure complex_eeg monitoring
-  hosts: all
-  become: true
-  roles:
-    - monitoring

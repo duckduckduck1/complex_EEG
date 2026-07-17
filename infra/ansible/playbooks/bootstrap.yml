@@ -1,6 +1,0 @@
-- name: Bootstrap complex_eeg VM
-  hosts: all
-  become: true
-  roles:
-    - base
-    - docker

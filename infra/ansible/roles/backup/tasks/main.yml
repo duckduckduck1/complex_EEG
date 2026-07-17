@@ -1,3 +1,0 @@
-- name: Backup role placeholder
-  ansible.builtin.debug:
-    msg: "TODO: install backup scripts and systemd timers"

@@ -5,36 +5,50 @@ desktop.ini
 .idea/
 .vscode/
 
-# Local agent guide (personal, not shared)
+# Local agent guides and configs (personal, not shared)
 AGENTS.md
+.claude/
+.agents/
 
 # Logs and temporary files
 *.log
 *.tmp
 *.temp
-
-# Python virtual environments
-.venv/
-venv/
-env/
-
-# Python packaging/build artifacts
-*.egg-info/
-build/
-dist/
-
-# Python cache
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.pytest_tmp/
 .test_tmp/
 
-# Local environment files
-.env
-.env.local
-.env.*.local
+# Miscellaneous
+*.class
+*.swp
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
 
-# Ansible secrets
-infra/ansible/inventories/*/group_vars/vault.yml
-infra/ansible/.vault-pass*
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
