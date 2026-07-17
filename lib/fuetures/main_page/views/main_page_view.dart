@@ -13,6 +13,7 @@ import 'package:eeg_app_max30003_stm32/features/recording/presentation/recording
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/device_eeg_tab.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/recording/recording_reservation_strip.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/tabs/bloc/tab_bloc.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/tabs/tab_active_scope.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/tabs/widgets/app_selector_diolog.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/tabs/widgets/tab_bar.dart';
 
@@ -189,7 +190,13 @@ class _MainPageState extends State<MainPage> with TickerProviderStateMixin {
               if (state.controller == null) return const Center();
               return IndexedStack(
                 index: state.currentIndex,
-                children: state.tabContents,
+                children: [
+                  for (var i = 0; i < state.tabContents.length; i++)
+                    TabActiveScope(
+                      active: i == state.currentIndex,
+                      child: state.tabContents[i],
+                    ),
+                ],
               );
             },
           ),

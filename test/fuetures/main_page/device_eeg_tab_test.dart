@@ -11,6 +11,7 @@ import 'package:eeg_app_max30003_stm32/features/recording/application/recording_
 import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_ports.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/device_eeg_tab.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/eeg_widget.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/tabs/tab_active_scope.dart';
 
 class _FakeConnection implements BleConnection {
   final StreamController<List<int>> _packets =
@@ -58,6 +59,7 @@ void main() {
       connectionBloc.add(const ConnectRequested(BleDeviceId('AA:BB:CC')));
       await tester.pump();
 
+      // Без TabActiveScope вкладка считается активной — строит график.
       await tester.pumpWidget(
         MaterialApp(
           home: DeviceEegTab(
@@ -82,6 +84,33 @@ void main() {
       );
     },
   );
+
+  testWidgets('неактивная вкладка показывает заглушку вместо графика', (
+    tester,
+  ) async {
+    final connectionBloc = DeviceConnectionBloc(adapter: _FakeAdapter());
+    final recordingBloc = _createRecordingBloc();
+    addTearDown(connectionBloc.close);
+    addTearDown(() async {
+      if (!recordingBloc.isClosed) await recordingBloc.close();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TabActiveScope(
+          active: false,
+          child: DeviceEegTab(
+            connection: connectionBloc,
+            recordingBloc: recordingBloc,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(EegWidget), findsNothing);
+    expect(find.textContaining('на паузе'), findsOneWidget);
+  });
 }
 
 RecordingBloc _createRecordingBloc() {
