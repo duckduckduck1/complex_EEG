@@ -161,6 +161,7 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
       );
       stateToFinalize = await _autoTurnFbmOff(
         stateToFinalize,
+        allowUndelivered: true,
         reason: 'recording_stop',
       );
       emit(await _finalizeRecording(stateToFinalize));
@@ -748,7 +749,23 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
     final endSegmentSampleIndex =
         stateToUpdate.sampleCount - segment.startSample;
     if (endSegmentSampleIndex <= draft.startSegmentSampleIndex) {
-      return stateToUpdate.copyWith(activeDraftLabel: null);
+      // Пустой интервал: отбрасываем черновик целиком, чтобы в списке и журнале
+      // не оставалась «открытая» метка без пары.
+      await _storage.appendJournal(
+        _journalEvent(
+          type: 'annotation_deleted',
+          experimentId: experimentId,
+          timestamp: timestamp,
+          extra: {'label_id': draft.id},
+        ),
+        flush: true,
+      );
+      return stateToUpdate.copyWith(
+        labels: stateToUpdate.labels
+            .where((label) => label.id != draft.id)
+            .toList(growable: false),
+        activeDraftLabel: null,
+      );
     }
 
     final closed = draft.closeAt(
@@ -970,7 +987,11 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
   Future<void> close() async {
     if (_canFinalize(state.status)) {
       try {
-        final stateToClose = await _autoTurnFbmOff(state, reason: 'bloc_close');
+        final stateToClose = await _autoTurnFbmOff(
+          state,
+          allowUndelivered: true,
+          reason: 'bloc_close',
+        );
         await _finalizeRecording(stateToClose);
       } catch (_) {
         await _safeCloseStorage();

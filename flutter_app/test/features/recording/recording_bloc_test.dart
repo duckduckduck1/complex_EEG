@@ -306,6 +306,32 @@ void main() {
     );
   });
 
+  test('empty state annotation is discarded without an orphan draft', () async {
+    bloc.add(RecordingStartRequested(_startConfig()));
+    await pumpEventQueue();
+    bloc.add(const RecordingSamplesReceived([1, 2, 3]));
+    await pumpEventQueue();
+
+    // Открыли и тут же закрыли состояние — внутри интервала ни одного отсчёта.
+    bloc.add(const RecordingStateLabelStarted(labelTypeId: 'sleep'));
+    await pumpEventQueue();
+    bloc.add(const RecordingActiveStateLabelClosed());
+    await pumpEventQueue();
+
+    expect(bloc.state.activeDraftLabel, isNull);
+    expect(bloc.state.labels, isEmpty);
+    expect(
+      storage.journal
+          .where((event) => '${event['type']}'.startsWith('annotation_'))
+          .map((event) => event['type']),
+      ['annotation_created', 'annotation_deleted'],
+    );
+
+    bloc.add(const RecordingStopRequested());
+    await pumpEventQueue(times: 5);
+    expect(storage.experimentJson!['labels'], isEmpty);
+  });
+
   test('fbm commands call transport and write journal events', () async {
     bloc.add(RecordingStartRequested(_startConfig(pwmLevel: 20)));
     await pumpEventQueue();
