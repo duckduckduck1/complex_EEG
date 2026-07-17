@@ -46,7 +46,7 @@ failed
 плагина `flutter_blue_plus_winrt` с параллельным `DeviceWatcher` (иначе
 «голый» BluetoothLEAdvertisementWatcher планируется ОС лениво и медленно
 рекламирующееся устройство ловится долго; см.
-`flutter_app/third_party/flutter_blue_plus_winrt/README_FORK.md`). Список
+`third_party/flutter_blue_plus_winrt/README_FORK.md`). Список
 устройств персистентный между поисками: устройство, найденное ранее, остаётся
 в списке при новом `DiscoveryStarted`, а его актуальность отражает RSSI —
 `null` означает «не подтверждено текущим поиском».

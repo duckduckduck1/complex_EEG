@@ -53,7 +53,7 @@ interval/window в WinRT нет — DeviceWatcher единственный до�
 
 ## Как подключено
 
-`flutter_app/pubspec.yaml` → `dependency_overrides: flutter_blue_plus_winrt:
+`pubspec.yaml` → `dependency_overrides: flutter_blue_plus_winrt:
 path: third_party/flutter_blue_plus_winrt`. Имя пакета сохранено, поэтому
 federated-резолвинг `flutter_blue_plus` подхватывает эту копию вместо
 pub.dev-версии. Обновление upstream: перекопировать релиз и заново нанести
