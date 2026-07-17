@@ -1,3 +1,0 @@
-- name: Base role placeholder
-  ansible.builtin.debug:
-    msg: "TODO: create users, groups, directories, timezone and SSH hardening"

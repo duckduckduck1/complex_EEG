@@ -1,3 +1,0 @@
-- name: Docker role placeholder
-  ansible.builtin.debug:
-    msg: "TODO: install Docker Engine and Docker Compose plugin"
