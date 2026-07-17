@@ -28,6 +28,12 @@ class IirStreamingFilterFactory implements StreamingFilterFactory {
   }
 }
 
+/// Butterworth-фильтр записи, обрабатывающий поток по одному отсчёту.
+///
+/// Держит состояние между вызовами, поэтому годится для живой записи: цепочка
+/// проектируется один раз при старте, дальше каждый отсчёт просто проходит
+/// сквозь неё. Не путать с `SignalProcessor.filterSignal`, который
+/// перефильтровывает весь буфер целиком — тот только для графика.
 class IirStreamingFilter implements StreamingFilter {
   IirStreamingFilter(this._chain);
 

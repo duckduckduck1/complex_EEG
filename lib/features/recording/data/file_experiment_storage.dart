@@ -5,6 +5,15 @@ import 'dart:typed_data';
 
 import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_ports.dart';
 
+/// Пишет пакет эксперимента в папку на диске оператора.
+///
+/// Раскладка: `signal.bin` (отсчёты int32 little-endian), `journal.ndjson`
+/// (append-only журнал) и финальный `experiment.json`.
+///
+/// Сигнал буферизуется и сбрасывается пачками, чтобы не дёргать диск на каждый
+/// отсчёт при 250 Гц; критичные события журнала пишутся с немедленным flush.
+/// `experiment.json` собирается один раз при остановке и пишется атомарно —
+/// через временный файл и переименование.
 class FileExperimentStorage implements ExperimentStorage {
   FileExperimentStorage({this.flushInterval = const Duration(seconds: 10)});
 

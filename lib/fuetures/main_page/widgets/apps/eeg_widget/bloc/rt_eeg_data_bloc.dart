@@ -8,6 +8,16 @@ import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widge
 part 'rt_eeg_data_vent.dart';
 part 'rt_eeg_data_state.dart';
 
+/// Живые данные графиков: сигнал, спектр и мощность ритмов.
+///
+/// Держит кольцевой буфер на [bufferSize] последних отсчётов (степень двойки —
+/// требование FFT) и сам считает спектр и полосы, отдавая виджетам готовое
+/// состояние. Данные живут только в памяти: `signal.bin` графики не читают.
+///
+/// Фильтры здесь — **только для картинки**; запись использует свой потоковый
+/// фильтр. Точка на графике ритмов добавляется раз в секунду, а не на каждый
+/// отсчёт. `RtEegResetRequested` обнуляет буферы — его шлёт вкладка на старте
+/// записи, чтобы эксперимент начинался с чистых графиков.
 class RtEegDataBloc extends Bloc<RtEegData, RtEegState> {
   List<double> _eegData = [];
   List<double> _fillterEegData = [];
