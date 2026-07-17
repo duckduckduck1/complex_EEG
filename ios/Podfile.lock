@@ -1,0 +1,22 @@
+PODS:
+  - filters_sdk (1.0.0):
+    - Flutter
+  - Flutter (1.0.0)
+
+DEPENDENCIES:
+  - filters_sdk (from `.symlinks/plugins/filters_sdk/ios`)
+  - Flutter (from `Flutter`)
+
+EXTERNAL SOURCES:
+  filters_sdk:
+    :path: ".symlinks/plugins/filters_sdk/ios"
+  Flutter:
+    :path: Flutter
+
+SPEC CHECKSUMS:
+  filters_sdk: dc8c86d06306f5c779702c1558d4b1ffcfd396ca
+  Flutter: e0871f40cf51350855a761d2e70bf5af5b9b5de7
+
+PODFILE CHECKSUM: 4305caec6b40dde0ae97be1573c53de1882a07e5
+
+COCOAPODS: 1.16.2
