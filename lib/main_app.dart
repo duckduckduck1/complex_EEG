@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:iot/features/devices/application/sessions_cubit.dart';
-import 'package:iot/features/devices/domain/ble_adapter.dart';
-import 'package:iot/features/navigation/navigation_cubit.dart';
-import 'package:iot/features/recording/application/recording_bloc_factory.dart';
-import 'package:iot/features/recording/data/file_recording_bloc_factory.dart';
-import 'package:iot/fuetures/main_layout/views/main_layout_view.dart';
-import 'package:iot/platform/ble/flutter_blue_plus_adapter.dart';
-import 'package:iot/theme.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/application/sessions_cubit.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/domain/ble_adapter.dart';
+import 'package:eeg_app_max30003_stm32/features/navigation/navigation_cubit.dart';
+import 'package:eeg_app_max30003_stm32/features/recording/application/recording_bloc_factory.dart';
+import 'package:eeg_app_max30003_stm32/features/recording/data/file_recording_bloc_factory.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_layout/views/main_layout_view.dart';
+import 'package:eeg_app_max30003_stm32/platform/ble/flutter_blue_plus_adapter.dart';
+import 'package:eeg_app_max30003_stm32/theme.dart';
 
 class MainApp extends StatelessWidget {
   const MainApp({super.key});

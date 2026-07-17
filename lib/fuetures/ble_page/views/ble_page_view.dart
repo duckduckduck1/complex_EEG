@@ -1,17 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:iot/features/devices/application/device_session.dart';
-import 'package:iot/features/devices/application/sessions_cubit.dart';
-import 'package:iot/features/devices/domain/ble_adapter.dart';
-import 'package:iot/features/devices/domain/ble_device.dart';
-import 'package:iot/features/devices/presentation/blocs/device_connection_bloc.dart';
-import 'package:iot/features/devices/presentation/blocs/device_connection_event.dart';
-import 'package:iot/features/devices/presentation/blocs/device_connection_state.dart';
-import 'package:iot/features/devices/presentation/blocs/device_discovery_bloc.dart';
-import 'package:iot/features/devices/presentation/blocs/device_discovery_event.dart';
-import 'package:iot/features/devices/presentation/blocs/device_discovery_state.dart';
-import 'package:iot/features/devices/presentation/device_display_name.dart';
-import 'package:iot/features/navigation/navigation_cubit.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/application/device_session.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/application/sessions_cubit.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/domain/ble_adapter.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/domain/ble_device.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/presentation/blocs/device_connection_bloc.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/presentation/blocs/device_connection_event.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/presentation/blocs/device_connection_state.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/presentation/blocs/device_discovery_bloc.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/presentation/blocs/device_discovery_event.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/presentation/blocs/device_discovery_state.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/presentation/device_display_name.dart';
+import 'package:eeg_app_max30003_stm32/features/navigation/navigation_cubit.dart';
 
 /// Имя модели стенда — фильтр поиска по рекламируемому имени
 /// (docs/reference/device_packet.md; имя — фильтр, не доверенный

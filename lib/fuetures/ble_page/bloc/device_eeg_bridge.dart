@@ -1,10 +1,10 @@
 import 'dart:async';
 
-import 'package:iot/features/devices/data/ble_sample_decoder.dart';
-import 'package:iot/features/devices/domain/device_signal_config.dart';
-import 'package:iot/features/devices/presentation/blocs/device_connection_bloc.dart';
-import 'package:iot/features/devices/presentation/blocs/device_connection_state.dart';
-import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/bloc/rt_eeg_data_bloc.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/data/ble_sample_decoder.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/domain/device_signal_config.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/presentation/blocs/device_connection_bloc.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/presentation/blocs/device_connection_state.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/bloc/rt_eeg_data_bloc.dart';
 
 /// Мост между [DeviceConnectionBloc] и [RtEegDataBloc].
 ///

@@ -1,20 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:iot/features/devices/application/device_session.dart';
-import 'package:iot/features/devices/application/sessions_cubit.dart';
-import 'package:iot/features/devices/presentation/blocs/device_connection_event.dart';
-import 'package:iot/features/devices/presentation/device_display_name.dart';
-import 'package:iot/features/navigation/navigation_cubit.dart';
-import 'package:iot/features/annotation/presentation/recording_annotation_dialog.dart';
-import 'package:iot/features/recording/application/recording_bloc.dart';
-import 'package:iot/features/recording/application/recording_bloc_factory.dart';
-import 'package:iot/features/recording/data/device_connection_fbm_transport.dart';
-import 'package:iot/features/recording/presentation/recording_start_dialog.dart';
-import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/device_eeg_tab.dart';
-import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/recording/recording_reservation_strip.dart';
-import 'package:iot/fuetures/main_page/widgets/tabs/bloc/tab_bloc.dart';
-import 'package:iot/fuetures/main_page/widgets/tabs/widgets/app_selector_diolog.dart';
-import 'package:iot/fuetures/main_page/widgets/tabs/widgets/tab_bar.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/application/device_session.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/application/sessions_cubit.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/presentation/blocs/device_connection_event.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/presentation/device_display_name.dart';
+import 'package:eeg_app_max30003_stm32/features/navigation/navigation_cubit.dart';
+import 'package:eeg_app_max30003_stm32/features/annotation/presentation/recording_annotation_dialog.dart';
+import 'package:eeg_app_max30003_stm32/features/recording/application/recording_bloc.dart';
+import 'package:eeg_app_max30003_stm32/features/recording/application/recording_bloc_factory.dart';
+import 'package:eeg_app_max30003_stm32/features/recording/data/device_connection_fbm_transport.dart';
+import 'package:eeg_app_max30003_stm32/features/recording/presentation/recording_start_dialog.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/device_eeg_tab.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/recording/recording_reservation_strip.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/tabs/bloc/tab_bloc.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/tabs/widgets/app_selector_diolog.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/tabs/widgets/tab_bar.dart';
 
 class MainPage extends StatefulWidget {
   const MainPage({super.key});

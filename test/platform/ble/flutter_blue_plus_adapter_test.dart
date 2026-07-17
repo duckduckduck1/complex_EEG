@@ -1,6 +1,6 @@
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:iot/platform/ble/flutter_blue_plus_adapter.dart';
+import 'package:eeg_app_max30003_stm32/platform/ble/flutter_blue_plus_adapter.dart';
 
 /// Юнит-тесты ворот фильтра поиска [FlutterBluePlusAdapter.matchesTarget].
 ///

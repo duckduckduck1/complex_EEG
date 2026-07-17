@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:iot/features/annotation/domain/annotation_models.dart';
-import 'package:iot/features/annotation/presentation/recording_annotation_dialog.dart';
-import 'package:iot/features/recording/application/recording_bloc.dart';
-import 'package:iot/features/recording/domain/recording_models.dart';
-import 'package:iot/features/recording/domain/recording_ports.dart';
-import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/eeg_widget_settings_bar/eeg_settings_bar.dart';
-import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/filter_settings/exp_widget.dart';
-import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/recording/recording_reservation_strip.dart';
-import 'package:iot/theme.dart';
+import 'package:eeg_app_max30003_stm32/features/annotation/domain/annotation_models.dart';
+import 'package:eeg_app_max30003_stm32/features/annotation/presentation/recording_annotation_dialog.dart';
+import 'package:eeg_app_max30003_stm32/features/recording/application/recording_bloc.dart';
+import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_models.dart';
+import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_ports.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/eeg_widget_settings_bar/eeg_settings_bar.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/filter_settings/exp_widget.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/recording/recording_reservation_strip.dart';
+import 'package:eeg_app_max30003_stm32/theme.dart';
 
 void main() {
   Widget wrap(Widget child, {double width = 360}) {

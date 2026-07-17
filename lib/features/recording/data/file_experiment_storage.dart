@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:iot/features/recording/domain/recording_ports.dart';
+import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_ports.dart';
 
 class FileExperimentStorage implements ExperimentStorage {
   FileExperimentStorage({this.flushInterval = const Duration(seconds: 10)});

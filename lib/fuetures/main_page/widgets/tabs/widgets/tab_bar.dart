@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:iot/fuetures/main_page/widgets/tabs/bloc/tab_bloc.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/tabs/bloc/tab_bloc.dart';
 
 class IotTabBar extends StatelessWidget {
   final TabBloc tabBloc;

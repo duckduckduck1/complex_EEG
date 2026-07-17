@@ -1,15 +1,15 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:iot/features/devices/domain/ble_adapter.dart';
-import 'package:iot/features/devices/domain/ble_device.dart';
-import 'package:iot/features/devices/presentation/blocs/device_connection_bloc.dart';
-import 'package:iot/features/devices/presentation/blocs/device_connection_event.dart';
-import 'package:iot/features/devices/presentation/blocs/device_connection_state.dart';
-import 'package:iot/features/recording/application/recording_bloc.dart';
-import 'package:iot/features/recording/application/recording_bridge.dart';
-import 'package:iot/features/recording/domain/recording_models.dart';
-import 'package:iot/features/recording/domain/recording_ports.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/domain/ble_adapter.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/domain/ble_device.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/presentation/blocs/device_connection_bloc.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/presentation/blocs/device_connection_event.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/presentation/blocs/device_connection_state.dart';
+import 'package:eeg_app_max30003_stm32/features/recording/application/recording_bloc.dart';
+import 'package:eeg_app_max30003_stm32/features/recording/application/recording_bridge.dart';
+import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_models.dart';
+import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_ports.dart';
 
 void main() {
   const deviceId = BleDeviceId('AA:BB:CC');

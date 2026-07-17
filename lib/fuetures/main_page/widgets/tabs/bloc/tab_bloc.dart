@@ -2,9 +2,9 @@ import 'dart:math';
 
 import 'package:bloc/bloc.dart';
 import 'package:flutter/material.dart';
-import 'package:iot/features/devices/presentation/blocs/device_connection_bloc.dart';
-import 'package:iot/features/recording/application/recording_bloc.dart';
-import 'package:iot/features/recording/domain/recording_models.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/presentation/blocs/device_connection_bloc.dart';
+import 'package:eeg_app_max30003_stm32/features/recording/application/recording_bloc.dart';
+import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_models.dart';
 
 part 'tab_event.dart';
 part 'tab_state.dart';

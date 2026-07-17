@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/filter_settings/exp_widget.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/filter_settings/exp_widget.dart';
 
 class FillterSettingsWidget extends StatefulWidget {
   final FillterSettings initSetting;

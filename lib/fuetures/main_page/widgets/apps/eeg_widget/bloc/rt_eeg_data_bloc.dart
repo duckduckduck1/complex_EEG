@@ -1,9 +1,9 @@
 import 'package:bloc/bloc.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/bloc/proccesing_math/signal_processor.dart';
-import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/eeg_settings.dart';
-import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/eeg_widget_settings_bar/eeg_settings_bar.dart';
-import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/filter_settings/fillter_settings_class.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/bloc/proccesing_math/signal_processor.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/eeg_settings.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/eeg_widget_settings_bar/eeg_settings_bar.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/filter_settings/fillter_settings_class.dart';
 
 part 'rt_eeg_data_vent.dart';
 part 'rt_eeg_data_state.dart';

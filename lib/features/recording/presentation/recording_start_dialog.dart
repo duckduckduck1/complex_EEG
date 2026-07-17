@@ -1,6 +1,6 @@
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
-import 'package:iot/features/recording/domain/recording_models.dart';
+import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_models.dart';
 
 Future<RecordingStartConfig?> showRecordingStartDialog(
   BuildContext context,

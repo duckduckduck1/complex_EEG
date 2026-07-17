@@ -1,6 +1,6 @@
-import 'package:iot/core/signal/eeg_sample.dart';
-import 'package:iot/features/devices/data/ble_sample_decoder.dart';
-import 'package:iot/features/devices/domain/device_signal_config.dart';
+import 'package:eeg_app_max30003_stm32/core/signal/eeg_sample.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/data/ble_sample_decoder.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/domain/device_signal_config.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

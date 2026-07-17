@@ -3,11 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:iot/features/devices/application/sessions_cubit.dart';
-import 'package:iot/features/devices/domain/ble_adapter.dart';
-import 'package:iot/features/devices/domain/ble_device.dart';
-import 'package:iot/features/navigation/navigation_cubit.dart';
-import 'package:iot/fuetures/main_layout/views/main_layout_view.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/application/sessions_cubit.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/domain/ble_adapter.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/domain/ble_device.dart';
+import 'package:eeg_app_max30003_stm32/features/navigation/navigation_cubit.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_layout/views/main_layout_view.dart';
 
 class _FakeAdapter implements BleAdapter {
   @override

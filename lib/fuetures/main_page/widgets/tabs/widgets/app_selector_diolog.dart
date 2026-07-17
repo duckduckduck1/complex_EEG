@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:iot/features/devices/application/device_session.dart';
-import 'package:iot/features/devices/application/sessions_cubit.dart';
-import 'package:iot/features/devices/presentation/blocs/device_connection_state.dart';
-import 'package:iot/features/devices/presentation/device_display_name.dart';
-import 'package:iot/features/navigation/navigation_cubit.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/application/device_session.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/application/sessions_cubit.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/presentation/blocs/device_connection_state.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/presentation/device_display_name.dart';
+import 'package:eeg_app_max30003_stm32/features/navigation/navigation_cubit.dart';
 
 /// Диалог выбора устройства для новой вкладки графика.
 ///

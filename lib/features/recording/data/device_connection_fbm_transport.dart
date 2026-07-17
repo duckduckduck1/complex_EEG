@@ -1,5 +1,5 @@
-import 'package:iot/features/devices/presentation/blocs/device_connection_bloc.dart';
-import 'package:iot/features/recording/domain/recording_ports.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/presentation/blocs/device_connection_bloc.dart';
+import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_ports.dart';
 
 class DeviceConnectionFbmTransport implements FbmTransport {
   const DeviceConnectionFbmTransport({required DeviceConnectionBloc connection})

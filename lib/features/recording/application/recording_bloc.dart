@@ -1,8 +1,8 @@
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:iot/features/annotation/domain/annotation_models.dart';
-import 'package:iot/features/recording/domain/recording_models.dart';
-import 'package:iot/features/recording/domain/recording_ports.dart';
+import 'package:eeg_app_max30003_stm32/features/annotation/domain/annotation_models.dart';
+import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_models.dart';
+import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_ports.dart';
 
 part 'recording_event.dart';
 

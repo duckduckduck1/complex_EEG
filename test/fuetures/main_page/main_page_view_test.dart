@@ -3,15 +3,15 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:iot/features/devices/application/sessions_cubit.dart';
-import 'package:iot/features/devices/domain/ble_adapter.dart';
-import 'package:iot/features/devices/domain/ble_device.dart';
-import 'package:iot/features/navigation/navigation_cubit.dart';
-import 'package:iot/features/recording/application/recording_bloc.dart';
-import 'package:iot/features/recording/application/recording_bloc_factory.dart';
-import 'package:iot/features/recording/domain/recording_ports.dart';
-import 'package:iot/fuetures/main_page/views/main_page_view.dart';
-import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/device_eeg_tab.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/application/sessions_cubit.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/domain/ble_adapter.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/domain/ble_device.dart';
+import 'package:eeg_app_max30003_stm32/features/navigation/navigation_cubit.dart';
+import 'package:eeg_app_max30003_stm32/features/recording/application/recording_bloc.dart';
+import 'package:eeg_app_max30003_stm32/features/recording/application/recording_bloc_factory.dart';
+import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_ports.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/views/main_page_view.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/device_eeg_tab.dart';
 
 class _FakeConnection implements BleConnection {
   late final StreamController<List<int>> _packets;

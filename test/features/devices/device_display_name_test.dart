@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:iot/features/devices/domain/ble_device.dart';
-import 'package:iot/features/devices/presentation/device_display_name.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/domain/ble_device.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/presentation/device_display_name.dart';
 
 void main() {
   test('берёт последние 2 hex-символа MAC и переводит в верхний регистр', () {

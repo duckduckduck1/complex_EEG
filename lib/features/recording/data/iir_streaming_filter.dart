@@ -1,6 +1,6 @@
 import 'package:iirjdart/butterworth.dart';
-import 'package:iot/features/recording/domain/recording_models.dart';
-import 'package:iot/features/recording/domain/recording_ports.dart';
+import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_models.dart';
+import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_ports.dart';
 
 class IirStreamingFilterFactory implements StreamingFilterFactory {
   const IirStreamingFilterFactory({this.sampleRateHz = 250});

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:iot/main_app.dart';
+import 'package:eeg_app_max30003_stm32/main_app.dart';
 
 void main() {
   testWidgets('MainApp показывает главный экран приложения', (tester) async {

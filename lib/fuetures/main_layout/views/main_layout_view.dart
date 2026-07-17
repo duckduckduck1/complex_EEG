@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:iot/features/navigation/navigation_cubit.dart';
-import 'package:iot/fuetures/main_page/views/main_page_view.dart';
-import 'package:iot/fuetures/ble_page/views/ble_page_view.dart';
+import 'package:eeg_app_max30003_stm32/features/navigation/navigation_cubit.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/views/main_page_view.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/ble_page/views/ble_page_view.dart';
 
 /// Раскладка приложения: боковая/нижняя навигация переключает раздел.
 ///

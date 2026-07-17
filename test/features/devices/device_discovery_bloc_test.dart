@@ -1,10 +1,10 @@
 import 'dart:async';
 
-import 'package:iot/features/devices/domain/ble_adapter.dart';
-import 'package:iot/features/devices/domain/ble_device.dart';
-import 'package:iot/features/devices/presentation/blocs/device_discovery_bloc.dart';
-import 'package:iot/features/devices/presentation/blocs/device_discovery_event.dart';
-import 'package:iot/features/devices/presentation/blocs/device_discovery_state.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/domain/ble_adapter.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/domain/ble_device.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/presentation/blocs/device_discovery_bloc.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/presentation/blocs/device_discovery_event.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/presentation/blocs/device_discovery_state.dart';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 

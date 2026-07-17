@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/eeg_layout/half_hight_layout.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/eeg_layout/half_hight_layout.dart';
 
 class EegLayout extends StatelessWidget {
   final bool isFiltterShowing;

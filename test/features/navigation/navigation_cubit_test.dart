@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:iot/features/devices/domain/ble_device.dart';
-import 'package:iot/features/navigation/navigation_cubit.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/domain/ble_device.dart';
+import 'package:eeg_app_max30003_stm32/features/navigation/navigation_cubit.dart';
 
 void main() {
   late NavigationCubit cubit;

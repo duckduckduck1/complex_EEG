@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import 'package:fftea/fftea.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:iirjdart/butterworth.dart';
-import 'package:iot/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/filter_settings/fillter_settings_class.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/filter_settings/fillter_settings_class.dart';
 
 class SignalProcessor {
   final int bufferSize;
