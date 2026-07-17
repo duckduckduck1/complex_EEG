@@ -237,13 +237,20 @@ void main() {
     );
 
     await tester.enterText(noteField, 'заметка оператора');
-    await tester.tap(find.text('Движение'));
+    await tester.tap(find.text('Вздрогнула'));
     await tester.pump();
 
     expect(recordingBloc.state.labels, hasLength(1));
     expect(recordingBloc.state.labels.single.kind, AnnotationKind.event);
     expect(recordingBloc.state.labels.single.note, 'заметка оператора');
 
+    // Словарь стал больше, и поля брака ушли ниже сгиба — сначала прокручиваем
+    // список диалога, иначе ListView их ещё не построил.
+    await tester.dragUntilVisible(
+      excludeStartField,
+      find.byKey(const Key('recording-annotation-scroll')),
+      const Offset(0, -80),
+    );
     await tester.ensureVisible(excludeStartField);
     await tester.enterText(excludeStartField, '4');
     await tester.ensureVisible(excludeEndField);

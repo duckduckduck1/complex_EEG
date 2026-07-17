@@ -65,6 +65,7 @@ class _RecordingAnnotationDialogState extends State<RecordingAnnotationDialog> {
                       ? null
                       : state.sampleCount - activeSegment.startSample;
               return ListView(
+                key: const Key('recording-annotation-scroll'),
                 shrinkWrap: true,
                 padding: EdgeInsets.zero,
                 children: [
