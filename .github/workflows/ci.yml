@@ -5,13 +5,15 @@ on:
     branches:
       - main
       - dev
+      - flutter-app
   pull_request:
     branches:
       - main
       - dev
+      - flutter-app
 
 jobs:
-  docs-and-infra:
+  flutter:
     runs-on: ubuntu-latest
 
     steps:
@@ -22,25 +24,21 @@ jobs:
         run: |
           ! git grep -nI '[[:blank:]]$' -- .
 
-      - name: Validate Docker Compose
-        run: docker compose --env-file .env.example config
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.41.4
+          cache: true
 
-      - name: Build API image
-        run: docker compose --env-file .env.example build api
+      - name: Install dependencies
+        run: flutter pub get
 
-      - name: ShellCheck
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y shellcheck
-          shellcheck scripts/backup/*.sh
+      - name: Check formatting
+        run: dart format --set-exit-if-changed lib test
 
-      - name: Install Ansible
-        run: python -m pip install --upgrade ansible-core
+      - name: Analyze
+        run: flutter analyze
 
-      - name: Validate Ansible playbooks
-        working-directory: infra/ansible
-        run: |
-          ansible-playbook --syntax-check playbooks/bootstrap.yml
-          ansible-playbook --syntax-check playbooks/deploy.yml
-          ansible-playbook --syntax-check playbooks/backup.yml
-          ansible-playbook --syntax-check playbooks/monitoring.yml
+      - name: Test
+        run: flutter test
