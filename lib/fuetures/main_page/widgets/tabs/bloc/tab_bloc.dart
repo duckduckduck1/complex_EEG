@@ -104,15 +104,8 @@ class TabBloc extends Bloc<TabEvent, TabState> {
     );
   }
 
-  bool _isRecordingCloseLocked(RecordingBloc? recordingBloc) {
-    return switch (recordingBloc?.state.status) {
-      RecordingStatus.preparing ||
-      RecordingStatus.recording ||
-      RecordingStatus.pausedByDisconnect ||
-      RecordingStatus.stopping => true,
-      _ => false,
-    };
-  }
+  bool _isRecordingCloseLocked(RecordingBloc? recordingBloc) =>
+      isRecordingBusy(recordingBloc?.state.status);
 
   @override
   Future<void> close() {
