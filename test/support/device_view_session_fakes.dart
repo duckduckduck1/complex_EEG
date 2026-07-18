@@ -48,10 +48,12 @@ class FakeBleAdapter implements BleAdapter {
 DeviceViewSession createTestViewSession({
   DeviceConnectionBloc? connection,
   RecordingBloc? recordingBloc,
+  String title = 'EEG-device:01',
 }) {
   return DeviceViewSession(
     connection: connection ?? DeviceConnectionBloc(adapter: FakeBleAdapter()),
     recordingBloc: recordingBloc ?? createTestRecordingBloc(),
+    title: title,
   );
 }
 

@@ -21,8 +21,11 @@ import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widge
 /// Подключение сюда **не входит**: [connection] принадлежит `SessionsCubit`,
 /// закрытие вкладки не отключает устройство.
 class DeviceViewSession {
-  DeviceViewSession({required this.connection, required this.recordingBloc})
-    : rtEegDataBloc = RtEegDataBloc(250) {
+  DeviceViewSession({
+    required this.connection,
+    required this.recordingBloc,
+    this.title = '',
+  }) : rtEegDataBloc = RtEegDataBloc(250) {
     _eegBridge = DeviceEegBridge(
       connection: connection,
       rtEegDataBloc: rtEegDataBloc,
@@ -36,6 +39,11 @@ class DeviceViewSession {
 
   /// BLoC подключения устройства; жизненным циклом владеет `SessionsCubit`.
   final DeviceConnectionBloc connection;
+
+  /// Имя устройства для заголовков. Лежит здесь, а не выводится из вкладки:
+  /// подпись нужна и панели мозаики, а доставать её из виджета вкладки —
+  /// значит зависеть от того, каким виджетом её нарисовали.
+  final String title;
   final RecordingBloc recordingBloc;
   final RtEegDataBloc rtEegDataBloc;
 
