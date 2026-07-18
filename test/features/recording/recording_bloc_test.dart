@@ -60,11 +60,12 @@ void main() {
     },
   );
 
-  test('выключение ФБМ пишет длительность горения', () async {
+  test('сеанс ФБМ пишется одной записью с длительностью', () async {
     bloc.add(RecordingStartRequested(_startConfig()));
     await pumpEventQueue();
     bloc.add(const FbmOnRequested());
     await pumpEventQueue();
+    expect(bloc.state.fbmSessions, hasLength(1), reason: 'сеанс уже открыт');
 
     // 500 отсчётов при 250 Гц — ровно 2 секунды свечения.
     bloc.add(RecordingSamplesReceived(List<int>.filled(500, 1)));
@@ -72,11 +73,52 @@ void main() {
     bloc.add(const FbmOffRequested());
     await pumpEventQueue();
 
-    final offEvent = bloc.state.fbmEvents.last;
-    expect(offEvent.isOn, isFalse);
-    expect(offEvent.durationSamples, 500);
-    expect(offEvent.toJson()['duration'], '00:02');
-    expect(bloc.state.fbmOnSampleIndex, isNull, reason: 'сеанс закрыт');
+    expect(
+      bloc.state.fbmSessions,
+      hasLength(1),
+      reason: 'выключение дополняет сеанс, а не заводит второй',
+    );
+    final session = bloc.state.fbmSessions.single;
+    expect(session.isOpen, isFalse);
+    expect(session.durationSamples, 500);
+    final json = session.toJson();
+    expect(json['duration'], '00:02');
+    expect(json['start_time'], '00:00');
+    expect(json['end_time'], '00:02');
+    expect(json['end_reason'], 'manual');
+    expect(json.containsKey('in_progress'), isFalse);
+    expect(bloc.state.fbmOn, isFalse);
+  });
+
+  test('смена яркости не рвёт сеанс ФБМ', () async {
+    bloc.add(RecordingStartRequested(_startConfig()));
+    await pumpEventQueue();
+    bloc.add(const FbmOnRequested());
+    await pumpEventQueue();
+    bloc.add(const FbmPwmChanged(80));
+    await pumpEventQueue();
+
+    expect(bloc.state.fbmSessions, hasLength(1));
+    expect(bloc.state.fbmSessions.single.isOpen, isTrue);
+    expect(bloc.state.fbmSessions.single.pwmLevel, 80);
+  });
+
+  test('обрыв связи закрывает сеанс ФБМ временем обрыва', () async {
+    bloc.add(RecordingStartRequested(_startConfig()));
+    await pumpEventQueue();
+    bloc.add(const FbmOnRequested());
+    await pumpEventQueue();
+    bloc.add(RecordingSamplesReceived(List<int>.filled(250, 1)));
+    await pumpEventQueue();
+
+    bloc.add(const RecordingConnectionLost());
+    await pumpEventQueue();
+
+    expect(bloc.state.fbmSessions, hasLength(1));
+    final session = bloc.state.fbmSessions.single;
+    expect(session.isOpen, isFalse, reason: 'таймер не истёк, но сеанс закрыт');
+    expect(session.durationSamples, 250);
+    expect(session.toJson()['end_reason'], 'connection_lost');
   });
 
   test('таймер гасит ФБМ сам, но ручное включение остаётся', () async {
@@ -98,9 +140,9 @@ void main() {
     await pumpEventQueue();
 
     expect(bloc.state.fbmOn, isFalse);
-    final offEvent = bloc.state.fbmEvents.last;
-    expect(offEvent.isOn, isFalse);
-    expect(offEvent.reason, 'auto_off_timer');
+    final session = bloc.state.fbmSessions.single;
+    expect(session.isOpen, isFalse);
+    expect(session.toJson()['end_reason'], 'auto_off_timer');
     expect(fbmTransport.commands.last.on, isFalse, reason: 'команда ушла');
   });
 
@@ -237,6 +279,56 @@ void main() {
     expect(segment['end_sample'], 4);
   });
 
+  test('идущий сеанс ФБМ остаётся в снимках одной записью', () async {
+    final snapshotStorage = _MemoryExperimentStorage();
+    final snapshotBloc = RecordingBloc(
+      storage: snapshotStorage,
+      filterFactory: const _OffsetFilterFactory(),
+      idGenerator: const _FixedIdGenerator('01KXTF74CQSD65FWE0S2DF1WWZ'),
+      fbmTransport: _FakeFbmTransport(),
+      jsonSnapshotInterval: Duration.zero,
+    );
+    addTearDown(() async {
+      if (!snapshotBloc.isClosed) await snapshotBloc.close();
+    });
+
+    snapshotBloc.add(RecordingStartRequested(_startConfig()));
+    await pumpEventQueue();
+    snapshotBloc.add(const FbmOnRequested());
+    await pumpEventQueue();
+
+    // Три снимка подряд, пока свет горит: записей всё равно должна быть одна.
+    for (var i = 0; i < 3; i++) {
+      snapshotBloc.add(RecordingSamplesReceived(List<int>.filled(250, 1)));
+      await pumpEventQueue();
+    }
+
+    final sessions =
+        snapshotStorage.experimentJson!['fbm_sessions']! as List<Object?>;
+    expect(sessions, hasLength(1), reason: 'снимок не дозаписывает сеанс');
+    final session = sessions.single! as Map<String, Object?>;
+    expect(session['in_progress'], isTrue, reason: 'свет ещё горит');
+    expect(session['duration'], '00:03', reason: 'длительность видна сразу');
+    expect(
+      session.containsKey('end_reason'),
+      isFalse,
+      reason: 'причины конца ещё нет',
+    );
+
+    snapshotBloc.add(const FbmOffRequested());
+    await pumpEventQueue();
+    snapshotBloc.add(const RecordingSamplesReceived([1]));
+    await pumpEventQueue();
+
+    final closed =
+        (snapshotStorage.experimentJson!['fbm_sessions']! as List<Object?>)
+                .single!
+            as Map<String, Object?>;
+    expect(closed.containsKey('in_progress'), isFalse);
+    expect(closed['end_reason'], 'manual');
+    expect(closed['duration'], '00:03');
+  });
+
   test('обрыв связи сразу сохраняет снимок, не дожидаясь интервала', () async {
     bloc.add(RecordingStartRequested(_startConfig()));
     await pumpEventQueue();
@@ -282,7 +374,7 @@ void main() {
     expect(segment['start_sample'], 0);
     expect(segment['end_sample'], 3);
     expect(experimentJson['labels'], isEmpty);
-    expect(experimentJson['fbm_events'], isEmpty);
+    expect(experimentJson['fbm_sessions'], isEmpty);
     expect(storage.journal.map((event) => event['type']), [
       'experiment_started',
       'segment_started',
@@ -550,7 +642,8 @@ void main() {
     ]);
     expect(bloc.state.fbmOn, isFalse);
     expect(bloc.state.pwmLevel, 60);
-    expect(bloc.state.fbmEvents, hasLength(3));
+    // В состоянии это один сеанс, а в журнале — три отдельных действия.
+    expect(bloc.state.fbmSessions, hasLength(1));
     expect(fbmEvents.map((event) => event['on']), [true, true, false]);
     expect(fbmEvents.map((event) => event['pwm_level']), [20, 60, 60]);
     expect(fbmEvents.map((event) => event['pwm_byte']), [51, 153, 153]);
@@ -569,7 +662,7 @@ void main() {
     await pumpEventQueue();
 
     expect(bloc.state.pwmLevel, 60);
-    expect(bloc.state.fbmEvents, isEmpty);
+    expect(bloc.state.fbmSessions, isEmpty);
     expect(fbmTransport.commands, isEmpty);
     expect(
       storage.journal.where((event) => event['type'] == 'fbm_event'),
@@ -580,7 +673,7 @@ void main() {
     await pumpEventQueue();
 
     expect(fbmTransport.commands, [const _FbmCommand(on: true, pwmByte: 153)]);
-    expect(bloc.state.fbmEvents.single.pwmLevel, 60);
+    expect(bloc.state.fbmSessions.single.pwmLevel, 60);
   });
 
   test('fbm is ignored outside recording and auto-off on stop', () async {
@@ -598,7 +691,7 @@ void main() {
     await pumpEventQueue(times: 5);
 
     final experimentJson = storage.experimentJson!;
-    final fbmEvents = experimentJson['fbm_events']! as List<Object?>;
+    final fbmSessions = experimentJson['fbm_sessions']! as List<Object?>;
 
     expect(fbmTransport.commands, [
       const _FbmCommand(on: true, pwmByte: 102),
@@ -606,11 +699,11 @@ void main() {
     ]);
     expect(bloc.state.status, RecordingStatus.stopped);
     expect(bloc.state.fbmOn, isFalse);
-    expect(fbmEvents, hasLength(2));
-    final offEvent = fbmEvents.last! as Map<String, Object?>;
-    expect(offEvent['on'], isFalse);
-    expect(offEvent['command_delivered'], isTrue);
-    expect(offEvent['reason'], 'recording_stop');
+    expect(fbmSessions, hasLength(1), reason: 'одна запись на сеанс');
+    final session = fbmSessions.single! as Map<String, Object?>;
+    expect(session['end_command_delivered'], isTrue);
+    expect(session['end_reason'], 'recording_stopped');
+    expect(session.containsKey('in_progress'), isFalse);
   });
 
   test(
@@ -639,7 +732,7 @@ void main() {
       ]);
       expect(autoOffEvent['on'], isFalse);
       expect(autoOffEvent['command_delivered'], isFalse);
-      expect(autoOffEvent['reason'], 'connection_lost');
+      expect(autoOffEvent['end_reason'], 'connection_lost');
       expect(autoOffEvent['sample_index'], 1);
       expect(autoOffEvent['segment_sample_index'], 1);
     },
