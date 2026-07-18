@@ -17,6 +17,31 @@ import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/tabs/tab_activ
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/tabs/widgets/app_selector_diolog.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/tabs/widgets/tab_bar.dart';
 
+/// Экран без вкладок: закрыть можно и последнюю, тогда остаётся подсказка.
+class _NoTabsView extends StatelessWidget {
+  const _NoTabsView();
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.tab_outlined, size: 28, color: colorScheme.outline),
+          const SizedBox(height: 10),
+          Text(
+            'Нет открытых вкладок — добавьте устройство кнопкой «+»',
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: colorScheme.outline),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class MainPage extends StatefulWidget {
   const MainPage({super.key});
 
@@ -187,7 +212,9 @@ class _MainPageState extends State<MainPage> with TickerProviderStateMixin {
           ),
           body: BlocBuilder<TabBloc, TabState>(
             builder: (context, state) {
-              if (state.controller == null) return const Center();
+              if (state.controller == null || state.tabContents.isEmpty) {
+                return const _NoTabsView();
+              }
               return IndexedStack(
                 index: state.currentIndex,
                 children: [

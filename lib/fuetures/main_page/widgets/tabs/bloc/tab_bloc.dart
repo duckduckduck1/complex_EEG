@@ -64,7 +64,6 @@ class TabBloc extends Bloc<TabEvent, TabState> {
   }
 
   void _onCloseTab(CloseTab event, Emitter<TabState> emit) {
-    if (state.tabs.length <= 1) return; // Не закрывать последнюю вкладку
     if (event.index < 0 || event.index >= state.tabs.length) return;
     final recordingBloc =
         event.index < state.recordingBlocs.length
@@ -80,10 +79,13 @@ class TabBloc extends Bloc<TabEvent, TabState> {
     )..removeAt(event.index);
     final newRecordingBlocs = List<RecordingBloc?>.from(state.recordingBlocs)
       ..removeAt(event.index);
+    // Закрыть можно и последнюю вкладку — тогда остаётся пустой экран.
     final newIndex =
-        event.index < state.currentIndex
-            ? state.currentIndex - 1
-            : min(state.currentIndex, newTabs.length - 1);
+        newTabs.isEmpty
+            ? 0
+            : (event.index < state.currentIndex
+                ? state.currentIndex - 1
+                : min(state.currentIndex, newTabs.length - 1));
 
     _controller.dispose();
     _controller = TabController(
