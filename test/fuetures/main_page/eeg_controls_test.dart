@@ -245,6 +245,44 @@ void main() {
     expect(find.text('Гасить: 1 мин'), findsOneWidget);
   });
 
+  testWidgets('своё время автовыключения задаётся в чч:мм:сс', (tester) async {
+    final recordingBloc = _createRecordingBloc();
+    addTearDown(recordingBloc.close);
+
+    recordingBloc.add(
+      const RecordingStartRequested(
+        RecordingStartConfig(
+          rootDirectory: 'memory-root',
+          pwmLevel: 50,
+          displayName: 'Мышь 1',
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.pumpWidget(
+      wrap(
+        RecordingReservationStrip(
+          recordingBloc: recordingBloc,
+          onStartPressed: () {},
+        ),
+        width: 900,
+      ),
+    );
+
+    await tester.tap(find.text('Гасить: Вручную'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Своё время…'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byKey(const Key('fbm-auto-off-input')), '1:30');
+    await tester.tap(find.text('Готово'));
+    await tester.pumpAndSettle();
+
+    expect(recordingBloc.state.fbmAutoOffSeconds, 90);
+    expect(find.text('Гасить: 01:30'), findsOneWidget);
+  });
+
   testWidgets('state picker starts a state and toggles the button to stop', (
     tester,
   ) async {
