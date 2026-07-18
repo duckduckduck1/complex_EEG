@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:eeg_app_max30003_stm32/features/recording/data/file_experiment_storage.dart';
+import 'package:eeg_app_max30003_stm32/features/recording/domain/experiment_folder_name.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -24,6 +25,7 @@ void main() {
     await storage.createExperiment(
       rootDirectory: root.path,
       experimentId: 'exp_race',
+      folderName: 'exp_race',
     );
 
     final futures = <Future<void>>[];
@@ -42,11 +44,57 @@ void main() {
     expect(await signal.length(), 50 * 2 * 4);
   });
 
+  test('папка называется именем эксперимента, а не ULID', () async {
+    final storage = FileExperimentStorage();
+    await storage.createExperiment(
+      rootDirectory: root.path,
+      experimentId: 'exp_01KXRRWFYXAS309BZ0BX5KQ65Z',
+      folderName: 'Мышь 1',
+    );
+    await storage.close();
+
+    final folder = Directory.fromUri(root.uri.resolve('Мышь%201/'));
+    expect(await folder.exists(), isTrue);
+    expect(
+      await File.fromUri(folder.uri.resolve('signal.bin')).exists(),
+      isTrue,
+    );
+  });
+
+  test('повтор названия отклоняется и не трогает чужие данные', () async {
+    final first = FileExperimentStorage();
+    await first.createExperiment(
+      rootDirectory: root.path,
+      experimentId: 'exp_first',
+      folderName: 'Мышь 1',
+    );
+    await first.appendSamples([1, 2, 3]);
+    await first.close();
+
+    final signal = File.fromUri(root.uri.resolve('Мышь%201/signal.bin'));
+    final sizeBefore = await signal.length();
+    expect(sizeBefore, 3 * 4);
+
+    final second = FileExperimentStorage();
+    await expectLater(
+      second.createExperiment(
+        rootDirectory: root.path,
+        experimentId: 'exp_second',
+        folderName: 'Мышь 1',
+      ),
+      throwsA(isA<ExperimentFolderExists>()),
+    );
+
+    // Данные первого эксперимента не затёрты.
+    expect(await signal.length(), sizeBefore);
+  });
+
   test('close дожидается записи и закрывает файл без гонки', () async {
     final storage = FileExperimentStorage(flushInterval: Duration.zero);
     await storage.createExperiment(
       rootDirectory: root.path,
       experimentId: 'exp_close',
+      folderName: 'exp_close',
     );
 
     // append и close «одновременно»: close должен встать в очередь после append.
