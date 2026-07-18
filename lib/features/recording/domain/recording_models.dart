@@ -100,7 +100,13 @@ class RecordingFbmEvent extends Equatable {
     required this.pwmByte,
     required this.commandDelivered,
     this.reason,
+    this.durationSamples,
   });
+
+  /// Сколько ФБМ горела до этого выключения (в отсчётах). Есть только у события
+  /// выключения — по нему видно длительность сеанса, не считая руками разницу
+  /// индексов.
+  final int? durationSamples;
 
   final String segmentId;
   final int segmentSampleIndex;
@@ -125,6 +131,9 @@ class RecordingFbmEvent extends Equatable {
     'pwm_byte': pwmByte,
     'command_delivered': commandDelivered,
     if (reason != null) 'reason': reason,
+    if (durationSamples != null) 'duration_samples': durationSamples,
+    if (durationSamples != null)
+      'duration': formatClockFromSamples(durationSamples!),
   };
 
   @override
@@ -138,6 +147,7 @@ class RecordingFbmEvent extends Equatable {
     pwmByte,
     commandDelivered,
     reason,
+    durationSamples,
   ];
 }
 
@@ -242,6 +252,8 @@ class RecordingState extends Equatable {
     this.filters = const RecordingFilters(),
     this.pwmLevel,
     this.fbmOn = false,
+    this.fbmOnSampleIndex,
+    this.fbmAutoOffSeconds,
     this.fbmEvents = const <RecordingFbmEvent>[],
     this.lastError,
   });
@@ -262,6 +274,14 @@ class RecordingState extends Equatable {
 
   final int? pwmLevel;
   final bool fbmOn;
+
+  /// Индекс отсчёта, на котором ФБМ включили. По нему считается, сколько она
+  /// уже горит, — и в интерфейсе, и для автовыключения.
+  final int? fbmOnSampleIndex;
+
+  /// Через сколько секунд после включения гасить свет автоматически.
+  /// `null` — только вручную.
+  final int? fbmAutoOffSeconds;
   final List<RecordingFbmEvent> fbmEvents;
   final RecordingFailure? lastError;
 
@@ -280,6 +300,8 @@ class RecordingState extends Equatable {
     RecordingFilters? filters,
     Object? pwmLevel = _unset,
     bool? fbmOn,
+    Object? fbmOnSampleIndex = _unset,
+    Object? fbmAutoOffSeconds = _unset,
     List<RecordingFbmEvent>? fbmEvents,
     Object? lastError = _unset,
   }) {
@@ -304,6 +326,14 @@ class RecordingState extends Equatable {
       filters: filters ?? this.filters,
       pwmLevel: pwmLevel == _unset ? this.pwmLevel : pwmLevel as int?,
       fbmOn: fbmOn ?? this.fbmOn,
+      fbmOnSampleIndex:
+          fbmOnSampleIndex == _unset
+              ? this.fbmOnSampleIndex
+              : fbmOnSampleIndex as int?,
+      fbmAutoOffSeconds:
+          fbmAutoOffSeconds == _unset
+              ? this.fbmAutoOffSeconds
+              : fbmAutoOffSeconds as int?,
       fbmEvents: fbmEvents ?? this.fbmEvents,
       lastError:
           lastError == _unset ? this.lastError : lastError as RecordingFailure?,
@@ -321,8 +351,11 @@ class RecordingState extends Equatable {
     gaps,
     labels,
     activeDraftLabel,
+    filters,
     pwmLevel,
     fbmOn,
+    fbmOnSampleIndex,
+    fbmAutoOffSeconds,
     fbmEvents,
     lastError,
   ];

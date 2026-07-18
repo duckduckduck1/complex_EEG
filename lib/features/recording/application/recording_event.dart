@@ -45,6 +45,17 @@ final class FbmOffRequested extends RecordingEvent {
   const FbmOffRequested();
 }
 
+/// Настроить автовыключение ФБМ: через сколько секунд после включения гасить
+/// свет самому. `null` — только вручную.
+final class FbmAutoOffChanged extends RecordingEvent {
+  const FbmAutoOffChanged(this.seconds);
+
+  final int? seconds;
+
+  @override
+  List<Object?> get props => [seconds];
+}
+
 final class FbmPwmChanged extends RecordingEvent {
   const FbmPwmChanged(this.pwmLevel);
 

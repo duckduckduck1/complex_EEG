@@ -201,11 +201,48 @@ void main() {
     await tester.pump();
 
     expect(recordingBloc.state.fbmOn, isTrue);
-    expect(find.text('Свет выкл'), findsOneWidget);
+    // Пока свет горит, на кнопке идёт время сеанса ФБМ.
+    expect(find.text('Свет выкл · 00:00'), findsOneWidget);
 
     await tester.tap(find.text('Список'));
     await tester.pump();
     expect(annotationsPressed, isTrue);
+  });
+
+  testWidgets('выбор таймера автовыключения доходит до записи', (tester) async {
+    final recordingBloc = _createRecordingBloc();
+    addTearDown(recordingBloc.close);
+
+    recordingBloc.add(
+      const RecordingStartRequested(
+        RecordingStartConfig(
+          rootDirectory: 'memory-root',
+          pwmLevel: 50,
+          displayName: 'Мышь 1',
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.pumpWidget(
+      wrap(
+        RecordingReservationStrip(
+          recordingBloc: recordingBloc,
+          onStartPressed: () {},
+        ),
+        width: 900,
+      ),
+    );
+
+    expect(find.text('Гасить: Вручную'), findsOneWidget);
+
+    await tester.tap(find.text('Гасить: Вручную'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('1 мин'));
+    await tester.pumpAndSettle();
+
+    expect(recordingBloc.state.fbmAutoOffSeconds, 60);
+    expect(find.text('Гасить: 1 мин'), findsOneWidget);
   });
 
   testWidgets('state picker starts a state and toggles the button to stop', (
