@@ -15,6 +15,7 @@ class DeviceMosaicView extends StatelessWidget {
     required this.selectedIndex,
     required this.onSelected,
     required this.onExpand,
+    required this.onStartRecording,
     this.gap = 8,
   });
 
@@ -25,6 +26,7 @@ class DeviceMosaicView extends StatelessWidget {
   final int selectedIndex;
   final ValueChanged<int> onSelected;
   final ValueChanged<int> onExpand;
+  final ValueChanged<DeviceViewSession> onStartRecording;
   final double gap;
 
   @override
@@ -72,6 +74,7 @@ class DeviceMosaicView extends StatelessWidget {
                 isSelected: index == selectedIndex,
                 onSelected: () => onSelected(index),
                 onExpand: () => onExpand(index),
+                onStartRecording: () => onStartRecording(session),
               );
             },
           );

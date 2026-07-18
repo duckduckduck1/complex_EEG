@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:eeg_app_max30003_stm32/features/recording/application/recording_bloc.dart';
+import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_models.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/mosaic/device_mosaic_view.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/mosaic/mosaic_panel.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/tabs/device_view_session.dart';
@@ -31,6 +33,7 @@ void main() {
     int selectedIndex = 0,
     ValueChanged<int>? onSelected,
     ValueChanged<int>? onExpand,
+    ValueChanged<DeviceViewSession>? onStartRecording,
     Size size = const Size(1900, 950),
   }) async {
     tester.view.physicalSize = size;
@@ -46,6 +49,7 @@ void main() {
             selectedIndex: selectedIndex,
             onSelected: onSelected ?? (_) {},
             onExpand: onExpand ?? (_) {},
+            onStartRecording: onStartRecording ?? (_) {},
           ),
         ),
       ),
@@ -63,7 +67,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('клик по панели выбирает её, двойной — разворачивает', (
+  testWidgets('клик выбирает панель, кнопка в заголовке разворачивает', (
     tester,
   ) async {
     int? selected;
@@ -80,17 +84,9 @@ void main() {
     await tester.pump();
     expect(selected, 2);
 
-    // Между тапами должно пройти не меньше kDoubleTapMinTime (40 мс), иначе
-    // распознаватель второй тап отбросит, и это будут два одиночных клика.
-    await tester.tap(find.byType(DeviceMosaicPanel).at(1));
-    await tester.pump(const Duration(milliseconds: 100));
-    await tester.tap(find.byType(DeviceMosaicPanel).at(1));
+    await tester.tap(find.byTooltip('Открыть вкладкой').at(1));
     await tester.pump();
     expect(expanded, 1);
-
-    // Распознаватель двойного клика оставляет за собой таймеры — досматриваем
-    // их до конца, иначе тест падает на pending timer.
-    await tester.pump(const Duration(milliseconds: 500));
   });
 
   testWidgets('панели не сжимаются ниже читаемой высоты, а прокручиваются', (
@@ -105,6 +101,94 @@ void main() {
     expect(panelSize.height, greaterThanOrEqualTo(200));
     expect(panelSize.width, greaterThanOrEqualTo(260));
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('старт записи запрашивается из панели', (tester) async {
+    DeviceViewSession? started;
+    final sessions = makeSessions(tester, 2);
+    await pumpMosaic(
+      tester,
+      sessions,
+      onStartRecording: (session) => started = session,
+    );
+
+    await tester.tap(find.byTooltip('Начать эксперимент').at(1));
+    await tester.pump();
+
+    expect(started, same(sessions[1]));
+  });
+
+  testWidgets('остановка записи из панели спрашивает подтверждение', (
+    tester,
+  ) async {
+    // Промах по «стоп» обрывает многочасовой эксперимент — цена ошибки здесь
+    // несопоставима с промахом по «старту».
+    final sessions = makeSessions(tester, 1);
+    final recordingBloc = sessions.single.recordingBloc;
+    recordingBloc.add(
+      const RecordingStartRequested(
+        RecordingStartConfig(
+          rootDirectory: 'memory-root',
+          pwmLevel: 50,
+          displayName: 'Мышь 1',
+        ),
+      ),
+    );
+    await pumpMosaic(tester, sessions);
+    await tester.pump();
+
+    await tester.tap(find.byTooltip('Завершить запись'));
+    await tester.pumpAndSettle();
+    expect(find.text('Завершить эксперимент?'), findsOneWidget);
+
+    await tester.tap(find.text('Отмена'));
+    await tester.pumpAndSettle();
+    expect(
+      recordingBloc.state.status,
+      RecordingStatus.recording,
+      reason: 'отмена не должна останавливать запись',
+    );
+  });
+
+  testWidgets('метки ставятся из панели, пока идёт запись', (tester) async {
+    final sessions = makeSessions(tester, 1);
+    final recordingBloc = sessions.single.recordingBloc;
+    await pumpMosaic(tester, sessions);
+
+    // Записи нет — метку поставить некуда.
+    expect(
+      tester
+          .widget<InkResponse>(
+            find.descendant(
+              of: find.byTooltip('Поставить метку'),
+              matching: find.byType(InkResponse),
+            ),
+          )
+          .onTap,
+      isNull,
+    );
+
+    recordingBloc.add(
+      const RecordingStartRequested(
+        RecordingStartConfig(
+          rootDirectory: 'memory-root',
+          pwmLevel: 50,
+          displayName: 'Мышь 1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.byTooltip('Поставить метку'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Спит').last);
+    await tester.pumpAndSettle();
+
+    expect(recordingBloc.state.activeDraftLabel?.labelTypeId, 'sleep');
+    // Открытое состояние видно прямо в панели, иначе метка тянулась бы
+    // до конца записи незамеченной.
+    expect(find.text('Спит'), findsOneWidget);
   });
 
   testWidgets('пустой список не роняет мозаику', (tester) async {

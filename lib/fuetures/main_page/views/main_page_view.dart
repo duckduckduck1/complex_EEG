@@ -269,6 +269,8 @@ class _MainPageState extends State<MainPage> with TickerProviderStateMixin {
                         _tabBloc.add(TabChanged(index));
                         _viewModeCubit.showTabs();
                       },
+                      onStartRecording:
+                          (session) => _startRecording(session.recordingBloc),
                     );
                   }
 

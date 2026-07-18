@@ -6,6 +6,7 @@ import 'package:eeg_app_max30003_stm32/features/devices/presentation/blocs/devic
 import 'package:eeg_app_max30003_stm32/features/recording/application/recording_bloc.dart';
 import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_models.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/bloc/rt_eeg_data_bloc.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/mosaic/mosaic_panel_controls.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/mosaic/mosaic_plots.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/plots/throttled_bloc_builder.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/tabs/device_view_session.dart';
@@ -23,6 +24,7 @@ class DeviceMosaicPanel extends StatelessWidget {
     required this.isSelected,
     required this.onSelected,
     required this.onExpand,
+    required this.onStartRecording,
     this.refreshInterval = const Duration(milliseconds: 100),
   });
 
@@ -36,6 +38,10 @@ class DeviceMosaicPanel extends StatelessWidget {
   /// Открыть устройство вкладкой: там полный график с осями и зумом.
   final VoidCallback onExpand;
 
+  /// Старт записи спрашивает название эксперимента и фильтры, а диалоги живут
+  /// на экране, а не в панели.
+  final VoidCallback onStartRecording;
+
   /// Как часто перерисовывать графики панели. По умолчанию 10 кадров в секунду:
   /// на панели в несколько сотен пикселей разницы с 250 не видно, а нагрузка
   /// отличается в разы.
@@ -44,47 +50,44 @@ class DeviceMosaicPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    // Выбор — через Listener, а не через onTap: рядом живёт распознаватель
-    // двойного клика, и любой жест из арены (включая onTapDown) ждал бы её
-    // разрешения — треть секунды задержки на каждое переключение панели.
-    // Listener в арене не участвует и срабатывает сразу. Двойной клик при этом
-    // сначала выберет панель, потом развернёт — ровно то, чего ждёшь.
+    // Выбор — через Listener, а не через жест: жест участвует в арене и
+    // задерживал бы срабатывание. Здесь это не косметика — распознаватель на
+    // панели тормозил бы и все кнопки внутри неё, пока арена не разрешится.
+    // Поэтому же разворот сделан явной кнопкой в заголовке, а не двойным
+    // кликом: так он ещё и заметнее.
     return Listener(
       behavior: HitTestBehavior.opaque,
       onPointerDown: (_) => onSelected(),
-      child: GestureDetector(
-        // Кликается вся панель целиком: по умолчанию хит-тест уходит ребёнку,
-        // а в середине панели график с выключенными касаниями — попасть можно
-        // было бы только в рамку.
-        behavior: HitTestBehavior.opaque,
-        onDoubleTap: onExpand,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: colorScheme.surface.withValues(alpha: 0.72),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color:
-                  isSelected
-                      ? colorScheme.primary
-                      : colorScheme.outline.withValues(alpha: 0.9),
-              width: isSelected ? 2 : 1,
-            ),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: colorScheme.surface.withValues(alpha: 0.72),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color:
+                isSelected
+                    ? colorScheme.primary
+                    : colorScheme.outline.withValues(alpha: 0.9),
+            width: isSelected ? 2 : 1,
           ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _PanelHeader(session: session, title: title),
-                const SizedBox(height: 6),
-                Expanded(
-                  child: _PanelPlots(
-                    session: session,
-                    refreshInterval: refreshInterval,
-                  ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _PanelHeader(session: session, title: title, onExpand: onExpand),
+              const SizedBox(height: 6),
+              Expanded(
+                child: _PanelPlots(
+                  session: session,
+                  refreshInterval: refreshInterval,
                 ),
-              ],
-            ),
+              ),
+              MosaicPanelControls(
+                session: session,
+                onStartRecording: onStartRecording,
+              ),
+            ],
           ),
         ),
       ),
@@ -97,10 +100,15 @@ class DeviceMosaicPanel extends StatelessWidget {
 /// Слушает bloc'и записи и подключения напрямую: они меняются редко, и
 /// ограничивать их частоту незачем — в отличие от потока отсчётов.
 class _PanelHeader extends StatelessWidget {
-  const _PanelHeader({required this.session, required this.title});
+  const _PanelHeader({
+    required this.session,
+    required this.title,
+    required this.onExpand,
+  });
 
   final DeviceViewSession session;
   final String title;
+  final VoidCallback onExpand;
 
   @override
   Widget build(BuildContext context) {
@@ -160,6 +168,22 @@ class _PanelHeader extends StatelessWidget {
                         isConnected
                             ? colorScheme.onSurfaceVariant
                             : colorScheme.error,
+                  ),
+                ),
+                const SizedBox(width: 2),
+                Tooltip(
+                  message: 'Открыть вкладкой',
+                  child: InkResponse(
+                    onTap: onExpand,
+                    radius: 14,
+                    child: Padding(
+                      padding: const EdgeInsets.all(2),
+                      child: Icon(
+                        Icons.open_in_full_rounded,
+                        size: 13,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
                   ),
                 ),
               ],
