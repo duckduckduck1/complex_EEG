@@ -378,7 +378,10 @@ class _MemoryExperimentStorage implements ExperimentStorage {
   }) async {}
 
   @override
-  Future<void> appendSamples(List<int> samples) async {}
+  Future<void> appendSamples({
+    required List<int> filtered,
+    required List<int> raw,
+  }) async {}
 
   @override
   Future<void> appendJournal(

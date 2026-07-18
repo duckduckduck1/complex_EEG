@@ -27,9 +27,13 @@ class _RecordingStartRejected implements Exception {
 ///
 /// Ключевые гарантии, которые легко сломать незаметно:
 ///
-/// - В `signal.bin` уходит **фильтрованный** сигнал: каждый отсчёт проходит
-///   через потоковый [StreamingFilter]. Raw-поток BLE не сохраняется, а
-///   применённые фильтры пишутся в `experiment.json`.
+/// - Сигнал пишется в двух версиях одной длины: `signal.bin` — после потокового
+///   [StreamingFilter], `signal_raw.bin` — как пришёл с устройства. Фильтр
+///   необратим, поэтому сырой сигнал храним: по нему можно перефильтровать
+///   иначе. Применённые фильтры пишутся в `experiment.json`.
+/// - `experiment.json` пересобирается не только на остановке, но и раз в
+///   [jsonSnapshotInterval]: после падения приложения папка остаётся пригодной
+///   для разбора.
 /// - Обрыв связи закрывает сегмент и добавляет [RecordingGap], но **не
 ///   дописывает синтетические отсчёты**: дырка во времени описана в `gaps`, а
 ///   не заполнена нулями. Переподключение открывает новый сегмент.
@@ -49,6 +53,7 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
     required FbmTransport fbmTransport,
     List<LabelType> labelTypes = defaultLabelTypes,
     RecordingClock clock = const SystemRecordingClock(),
+    this.jsonSnapshotInterval = const Duration(seconds: 30),
   }) : _storage = storage,
        _filterFactory = filterFactory,
        _idGenerator = idGenerator,
@@ -78,8 +83,12 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
   final Map<String, LabelType> _labelTypes;
   final RecordingClock _clock;
 
+  /// Как часто во время записи пересобирать `experiment.json`.
+  final Duration jsonSnapshotInterval;
+
   RecordingStartConfig? _config;
   StreamingFilter _filter = const PassThroughStreamingFilter();
+  DateTime _lastJsonSnapshot = DateTime.fromMillisecondsSinceEpoch(0);
   bool _connectionLostInProgress = false;
   bool _resumeAfterConnectionLost = false;
   int _nextLabelIndex = 1;
@@ -107,6 +116,7 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
       final startedAt = _clock.now();
       _config = event.config;
       _filter = _filterFactory.create(event.config.filters);
+      _lastJsonSnapshot = startedAt;
 
       // Папка называется как эксперимент, experiment_id остаётся машинным ULID.
       await _storage.createExperiment(
@@ -170,11 +180,14 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
     }
 
     try {
-      final filtered = event.samplesMicrovolts
-          .map(_filter.filter)
-          .toList(growable: false);
-      await _storage.appendSamples(filtered);
-      emit(state.copyWith(sampleCount: state.sampleCount + filtered.length));
+      final raw = event.samplesMicrovolts;
+      final filtered = raw.map(_filter.filter).toList(growable: false);
+      await _storage.appendSamples(filtered: filtered, raw: raw);
+      final updated = state.copyWith(
+        sampleCount: state.sampleCount + filtered.length,
+      );
+      emit(updated);
+      await _writeJsonSnapshot(updated);
     } catch (error) {
       await _safeCloseStorage();
       emit(
@@ -278,20 +291,22 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
         flush: true,
       );
 
-      emit(
-        stateBeforeLost.copyWith(
-          status: RecordingStatus.pausedByDisconnect,
-          activeSegmentId: null,
-          segments: segments,
-          gaps: [
-            ...stateBeforeLost.gaps,
-            RecordingGap(
-              startedAtWallClock: lostAt,
-              sampleIndex: stateBeforeLost.sampleCount,
-            ),
-          ],
-        ),
+      final pausedState = stateBeforeLost.copyWith(
+        status: RecordingStatus.pausedByDisconnect,
+        activeSegmentId: null,
+        segments: segments,
+        gaps: [
+          ...stateBeforeLost.gaps,
+          RecordingGap(
+            startedAtWallClock: lostAt,
+            sampleIndex: stateBeforeLost.sampleCount,
+          ),
+        ],
       );
+      emit(pausedState);
+      // Обрыв — момент, после которого запись может и не продолжиться: сохраняем
+      // снимок сразу, не дожидаясь интервала.
+      await _writeJsonSnapshot(pausedState, force: true);
     } catch (error) {
       await _safeCloseStorage();
       emit(
@@ -742,6 +757,52 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
           .map((event) => event.toJson())
           .toList(growable: false),
     };
+  }
+
+  /// Периодический снимок `experiment.json` во время записи.
+  ///
+  /// Финальный json собирается только на остановке, поэтому после падения
+  /// приложения или выключения питания папка осталась бы без него — а ночная
+  /// запись это часы данных. Снимок пишется тем же атомарным путём и делает
+  /// папку пригодной для разбора в любой момент, с точностью до последнего
+  /// снимка.
+  Future<void> _writeJsonSnapshot(
+    RecordingState current, {
+    bool force = false,
+  }) async {
+    final config = _config;
+    final experimentId = current.experimentId;
+    if (config == null || experimentId == null) {
+      return;
+    }
+    final now = _clock.now();
+    if (!force && now.difference(_lastJsonSnapshot) < jsonSnapshotInterval) {
+      return;
+    }
+    _lastJsonSnapshot = now;
+
+    // Активный сегмент в снимке закрываем текущим счётчиком: в json попадают
+    // только закрытые, иначе снимок остался бы вообще без сегментов.
+    final segments = [
+      for (final segment in current.segments)
+        segment.isClosed
+            ? segment
+            : segment.close(
+              endSample: current.sampleCount,
+              endedAtWallClock: now,
+            ),
+    ];
+
+    await _storage.writeExperimentJson(
+      _buildExperimentJson(
+        experimentId: experimentId,
+        config: config,
+        segments: segments,
+        gaps: current.gaps,
+        labels: current.labels,
+        fbmEvents: current.fbmEvents,
+      ),
+    );
   }
 
   Map<String, Object?> _journalEvent({
