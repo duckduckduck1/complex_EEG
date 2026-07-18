@@ -1,5 +1,6 @@
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:eeg_app_max30003_stm32/features/recording/domain/experiment_folder_name.dart';
 import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_models.dart';
 
 Future<RecordingStartConfig?> showRecordingStartDialog(
@@ -27,7 +28,12 @@ Future<RecordingStartConfig?> showRecordingStartDialog(
                 parsedPwmLevel != null &&
                 parsedPwmLevel >= 1 &&
                 parsedPwmLevel <= 99;
-            final canStart = rootDirectory != null && pwmIsValid;
+            // Название станет именем папки, поэтому проверяем его сразу.
+            final nameError = validateExperimentFolderName(
+              displayNameController.text,
+            );
+            final canStart =
+                rootDirectory != null && pwmIsValid && nameError == null;
             return AlertDialog(
               title: const Text('Начать эксперимент'),
               content: SizedBox(
@@ -37,10 +43,17 @@ Future<RecordingStartConfig?> showRecordingStartDialog(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       TextField(
+                        key: const Key('recording-start-name-field'),
                         controller: displayNameController,
-                        decoration: const InputDecoration(
-                          labelText: 'Имя эксперимента',
-                          hintText: 'опционально',
+                        onChanged: (_) => setDialogState(() {}),
+                        decoration: InputDecoration(
+                          labelText: 'Название эксперимента',
+                          hintText: 'Мышь 1',
+                          helperText: 'Так будет названа папка с данными',
+                          errorText:
+                              displayNameController.text.isEmpty
+                                  ? null
+                                  : nameError,
                         ),
                       ),
                       const SizedBox(height: 14),
@@ -155,7 +168,7 @@ Future<RecordingStartConfig?> showRecordingStartDialog(
                               RecordingStartConfig(
                                 rootDirectory: rootDirectory!,
                                 pwmLevel: parsedPwmLevel,
-                                displayName: _blankToNull(
+                                displayName: experimentFolderName(
                                   displayNameController.text,
                                 ),
                                 filters: RecordingFilters(
@@ -220,11 +233,6 @@ class _FilterRow extends StatelessWidget {
       ],
     );
   }
-}
-
-String? _blankToNull(String value) {
-  final trimmed = value.trim();
-  return trimmed.isEmpty ? null : trimmed;
 }
 
 double _parseDouble(String value, double fallback) {

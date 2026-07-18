@@ -5,10 +5,16 @@ import 'recording_models.dart';
 /// Порт скрывает файловую систему, поэтому запись тестируется на хранилище
 /// в памяти. Раскладка папки и формат файлов описаны в README.
 abstract interface class ExperimentStorage {
-  /// Создать папку эксперимента `exp_<ULID>` внутри [rootDirectory].
+  /// Создать папку эксперимента [folderName] внутри [rootDirectory].
+  ///
+  /// Папка называется так же, как эксперимент («Мышь 1»), чтобы оператор сразу
+  /// понимал, где чьи данные; [experimentId] остаётся машинным ULID и живёт
+  /// только в `experiment.json`. Если папка уже есть — бросает
+  /// [ExperimentFolderExists], чтобы не смешать два эксперимента.
   Future<void> createExperiment({
     required String rootDirectory,
     required String experimentId,
+    required String folderName,
   });
 
   /// Дописать отсчёты в `signal.bin` (int32 little-endian, микровольты).

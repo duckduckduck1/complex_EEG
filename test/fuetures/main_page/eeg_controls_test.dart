@@ -118,7 +118,11 @@ void main() {
 
     recordingBloc.add(
       const RecordingStartRequested(
-        RecordingStartConfig(rootDirectory: 'memory-root', pwmLevel: 50),
+        RecordingStartConfig(
+          rootDirectory: 'memory-root',
+          pwmLevel: 50,
+          displayName: 'Мышь 1',
+        ),
       ),
     );
     await tester.pump();
@@ -165,7 +169,11 @@ void main() {
 
     recordingBloc.add(
       const RecordingStartRequested(
-        RecordingStartConfig(rootDirectory: 'memory-root', pwmLevel: 50),
+        RecordingStartConfig(
+          rootDirectory: 'memory-root',
+          pwmLevel: 50,
+          displayName: 'Мышь 1',
+        ),
       ),
     );
     await tester.pump();
@@ -212,7 +220,11 @@ void main() {
 
     recordingBloc.add(
       const RecordingStartRequested(
-        RecordingStartConfig(rootDirectory: 'memory-root', pwmLevel: 50),
+        RecordingStartConfig(
+          rootDirectory: 'memory-root',
+          pwmLevel: 50,
+          displayName: 'Мышь 1',
+        ),
       ),
     );
     await tester.pump();
@@ -252,7 +264,11 @@ void main() {
 
     recordingBloc.add(
       const RecordingStartRequested(
-        RecordingStartConfig(rootDirectory: 'memory-root', pwmLevel: 50),
+        RecordingStartConfig(
+          rootDirectory: 'memory-root',
+          pwmLevel: 50,
+          displayName: 'Мышь 1',
+        ),
       ),
     );
     await tester.pump();
@@ -291,7 +307,11 @@ void main() {
 
     recordingBloc.add(
       const RecordingStartRequested(
-        RecordingStartConfig(rootDirectory: 'memory-root', pwmLevel: 50),
+        RecordingStartConfig(
+          rootDirectory: 'memory-root',
+          pwmLevel: 50,
+          displayName: 'Мышь 1',
+        ),
       ),
     );
     await tester.pump();
@@ -354,6 +374,7 @@ class _MemoryExperimentStorage implements ExperimentStorage {
   Future<void> createExperiment({
     required String rootDirectory,
     required String experimentId,
+    required String folderName,
   }) async {}
 
   @override

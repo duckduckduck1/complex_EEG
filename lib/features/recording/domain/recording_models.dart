@@ -49,7 +49,7 @@ class RecordingStartConfig extends Equatable {
   const RecordingStartConfig({
     required this.rootDirectory,
     required this.pwmLevel,
-    this.displayName,
+    required this.displayName,
     this.metadata = const <String, Object?>{},
     this.filters = const RecordingFilters(),
     this.sampleRateHz = 250,
@@ -57,7 +57,9 @@ class RecordingStartConfig extends Equatable {
 
   final String rootDirectory;
   final int pwmLevel;
-  final String? displayName;
+
+  /// Название эксперимента: им же называется папка на диске («Мышь 1»).
+  final String displayName;
   final Map<String, Object?> metadata;
   final RecordingFilters filters;
   final int sampleRateHz;

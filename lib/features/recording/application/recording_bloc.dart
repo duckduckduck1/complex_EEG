@@ -1,10 +1,22 @@
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:eeg_app_max30003_stm32/features/annotation/domain/annotation_models.dart';
+import 'package:eeg_app_max30003_stm32/features/recording/domain/experiment_folder_name.dart';
 import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_models.dart';
 import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_ports.dart';
 
 part 'recording_event.dart';
+
+/// Старт отклонён до создания папки: сообщение уже готово для оператора и
+/// показывается в панели записи как есть.
+class _RecordingStartRejected implements Exception {
+  const _RecordingStartRejected(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
 
 /// Ведёт весь жизненный цикл записи эксперимента: сигнал, сегменты, разрывы,
 /// ФБМ и метки.
@@ -85,14 +97,22 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
     emit(const RecordingState(status: RecordingStatus.preparing));
 
     try {
+      final folderName = experimentFolderName(event.config.displayName);
+      final nameError = validateExperimentFolderName(folderName);
+      if (nameError != null) {
+        throw _RecordingStartRejected(nameError);
+      }
+
       final experimentId = _idGenerator.nextId();
       final startedAt = _clock.now();
       _config = event.config;
       _filter = _filterFactory.create(event.config.filters);
 
+      // Папка называется как эксперимент, experiment_id остаётся машинным ULID.
       await _storage.createExperiment(
         rootDirectory: event.config.rootDirectory,
         experimentId: experimentId,
+        folderName: folderName,
       );
       await _storage.appendJournal(
         _journalEvent(
@@ -700,8 +720,7 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
   }) {
     return {
       'experiment_id': experimentId,
-      if (config.displayName != null && config.displayName!.trim().isNotEmpty)
-        'display_name': config.displayName!.trim(),
+      'display_name': config.displayName.trim(),
       'metadata': config.metadata,
       'recording': {
         'sample_rate_hz': config.sampleRateHz,
