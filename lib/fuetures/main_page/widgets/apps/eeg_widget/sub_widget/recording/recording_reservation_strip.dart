@@ -46,6 +46,8 @@ class RecordingReservationStrip extends StatelessWidget {
                         : const FbmOnRequested(),
                   ),
               onPwmChanged: (value) => bloc.add(FbmPwmChanged(value)),
+              onAutoOffChanged:
+                  (seconds) => bloc.add(FbmAutoOffChanged(seconds)),
               onStartState:
                   (id) => bloc.add(RecordingStateLabelStarted(labelTypeId: id)),
               onCloseState:
@@ -237,6 +239,7 @@ class _RecordingControls extends StatelessWidget {
   final VoidCallback onStop;
   final VoidCallback onToggleFbm;
   final ValueChanged<int> onPwmChanged;
+  final ValueChanged<int?> onAutoOffChanged;
   final ValueChanged<String> onStartState;
   final VoidCallback onCloseState;
   final ValueChanged<String> onAddEvent;
@@ -247,6 +250,7 @@ class _RecordingControls extends StatelessWidget {
     required this.onStop,
     required this.onToggleFbm,
     required this.onPwmChanged,
+    required this.onAutoOffChanged,
     required this.onStartState,
     required this.onCloseState,
     required this.onAddEvent,
@@ -280,12 +284,22 @@ class _RecordingControls extends StatelessWidget {
         FilledButton.tonalIcon(
           onPressed: onToggleFbm,
           icon: Icon(state.fbmOn ? Icons.lightbulb : Icons.lightbulb_outline),
-          label: Text(state.fbmOn ? 'Свет выкл' : 'Свет вкл'),
+          // Пока свет горит — на кнопке идёт время сеанса, чтобы оператор видел
+          // длительность, не заглядывая в json.
+          label: Text(
+            state.fbmOn
+                ? 'Свет выкл · ${formatClockFromSamples(state.sampleCount - (state.fbmOnSampleIndex ?? state.sampleCount))}'
+                : 'Свет вкл',
+          ),
         ),
         _PwmControl(
           value: state.pwmLevel ?? 50,
           enabled: state.status == RecordingStatus.recording,
           onChanged: onPwmChanged,
+        ),
+        _FbmAutoOffControl(
+          seconds: state.fbmAutoOffSeconds,
+          onChanged: onAutoOffChanged,
         ),
         _StatePicker(
           activeDraft: state.activeDraftLabel,
@@ -404,6 +418,50 @@ List<Widget> _labelMenuItems(
         child: SizedBox(width: 176, child: Text(type.displayName)),
       ),
   ];
+}
+
+/// Автовыключение ФБМ: свет гаснет сам через выбранное время.
+///
+/// Ручное включение и выключение остаётся — таймер только добавляет «не забыть
+/// погасить». «Вручную» означает, что сам не гаснет.
+class _FbmAutoOffControl extends StatelessWidget {
+  final int? seconds;
+  final ValueChanged<int?> onChanged;
+
+  const _FbmAutoOffControl({required this.seconds, required this.onChanged});
+
+  static const _presets = <int?, String>{
+    null: 'Вручную',
+    30: '30 с',
+    60: '1 мин',
+    300: '5 мин',
+    900: '15 мин',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    return MenuAnchor(
+      menuChildren: [
+        for (final preset in _presets.entries)
+          MenuItemButton(
+            onPressed: () => onChanged(preset.key),
+            leadingIcon: Icon(
+              preset.key == seconds ? Icons.check : Icons.timer_outlined,
+              size: 16,
+            ),
+            child: SizedBox(width: 120, child: Text(preset.value)),
+          ),
+      ],
+      builder:
+          (context, controller, _) => OutlinedButton.icon(
+            onPressed:
+                () =>
+                    controller.isOpen ? controller.close() : controller.open(),
+            icon: const Icon(Icons.timer_outlined),
+            label: Text('Гасить: ${_presets[seconds] ?? 'Вручную'}'),
+          ),
+    );
+  }
 }
 
 class _PwmControl extends StatelessWidget {

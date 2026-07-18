@@ -60,6 +60,62 @@ void main() {
     },
   );
 
+  test('выключение ФБМ пишет длительность горения', () async {
+    bloc.add(RecordingStartRequested(_startConfig()));
+    await pumpEventQueue();
+    bloc.add(const FbmOnRequested());
+    await pumpEventQueue();
+
+    // 500 отсчётов при 250 Гц — ровно 2 секунды свечения.
+    bloc.add(RecordingSamplesReceived(List<int>.filled(500, 1)));
+    await pumpEventQueue();
+    bloc.add(const FbmOffRequested());
+    await pumpEventQueue();
+
+    final offEvent = bloc.state.fbmEvents.last;
+    expect(offEvent.isOn, isFalse);
+    expect(offEvent.durationSamples, 500);
+    expect(offEvent.toJson()['duration'], '00:02');
+    expect(bloc.state.fbmOnSampleIndex, isNull, reason: 'сеанс закрыт');
+  });
+
+  test('таймер гасит ФБМ сам, но ручное включение остаётся', () async {
+    bloc.add(RecordingStartRequested(_startConfig()));
+    await pumpEventQueue();
+    bloc.add(const FbmAutoOffChanged(1)); // гасить через секунду
+    await pumpEventQueue();
+    bloc.add(const FbmOnRequested());
+    await pumpEventQueue();
+    expect(bloc.state.fbmOn, isTrue);
+
+    // Полсекунды — ещё рано.
+    bloc.add(RecordingSamplesReceived(List<int>.filled(125, 1)));
+    await pumpEventQueue();
+    expect(bloc.state.fbmOn, isTrue);
+
+    // Перевалили за секунду — гаснет само.
+    bloc.add(RecordingSamplesReceived(List<int>.filled(200, 1)));
+    await pumpEventQueue();
+
+    expect(bloc.state.fbmOn, isFalse);
+    final offEvent = bloc.state.fbmEvents.last;
+    expect(offEvent.isOn, isFalse);
+    expect(offEvent.reason, 'auto_off_timer');
+    expect(fbmTransport.commands.last.on, isFalse, reason: 'команда ушла');
+  });
+
+  test('без таймера ФБМ сама не гаснет', () async {
+    bloc.add(RecordingStartRequested(_startConfig()));
+    await pumpEventQueue();
+    bloc.add(const FbmOnRequested());
+    await pumpEventQueue();
+
+    bloc.add(RecordingSamplesReceived(List<int>.filled(2500, 1)));
+    await pumpEventQueue();
+
+    expect(bloc.state.fbmOn, isTrue, reason: 'гасит только оператор');
+  });
+
   test('в папку кладётся readme со словарём меток', () async {
     bloc.add(RecordingStartRequested(_startConfig()));
     await pumpEventQueue();

@@ -70,97 +70,101 @@ class BandPowerPlot extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         Expanded(
-          child: ClipRect(
-            child: LineChart(
-              LineChartData(
-                minX: minX,
-                maxX: ensuredMaxX,
-                minY: 0,
-                maxY: 1.0,
-                clipData: const FlClipData.all(),
-                extraLinesData: ExtraLinesData(
-                  extraLinesOnTop: false,
-                  horizontalLines: [
-                    HorizontalLine(
-                      y: 0,
-                      color: baselineColor,
-                      strokeWidth: 1.1,
+          // Скрыт от дерева доступности по той же причине, что и остальные
+          // графики: узлы пересоздаются на каждый кадр и ломают AXTree.
+          child: ExcludeSemantics(
+            child: ClipRect(
+              child: LineChart(
+                LineChartData(
+                  minX: minX,
+                  maxX: ensuredMaxX,
+                  minY: 0,
+                  maxY: 1.0,
+                  clipData: const FlClipData.all(),
+                  extraLinesData: ExtraLinesData(
+                    extraLinesOnTop: false,
+                    horizontalLines: [
+                      HorizontalLine(
+                        y: 0,
+                        color: baselineColor,
+                        strokeWidth: 1.1,
+                      ),
+                    ],
+                  ),
+                  lineTouchData: LineTouchData(
+                    touchTooltipData: LineTouchTooltipData(
+                      fitInsideVertically: true,
+                      fitInsideHorizontally: true,
+                      getTooltipItems: (touchedSpots) {
+                        return touchedSpots.map((spot) {
+                          return LineTooltipItem(
+                            spot.y.toStringAsFixed(3),
+                            TextStyle(
+                              color: spot.bar.color,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          );
+                        }).toList();
+                      },
                     ),
+                  ),
+                  lineBarsData: [
+                    _buildLineBar(deltaData, colors.delta),
+                    _buildLineBar(thetaData, colors.theta),
+                    _buildLineBar(alphaData, colors.alpha),
+                    _buildLineBar(betaData, colors.beta),
                   ],
-                ),
-                lineTouchData: LineTouchData(
-                  touchTooltipData: LineTouchTooltipData(
-                    fitInsideVertically: true,
-                    fitInsideHorizontally: true,
-                    getTooltipItems: (touchedSpots) {
-                      return touchedSpots.map((spot) {
-                        return LineTooltipItem(
-                          spot.y.toStringAsFixed(3),
-                          TextStyle(
-                            color: spot.bar.color,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        );
-                      }).toList();
-                    },
-                  ),
-                ),
-                lineBarsData: [
-                  _buildLineBar(deltaData, colors.delta),
-                  _buildLineBar(thetaData, colors.theta),
-                  _buildLineBar(alphaData, colors.alpha),
-                  _buildLineBar(betaData, colors.beta),
-                ],
-                titlesData: FlTitlesData(
-                  show: true,
-                  bottomTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      interval: xInterval,
-                      reservedSize: 30,
-                      getTitlesWidget:
-                          (value, _) => _AxisLabel(
-                            text: formatClock(value.round()),
-                            style: axisStyle,
-                            padding: const EdgeInsets.only(top: 8),
-                          ),
+                  titlesData: FlTitlesData(
+                    show: true,
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        interval: xInterval,
+                        reservedSize: 30,
+                        getTitlesWidget:
+                            (value, _) => _AxisLabel(
+                              text: formatClock(value.round()),
+                              style: axisStyle,
+                              padding: const EdgeInsets.only(top: 8),
+                            ),
+                      ),
+                    ),
+                    leftTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        interval: yInterval,
+                        reservedSize: 40,
+                        getTitlesWidget:
+                            (value, _) => _AxisLabel(
+                              text: _formatTick(value, yInterval),
+                              style: axisStyle,
+                              padding: const EdgeInsets.only(right: 8),
+                              alignRight: true,
+                            ),
+                      ),
+                    ),
+                    rightTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    topTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
                     ),
                   ),
-                  leftTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      interval: yInterval,
-                      reservedSize: 40,
-                      getTitlesWidget:
-                          (value, _) => _AxisLabel(
-                            text: _formatTick(value, yInterval),
-                            style: axisStyle,
-                            padding: const EdgeInsets.only(right: 8),
-                            alignRight: true,
-                          ),
-                    ),
+                  gridData: FlGridData(
+                    show: true,
+                    drawVerticalLine: true,
+                    drawHorizontalLine: true,
+                    verticalInterval: xInterval,
+                    horizontalInterval: yInterval,
+                    getDrawingVerticalLine:
+                        (value) => FlLine(color: gridColor, strokeWidth: 0.8),
+                    getDrawingHorizontalLine:
+                        (value) => FlLine(color: gridColor, strokeWidth: 0.8),
                   ),
-                  rightTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false),
-                  ),
-                  topTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false),
-                  ),
+                  borderData: FlBorderData(show: false),
                 ),
-                gridData: FlGridData(
-                  show: true,
-                  drawVerticalLine: true,
-                  drawHorizontalLine: true,
-                  verticalInterval: xInterval,
-                  horizontalInterval: yInterval,
-                  getDrawingVerticalLine:
-                      (value) => FlLine(color: gridColor, strokeWidth: 0.8),
-                  getDrawingHorizontalLine:
-                      (value) => FlLine(color: gridColor, strokeWidth: 0.8),
-                ),
-                borderData: FlBorderData(show: false),
+                duration: Duration.zero,
               ),
-              duration: Duration.zero,
             ),
           ),
         ),
