@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:eeg_app_max30003_stm32/core/time_format.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/plots/plot_scafold/zoomable_chart.dart';
 import 'package:eeg_app_max30003_stm32/theme.dart';
 
@@ -106,7 +107,7 @@ class _PlotScafoldState extends State<PlotScafold> {
                 reservedSize: 28,
                 getTitlesWidget:
                     (value, meta) => _AxisLabel(
-                      text: '${_formatTick(value, xInterval)} с',
+                      text: formatClock(value.round()),
                       style: axisStyle,
                       padding: const EdgeInsets.only(top: 8),
                     ),

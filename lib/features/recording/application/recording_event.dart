@@ -78,24 +78,27 @@ final class RecordingPointLabelAdded extends RecordingEvent {
   List<Object?> get props => [labelTypeId, note];
 }
 
-final class RecordingExcludeIntervalAdded extends RecordingEvent {
-  const RecordingExcludeIntervalAdded({
+/// Ручное добавление метки-состояния интервалом по времени. Границы —
+/// **глобальные** индексы отсчётов (от начала записи, как ось графика); сегмент
+/// подтягивается автоматически по этим границам.
+final class RecordingManualIntervalAdded extends RecordingEvent {
+  const RecordingManualIntervalAdded({
     required this.labelTypeId,
-    required this.startSegmentSampleIndex,
-    required this.endSegmentSampleIndex,
+    required this.startGlobalSampleIndex,
+    required this.endGlobalSampleIndex,
     this.note,
   });
 
   final String labelTypeId;
-  final int startSegmentSampleIndex;
-  final int endSegmentSampleIndex;
+  final int startGlobalSampleIndex;
+  final int endGlobalSampleIndex;
   final String? note;
 
   @override
   List<Object?> get props => [
     labelTypeId,
-    startSegmentSampleIndex,
-    endSegmentSampleIndex,
+    startGlobalSampleIndex,
+    endGlobalSampleIndex,
     note,
   ];
 }

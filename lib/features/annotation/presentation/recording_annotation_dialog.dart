@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:eeg_app_max30003_stm32/core/time_format.dart';
 import 'package:eeg_app_max30003_stm32/features/annotation/domain/annotation_models.dart';
 import 'package:eeg_app_max30003_stm32/features/recording/application/recording_bloc.dart';
 import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_models.dart';
@@ -28,16 +29,57 @@ class RecordingAnnotationDialog extends StatefulWidget {
 
 class _RecordingAnnotationDialogState extends State<RecordingAnnotationDialog> {
   final _noteController = TextEditingController();
-  final _excludeStartController = TextEditingController(text: '0');
-  final _excludeEndController = TextEditingController(text: '0');
-  String? _excludeError;
+  final _startController = TextEditingController();
+  final _endController = TextEditingController();
+  late String _typeId = _stateTypes.first.id;
+  String? _manualError;
+
+  static final List<LabelType> _stateTypes = defaultLabelTypes
+      .where((type) => type.kind == AnnotationKind.state)
+      .toList(growable: false);
 
   @override
   void dispose() {
     _noteController.dispose();
-    _excludeStartController.dispose();
-    _excludeEndController.dispose();
+    _startController.dispose();
+    _endController.dispose();
     super.dispose();
+  }
+
+  void _addManualLabel(RecordingBloc bloc, RecordingState state) {
+    final startSeconds = parseClockToSeconds(_startController.text);
+    final endSeconds = parseClockToSeconds(_endController.text);
+    if (startSeconds == null || endSeconds == null) {
+      setState(() => _manualError = 'Время в формате чч:мм:сс или мм:сс');
+      return;
+    }
+    if (endSeconds <= startSeconds) {
+      setState(() => _manualError = 'Конец должен быть позже начала');
+      return;
+    }
+    final startSample = secondsToSamples(startSeconds);
+    final endSample = secondsToSamples(endSeconds);
+    if (endSample > state.sampleCount) {
+      setState(() => _manualError = 'Конец позже текущей записи');
+      return;
+    }
+    if (!_intervalFitsSegment(state, startSample, endSample)) {
+      setState(
+        () => _manualError = 'Интервал попадает на разрыв связи — не выйдет',
+      );
+      return;
+    }
+    setState(() => _manualError = null);
+    bloc.add(
+      RecordingManualIntervalAdded(
+        labelTypeId: _typeId,
+        startGlobalSampleIndex: startSample,
+        endGlobalSampleIndex: endSample,
+        note: _blankToNull(_noteController.text),
+      ),
+    );
+    _startController.clear();
+    _endController.clear();
   }
 
   @override
@@ -50,20 +92,8 @@ class _RecordingAnnotationDialogState extends State<RecordingAnnotationDialog> {
           padding: const EdgeInsets.all(20),
           child: BlocBuilder<RecordingBloc, RecordingState>(
             builder: (context, state) {
+              final bloc = context.read<RecordingBloc>();
               final canAnnotate = state.status == RecordingStatus.recording;
-              final activeSegment =
-                  state.activeSegmentId == null
-                      ? null
-                      : state.segments
-                          .where(
-                            (segment) =>
-                                segment.segmentId == state.activeSegmentId,
-                          )
-                          .firstOrNull;
-              final currentSegmentSampleCount =
-                  activeSegment == null
-                      ? null
-                      : state.sampleCount - activeSegment.startSample;
               return ListView(
                 key: const Key('recording-annotation-scroll'),
                 shrinkWrap: true,
@@ -78,7 +108,7 @@ class _RecordingAnnotationDialogState extends State<RecordingAnnotationDialog> {
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          'Список меток и брак',
+                          'Метки эксперимента',
                           style: theme.textTheme.titleLarge?.copyWith(
                             fontWeight: FontWeight.w800,
                           ),
@@ -101,23 +131,33 @@ class _RecordingAnnotationDialogState extends State<RecordingAnnotationDialog> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  _SectionTitle(text: 'Бракованный интервал'),
-                  const SizedBox(height: 8),
-                  _ExcludeIntervalControls(
+                  _SectionTitle(text: 'Добавить метку вручную'),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Если выбрали не то и удалили — можно поставить метку руками. '
+                    'Выберите состояние, введите время начала и конца по часам '
+                    'графика (чч:мм:сс или мм:сс). Пример: сон с 00:05:00 до '
+                    '00:12:30. Сегмент подтянется сам.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  _ManualLabelControls(
                     enabled: canAnnotate,
-                    startController: _excludeStartController,
-                    endController: _excludeEndController,
-                    noteController: _noteController,
-                    maxSegmentSampleIndex: currentSegmentSampleCount,
-                    errorText: _excludeError,
-                    onValidationError:
-                        (message) => setState(() => _excludeError = message),
+                    types: _stateTypes,
+                    selectedTypeId: _typeId,
+                    startController: _startController,
+                    endController: _endController,
+                    errorText: _manualError,
+                    onTypeChanged: (id) => setState(() => _typeId = id),
+                    onAdd: () => _addManualLabel(bloc, state),
                   ),
                   const SizedBox(height: 16),
                   _SectionTitle(text: 'Список'),
                   const SizedBox(height: 8),
                   SizedBox(
-                    height: state.labels.isEmpty ? 96 : 180,
+                    height: state.labels.isEmpty ? 96 : 200,
                     child: _LabelsList(labels: state.labels),
                   ),
                 ],
@@ -130,92 +170,103 @@ class _RecordingAnnotationDialogState extends State<RecordingAnnotationDialog> {
   }
 }
 
-class _ExcludeIntervalControls extends StatelessWidget {
-  const _ExcludeIntervalControls({
+bool _intervalFitsSegment(RecordingState state, int start, int end) {
+  for (final segment in state.segments) {
+    final segmentEnd = segment.endSample ?? state.sampleCount;
+    if (segment.startSample <= start && end <= segmentEnd) {
+      return true;
+    }
+  }
+  return false;
+}
+
+class _ManualLabelControls extends StatelessWidget {
+  const _ManualLabelControls({
     required this.enabled,
+    required this.types,
+    required this.selectedTypeId,
     required this.startController,
     required this.endController,
-    required this.noteController,
-    required this.maxSegmentSampleIndex,
     required this.errorText,
-    required this.onValidationError,
+    required this.onTypeChanged,
+    required this.onAdd,
   });
 
   final bool enabled;
+  final List<LabelType> types;
+  final String selectedTypeId;
   final TextEditingController startController;
   final TextEditingController endController;
-  final TextEditingController noteController;
-  final int? maxSegmentSampleIndex;
   final String? errorText;
-  final ValueChanged<String?> onValidationError;
+  final ValueChanged<String> onTypeChanged;
+  final VoidCallback onAdd;
 
   @override
   Widget build(BuildContext context) {
-    final bloc = context.read<RecordingBloc>();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             SizedBox(
-              width: 120,
+              width: 200,
+              child: DropdownButtonFormField<String>(
+                key: const Key('recording-annotation-manual-type'),
+                initialValue: selectedTypeId,
+                // Иначе кнопка растягивается под самый широкий пункт словаря
+                // и вылезает за отведённую ширину.
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Состояние'),
+                items: [
+                  for (final type in types)
+                    DropdownMenuItem(
+                      value: type.id,
+                      child: Text(
+                        type.displayName,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+                onChanged:
+                    enabled
+                        ? (value) {
+                          if (value != null) onTypeChanged(value);
+                        }
+                        : null,
+              ),
+            ),
+            SizedBox(
+              width: 130,
               child: TextField(
-                key: const Key('recording-annotation-exclude-start-field'),
+                key: const Key('recording-annotation-manual-start-field'),
                 controller: startController,
                 enabled: enabled,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Старт'),
+                decoration: const InputDecoration(
+                  labelText: 'Начало',
+                  hintText: 'чч:мм:сс',
+                ),
               ),
             ),
-            const SizedBox(width: 10),
             SizedBox(
-              width: 120,
+              width: 130,
               child: TextField(
-                key: const Key('recording-annotation-exclude-end-field'),
+                key: const Key('recording-annotation-manual-end-field'),
                 controller: endController,
                 enabled: enabled,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Конец'),
+                decoration: const InputDecoration(
+                  labelText: 'Конец',
+                  hintText: 'чч:мм:сс',
+                ),
               ),
             ),
-            const SizedBox(width: 10),
             FilledButton.tonalIcon(
-              key: const Key('recording-annotation-add-exclude'),
-              onPressed:
-                  enabled
-                      ? () {
-                        final start = int.tryParse(startController.text.trim());
-                        final end = int.tryParse(endController.text.trim());
-                        if (start == null || end == null) {
-                          onValidationError('Введите числовые границы');
-                          return;
-                        }
-                        if (start < 0 || end <= start) {
-                          onValidationError(
-                            'Интервал должен быть непустым: start < end',
-                          );
-                          return;
-                        }
-                        final maxIndex = maxSegmentSampleIndex;
-                        if (maxIndex != null && end > maxIndex) {
-                          onValidationError(
-                            'Конец интервала выходит за текущий сегмент',
-                          );
-                          return;
-                        }
-                        onValidationError(null);
-                        bloc.add(
-                          RecordingExcludeIntervalAdded(
-                            labelTypeId: 'bad_segment',
-                            startSegmentSampleIndex: start,
-                            endSegmentSampleIndex: end,
-                            note: _blankToNull(noteController.text),
-                          ),
-                        );
-                      }
-                      : null,
-              icon: const Icon(Icons.block_rounded),
-              label: const Text('Добавить брак'),
+              key: const Key('recording-annotation-add-manual'),
+              onPressed: enabled ? onAdd : null,
+              icon: const Icon(Icons.add_rounded),
+              label: const Text('Добавить'),
             ),
           ],
         ),
@@ -259,7 +310,9 @@ class _LabelsList extends StatelessWidget {
         return ListTile(
           contentPadding: EdgeInsets.zero,
           leading: Icon(_iconFor(label.kind)),
-          title: Text('${label.labelTypeId} · ${label.kind.name}'),
+          title: Text(
+            '${_displayName(label.labelTypeId)} · ${label.segmentId}',
+          ),
           subtitle: Text(_rangeText(label)),
           trailing: IconButton(
             tooltip: 'Удалить',
@@ -299,28 +352,26 @@ IconData _iconFor(AnnotationKind kind) {
   };
 }
 
-// Отсчёты переводим в секунды для наглядности: оператор мыслит временем, а не
-// семплами. Частота дискретизации фиксирована прошивкой стенда.
-const _sampleRateHz = 250;
-
-String _clock(int sampleIndex) {
-  final seconds = (sampleIndex < 0 ? 0 : sampleIndex) ~/ _sampleRateHz;
-  final minutes = seconds ~/ 60;
-  final restSeconds = seconds % 60;
-  return '${minutes.toString().padLeft(2, '0')}:${restSeconds.toString().padLeft(2, '0')}';
+String _displayName(String labelTypeId) {
+  for (final type in defaultLabelTypes) {
+    if (type.id == labelTypeId) {
+      return type.displayName;
+    }
+  }
+  return labelTypeId;
 }
 
 String _rangeText(AnnotationLabel label) {
   if (label.isPoint) {
-    return '${label.segmentId} · ${_clock(label.startSegmentSampleIndex)}';
+    return formatClockFromSamples(label.startSegmentSampleIndex);
   }
   final end = label.endSegmentSampleIndex;
   if (label.isDraft || end == null) {
-    return '${label.segmentId} · ${_clock(label.startSegmentSampleIndex)} · открыта';
+    return '${formatClockFromSamples(label.startSegmentSampleIndex)} · открыта';
   }
-  final durationSeconds =
-      (end - label.startSegmentSampleIndex) ~/ _sampleRateHz;
-  return '${label.segmentId} · ${_clock(label.startSegmentSampleIndex)}–${_clock(end)} · $durationSeconds с';
+  final durationSeconds = samplesToSeconds(end - label.startSegmentSampleIndex);
+  return '${formatClockFromSamples(label.startSegmentSampleIndex)}–'
+      '${formatClockFromSamples(end)} · ${formatClock(durationSeconds)}';
 }
 
 String? _blankToNull(String value) {

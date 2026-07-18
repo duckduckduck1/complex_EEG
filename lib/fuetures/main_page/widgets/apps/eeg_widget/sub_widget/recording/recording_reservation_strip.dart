@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:eeg_app_max30003_stm32/core/time_format.dart';
 import 'package:eeg_app_max30003_stm32/features/annotation/domain/annotation_models.dart';
 import 'package:eeg_app_max30003_stm32/features/recording/application/recording_bloc.dart';
 import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_models.dart';
@@ -268,7 +269,7 @@ class _RecordingControls extends StatelessWidget {
         ),
         _StatusToken(
           icon: Icons.timer_outlined,
-          label: _formatDuration(state.sampleCount),
+          label: formatClockFromSamples(state.sampleCount),
           color: colorScheme.onSurfaceVariant,
         ),
         _StatusToken(
@@ -333,7 +334,7 @@ class _StatePicker extends StatelessWidget {
     if (draft != null) {
       final type = _labelType(draft.labelTypeId);
       final color = _colorOf(type, Theme.of(context).colorScheme.primary);
-      final elapsed = _formatDuration(
+      final elapsed = formatClockFromSamples(
         elapsedSampleCount - draft.globalStartSampleIndex,
       );
       return FilledButton.icon(
@@ -504,13 +505,6 @@ class _StatusToken extends StatelessWidget {
       ],
     );
   }
-}
-
-String _formatDuration(int sampleCount) {
-  final seconds = (sampleCount < 0 ? 0 : sampleCount) ~/ 250;
-  final minutes = seconds ~/ 60;
-  final restSeconds = seconds % 60;
-  return '${minutes.toString().padLeft(2, '0')}:${restSeconds.toString().padLeft(2, '0')}';
 }
 
 final List<LabelType> _statesInOrder = defaultLabelTypes
