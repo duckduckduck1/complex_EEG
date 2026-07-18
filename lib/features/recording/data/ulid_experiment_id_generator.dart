@@ -10,10 +10,17 @@ class UlidExperimentIdGenerator implements ExperimentIdGenerator {
 
   final Random _random;
 
+  /// Машинный идентификатор записи (ULID): время + случайная часть, поэтому
+  /// сортируется по возрастанию и уникален без согласования.
+  ///
+  /// Без префикса: раньше `exp_` был нужен как имя папки, теперь папка зовётся
+  /// названием эксперимента, а идентификатор живёт только в `experiment.json`
+  /// и в журнале — он привязывает строки журнала к записи и переживает
+  /// переименование папки.
   @override
   String nextId() {
     final timestamp = DateTime.now().toUtc().millisecondsSinceEpoch;
-    return 'exp_${_encodeTime(timestamp)}${_encodeRandomness()}';
+    return '${_encodeTime(timestamp)}${_encodeRandomness()}';
   }
 
   String _encodeTime(int timestampMillis) {
