@@ -11,6 +11,19 @@ enum RecordingStatus {
   failed,
 }
 
+/// Занята ли запись настолько, что вкладку закрывать нельзя.
+///
+/// Одно правило на всех: его спрашивает и `TabBloc` (не даёт закрыть), и панель
+/// вкладок (объясняет оператору, почему крестик не сработал). Пауза по обрыву
+/// сюда тоже входит — эксперимент ещё не завершён, его можно продолжить.
+bool isRecordingBusy(RecordingStatus? status) => switch (status) {
+  RecordingStatus.preparing ||
+  RecordingStatus.recording ||
+  RecordingStatus.pausedByDisconnect ||
+  RecordingStatus.stopping => true,
+  _ => false,
+};
+
 class RecordingFilters extends Equatable {
   const RecordingFilters({
     this.lpHz = 40,
