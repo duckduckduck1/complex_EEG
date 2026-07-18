@@ -38,6 +38,10 @@ abstract interface class ExperimentStorage {
 
   Future<void> flush();
 
+  /// Записать `readme.txt` в папку эксперимента — пояснение для того, кому
+  /// потом передадут данные.
+  Future<void> writeReadme(String text);
+
   /// Записать финальный `experiment.json` **атомарно** — через временный файл
   /// и переименование, чтобы недописанный JSON не выдавался за готовый пакет.
   Future<void> writeExperimentJson(Map<String, Object?> experimentJson);

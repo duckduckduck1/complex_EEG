@@ -125,6 +125,9 @@ class _MemoryExperimentStorage implements ExperimentStorage {
   Future<void> flush() async {}
 
   @override
+  Future<void> writeReadme(String text) async {}
+
+  @override
   Future<void> writeExperimentJson(Map<String, Object?> experimentJson) async {}
 
   @override

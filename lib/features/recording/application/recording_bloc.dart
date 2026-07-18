@@ -2,6 +2,7 @@ import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:eeg_app_max30003_stm32/features/annotation/domain/annotation_models.dart';
 import 'package:eeg_app_max30003_stm32/features/recording/domain/experiment_folder_name.dart';
+import 'package:eeg_app_max30003_stm32/features/recording/domain/experiment_readme.dart';
 import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_models.dart';
 import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_ports.dart';
 
@@ -124,6 +125,15 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
         experimentId: experimentId,
         folderName: folderName,
       );
+      // readme кладём сразу: если запись оборвётся, пояснение уже на месте.
+      await _storage.writeReadme(
+        buildExperimentReadme(
+          experimentName: folderName,
+          experimentId: experimentId,
+          labelTypes: _labelTypes.values.toList(growable: false),
+          sampleRateHz: event.config.sampleRateHz,
+        ),
+      );
       await _storage.appendJournal(
         _journalEvent(
           type: 'experiment_started',
@@ -157,6 +167,7 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
           activeSegmentId: segment.segmentId,
           segments: [segment],
           pwmLevel: event.config.pwmLevel,
+          filters: event.config.filters,
         ),
       );
     } catch (error) {
@@ -538,9 +549,15 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
     if (state.status != RecordingStatus.recording) {
       return;
     }
-    final type = _labelType(event.labelTypeId, AnnotationKind.state);
+    // Вручную интервалом ставятся и состояния, и артефакты сигнала: у обоих
+    // есть начало и конец. Точечные события так не добавляются — у них нет
+    // длительности.
+    final type = _labelTypes[event.labelTypeId];
     final experimentId = state.experimentId;
-    if (type == null || experimentId == null) {
+    if (type == null ||
+        !type.isActive ||
+        type.kind == AnnotationKind.event ||
+        experimentId == null) {
       return;
     }
     final start = event.startGlobalSampleIndex;
@@ -560,7 +577,7 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
       final timestamp = _clock.now();
       final label = AnnotationLabel(
         id: _nextLabelId(),
-        kind: AnnotationKind.state,
+        kind: type.kind,
         labelTypeId: type.id,
         segmentId: segment.segmentId,
         startSegmentSampleIndex: start - segment.startSample,
