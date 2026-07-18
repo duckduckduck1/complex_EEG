@@ -34,6 +34,8 @@ class _FakeConnection implements BleConnection {
   void dropFromDevice() {
     if (!_disconnected.isCompleted) _disconnected.complete();
   }
+
+  void addPayload(List<int> payload) => _packets.add(payload);
 }
 
 class _FakeAdapter implements BleAdapter {

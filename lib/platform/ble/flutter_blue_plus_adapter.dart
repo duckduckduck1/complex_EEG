@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import '../../core/errors/failures.dart';
+import '../../features/devices/data/liveness_checked_connection.dart';
 import '../../features/devices/domain/ble_adapter.dart';
 import '../../features/devices/domain/ble_device.dart';
 
@@ -95,9 +96,13 @@ class FlutterBluePlusAdapter implements BleAdapter {
       final services = await device.discoverServices();
       final characteristic = _findSignalCharacteristic(services);
       await characteristic.setNotifyValue(true);
-      return FlutterBluePlusConnection(
-        device: device,
-        characteristic: characteristic,
+      // Оборачиваем сторожем тишины: WinRT не всегда сообщает об обрыве, и без
+      // этого приложение остаётся в `connected` с молчащим потоком.
+      return LivenessCheckedConnection(
+        FlutterBluePlusConnection(
+          device: device,
+          characteristic: characteristic,
+        ),
       );
     } catch (error) {
       await device.disconnect();
