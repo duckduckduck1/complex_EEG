@@ -45,6 +45,7 @@ class _DeviceEegTabState extends State<DeviceEegTab> {
   late final RecordingBridge _recordingBridge;
   late final StreamSubscription<RecordingState> _recordingSub;
   RecordingStatus _lastRecordingStatus = RecordingStatus.idle;
+  int _plotSettingsRevision = 0;
 
   @override
   void initState() {
@@ -62,6 +63,7 @@ class _DeviceEegTabState extends State<DeviceEegTab> {
       if (_lastRecordingStatus == RecordingStatus.preparing &&
           state.status == RecordingStatus.recording) {
         _rtEegDataBloc.add(RtEegResetRequested());
+        _applyRecordingFiltersToPlot(state.filters);
       }
       _lastRecordingStatus = state.status;
     });
@@ -78,6 +80,27 @@ class _DeviceEegTabState extends State<DeviceEegTab> {
     super.dispose();
   }
 
+  /// Переносит фильтры, выбранные при старте записи, на живой график.
+  ///
+  /// Иначе оператор выставляет их дважды: один раз в диалоге старта (для
+  /// записи) и второй раз руками в панели (для картинки). Настройки —
+  /// изменяемый объект, общий с графиком, поэтому правим на месте; счётчик
+  /// [_plotSettingsRevision] пересоздаёт [EegWidget], чтобы панель фильтров
+  /// перечитала значения, а не показывала старые.
+  void _applyRecordingFiltersToPlot(RecordingFilters filters) {
+    final plotFilters = _rtEegDataBloc.eegSettings.fillterSettings;
+    plotFilters.lp = filters.lpHz;
+    plotFilters.hp = filters.hpHz;
+    plotFilters.notch = filters.notchHz;
+    plotFilters.isLpOn = filters.isLpEnabled;
+    plotFilters.isHpOn = filters.isHpEnabled;
+    plotFilters.isNotchOn = filters.isNotchEnabled;
+    _rtEegDataBloc.add(NewSettings(newSettings: _rtEegDataBloc.eegSettings));
+    if (mounted) {
+      setState(() => _plotSettingsRevision++);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     // Активность приходит от IndexedStack по позиции вкладки, а не по устройству:
@@ -85,7 +108,10 @@ class _DeviceEegTabState extends State<DeviceEegTab> {
     if (!TabActiveScope.of(context)) {
       return const _InactiveTabPlaceholder();
     }
-    return EegWidget(rtEegDataBloc: _rtEegDataBloc);
+    return EegWidget(
+      key: ValueKey(_plotSettingsRevision),
+      rtEegDataBloc: _rtEegDataBloc,
+    );
   }
 }
 

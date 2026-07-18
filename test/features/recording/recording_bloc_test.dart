@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:eeg_app_max30003_stm32/features/annotation/domain/annotation_models.dart';
 import 'package:eeg_app_max30003_stm32/features/recording/application/recording_bloc.dart';
 import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_models.dart';
 import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_ports.dart';
@@ -58,6 +59,89 @@ void main() {
       expect(bloc.state.sampleCount, 3);
     },
   );
+
+  test('в папку кладётся readme со словарём меток', () async {
+    bloc.add(RecordingStartRequested(_startConfig()));
+    await pumpEventQueue();
+
+    final readme = storage.readme;
+    expect(readme, isNotNull, reason: 'readme пишется сразу при старте');
+    // Читателю нужно понять формат сигнала и что значат метки.
+    expect(readme, contains('signal_raw.bin'));
+    expect(readme, contains('int32'));
+    expect(readme, contains('250 Гц'));
+    expect(readme, contains('Спит'));
+    expect(readme, contains('Задели провод'));
+    expect(readme, contains('Артефакт сигнала'));
+    expect(readme, contains('test recording'));
+  });
+
+  test('артефакт ставится интервалом вручную наравне с состоянием', () async {
+    bloc.add(RecordingStartRequested(_startConfig()));
+    await pumpEventQueue();
+    bloc.add(const RecordingSamplesReceived([1, 2, 3, 4, 5]));
+    await pumpEventQueue();
+
+    bloc.add(
+      const RecordingManualIntervalAdded(
+        labelTypeId: 'artifact',
+        startGlobalSampleIndex: 1,
+        endGlobalSampleIndex: 4,
+      ),
+    );
+    await pumpEventQueue();
+
+    final label = bloc.state.labels.single;
+    expect(label.labelTypeId, 'artifact');
+    expect(label.kind, AnnotationKind.exclude);
+    expect(label.globalStartSampleIndex, 1);
+    expect(label.globalEndSampleIndex, 4);
+  });
+
+  test('точечное событие интервалом вручную не ставится', () async {
+    bloc.add(RecordingStartRequested(_startConfig()));
+    await pumpEventQueue();
+    bloc.add(const RecordingSamplesReceived([1, 2, 3, 4, 5]));
+    await pumpEventQueue();
+
+    // У точки нет длительности — интервалом её добавлять нельзя.
+    bloc.add(
+      const RecordingManualIntervalAdded(
+        labelTypeId: 'wire_touched',
+        startGlobalSampleIndex: 1,
+        endGlobalSampleIndex: 4,
+      ),
+    );
+    await pumpEventQueue();
+
+    expect(bloc.state.labels, isEmpty);
+  });
+
+  test('в json время дублируется рядом с отсчётами', () async {
+    bloc.add(RecordingStartRequested(_startConfig()));
+    await pumpEventQueue();
+    // 750 отсчётов при 250 Гц — ровно 3 секунды.
+    bloc.add(RecordingSamplesReceived(List<int>.filled(750, 1)));
+    await pumpEventQueue();
+    bloc.add(const RecordingPointLabelAdded(labelTypeId: 'sensor_hit'));
+    await pumpEventQueue();
+    bloc.add(const RecordingStopRequested());
+    await pumpEventQueue(times: 5);
+
+    final experimentJson = storage.experimentJson!;
+    final segment =
+        (experimentJson['segments']! as List<Object?>).single!
+            as Map<String, Object?>;
+    expect(segment['end_sample'], 750, reason: 'индексы остались на месте');
+    expect(segment['start_time'], '00:00');
+    expect(segment['end_time'], '00:03');
+
+    final label =
+        (experimentJson['labels']! as List<Object?>).single!
+            as Map<String, Object?>;
+    expect(label['label_type_id'], 'sensor_hit');
+    expect(label['time'], isNotNull);
+  });
 
   test('во время записи периодически пишется снимок experiment.json', () async {
     // Отдельный блок с нулевым интервалом: снимок должен появиться сразу, не
@@ -522,6 +606,7 @@ class _MemoryExperimentStorage implements ExperimentStorage {
   String? createdFolderName;
   final List<int> samples = <int>[];
   final List<int> rawSamples = <int>[];
+  String? readme;
   final List<Map<String, Object?>> journal = <Map<String, Object?>>[];
   Map<String, Object?>? experimentJson;
   int flushCount = 0;
@@ -560,6 +645,11 @@ class _MemoryExperimentStorage implements ExperimentStorage {
   @override
   Future<void> flush() async {
     flushCount++;
+  }
+
+  @override
+  Future<void> writeReadme(String text) async {
+    readme = text;
   }
 
   @override

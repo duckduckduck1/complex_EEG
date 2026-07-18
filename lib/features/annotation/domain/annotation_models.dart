@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'package:eeg_app_max30003_stm32/core/time_format.dart';
 
 /// Вид метки.
 ///
@@ -6,8 +7,8 @@ import 'package:equatable/equatable.dart';
 ///   закрыта. Одновременно открыта может быть только одна. Такую же метку можно
 ///   поставить вручную интервалом по времени.
 /// - [event] — точечное событие, мгновенная отметка на одном отсчёте.
-/// - [exclude] — интервал-исключение из анализа. В словаре по умолчанию сейчас
-///   нет (брак убран), но вид сохранён для формата пакета.
+/// - [exclude] — интервал-исключение из анализа: «Артефакт сигнала». Ставится
+///   вручную по времени, когда плохой участок длится, а не случается мгновенно.
 ///
 /// Словарь меток — про наблюдаемое поведение (спит, ест, бегает), а не про
 /// стадии сна: оператор биолог или студент и по сигналу их не поставит.
@@ -175,6 +176,45 @@ const defaultLabelTypes = <LabelType>[
     colorHex: '#CBD5E1',
     sortOrder: 260,
   ),
+  // Артефакты сигнала: отмечают, ПОЧЕМУ на записи скачок — чтобы тот, кто будет
+  // разбирать данные, не гадал. Идут в конце списка событий.
+  LabelType(
+    id: 'wire_touched',
+    kind: AnnotationKind.event,
+    displayName: 'Задели провод',
+    colorHex: '#F43F5E',
+    sortOrder: 310,
+  ),
+  LabelType(
+    id: 'sensor_hit',
+    kind: AnnotationKind.event,
+    displayName: 'Ударилась датчиком',
+    colorHex: '#FB7185',
+    sortOrder: 320,
+  ),
+  LabelType(
+    id: 'electrode_moved',
+    kind: AnnotationKind.event,
+    displayName: 'Сместился электрод',
+    colorHex: '#E879F9',
+    sortOrder: 330,
+  ),
+  LabelType(
+    id: 'interference',
+    kind: AnnotationKind.event,
+    displayName: 'Наводка / помеха',
+    colorHex: '#FDBA74',
+    sortOrder: 340,
+  ),
+  // Затяжной артефакт — интервалом: ставится вручную по времени, когда плохой
+  // участок длится, а не случается мгновенно.
+  LabelType(
+    id: 'artifact',
+    kind: AnnotationKind.exclude,
+    displayName: 'Артефакт сигнала',
+    colorHex: '#F43F5E',
+    sortOrder: 410,
+  ),
 ];
 
 class AnnotationPoint extends Equatable {
@@ -285,11 +325,14 @@ class AnnotationLabel extends Equatable {
       if (note != null && note!.trim().isNotEmpty) 'note': note,
     };
 
+    // Время в чч:мм:сс дублирует индексы отсчётов, а не заменяет их: индексы
+    // нужны машине, время — человеку, который открыл json глазами.
     if (isPoint) {
       json.addAll({
         'sample_index': globalStartSampleIndex,
         'segment_sample_index': startSegmentSampleIndex,
         'global_sample_index': globalStartSampleIndex,
+        'time': formatClockFromSamples(globalStartSampleIndex),
         'wall_clock_time': startedAtWallClock.toUtc().toIso8601String(),
       });
     } else {
@@ -299,6 +342,13 @@ class AnnotationLabel extends Equatable {
         'start_segment_sample_index': startSegmentSampleIndex,
         if (endSegmentSampleIndex != null)
           'end_segment_sample_index': endSegmentSampleIndex,
+        'start_time': formatClockFromSamples(globalStartSampleIndex),
+        if (globalEndSampleIndex != null)
+          'end_time': formatClockFromSamples(globalEndSampleIndex!),
+        if (globalEndSampleIndex != null)
+          'duration': formatClockFromSamples(
+            globalEndSampleIndex! - globalStartSampleIndex,
+          ),
         'started_at_wall_clock': startedAtWallClock.toUtc().toIso8601String(),
         if (endedAtWallClock != null)
           'ended_at_wall_clock': endedAtWallClock!.toUtc().toIso8601String(),
