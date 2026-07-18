@@ -5,6 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:eeg_app_max30003_stm32/core/time_format.dart';
 import 'package:eeg_app_max30003_stm32/theme.dart';
 
+/// Порядок ритмов: он же порядок полос в `lineBarsData`, легенды и тултипа.
+/// `barIndex` из fl_chart — индекс в этом списке.
+const _bandNames = ['Delta', 'Theta', 'Alpha', 'Beta'];
+
 class BandPowerPlot extends StatelessWidget {
   final List<FlSpot> deltaData;
   final List<FlSpot> thetaData;
@@ -62,10 +66,10 @@ class BandPowerPlot extends StatelessWidget {
       children: [
         _Legend(
           items: [
-            _LegendItemData(colors.delta, 'Delta'),
-            _LegendItemData(colors.theta, 'Theta'),
-            _LegendItemData(colors.alpha, 'Alpha'),
-            _LegendItemData(colors.beta, 'Beta'),
+            _LegendItemData(colors.delta, _bandNames[0]),
+            _LegendItemData(colors.theta, _bandNames[1]),
+            _LegendItemData(colors.alpha, _bandNames[2]),
+            _LegendItemData(colors.beta, _bandNames[3]),
           ],
         ),
         const SizedBox(height: 8),
@@ -92,20 +96,21 @@ class BandPowerPlot extends StatelessWidget {
                     ],
                   ),
                   lineTouchData: LineTouchData(
+                    // Ритмы лежат на общей сетке по времени, поэтому под
+                    // курсором должны отзываться все четыре, а не только
+                    // ближайший: сравнивать их между собой и есть смысл графика.
+                    touchSpotThreshold: 40,
                     touchTooltipData: LineTouchTooltipData(
                       fitInsideVertically: true,
                       fitInsideHorizontally: true,
-                      getTooltipItems: (touchedSpots) {
-                        return touchedSpots.map((spot) {
-                          return LineTooltipItem(
-                            spot.y.toStringAsFixed(3),
-                            TextStyle(
-                              color: spot.bar.color,
-                              fontWeight: FontWeight.bold,
+                      getTooltipItems:
+                          (touchedSpots) => _buildTooltipItems(
+                            touchedSpots,
+                            headerStyle: TextStyle(
+                              color: colorScheme.onSurfaceVariant,
+                              fontWeight: FontWeight.w600,
                             ),
-                          );
-                        }).toList();
-                      },
+                          ),
                     ),
                   ),
                   lineBarsData: [
@@ -170,6 +175,47 @@ class BandPowerPlot extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  /// Тултип читается как «что было в этот момент»: сверху время по оси X,
+  /// ниже все ритмы в том же порядке, что и в легенде.
+  ///
+  /// Порядок задаём сами по `barIndex`: `touchedSpots` приходит в порядке
+  /// касания, и без сортировки строки прыгали бы местами при каждом движении
+  /// курсора. Длина ответа должна совпадать с длиной входа, поэтому время
+  /// не отдельный пункт, а заголовок первой строки.
+  List<LineTooltipItem> _buildTooltipItems(
+    List<LineBarSpot> touchedSpots, {
+    required TextStyle headerStyle,
+  }) {
+    final sorted = [...touchedSpots]
+      ..sort((a, b) => a.barIndex.compareTo(b.barIndex));
+
+    return [
+      for (var i = 0; i < sorted.length; i++)
+        () {
+          final spot = sorted[i];
+          final name =
+              spot.barIndex < _bandNames.length
+                  ? _bandNames[spot.barIndex]
+                  : '—';
+          final line = '$name  ${spot.y.toStringAsFixed(3)} отн.';
+          final lineStyle = TextStyle(
+            color: spot.bar.color,
+            fontWeight: FontWeight.bold,
+          );
+          if (i > 0) {
+            return LineTooltipItem(line, lineStyle, textAlign: TextAlign.left);
+          }
+          // Время берём с оси X — она у ритмов в секундах наблюдения.
+          return LineTooltipItem(
+            formatClock(spot.x.round()),
+            headerStyle,
+            textAlign: TextAlign.left,
+            children: [TextSpan(text: '\n$line', style: lineStyle)],
+          );
+        }(),
+    ];
   }
 
   LineChartBarData _buildLineBar(List<FlSpot> data, Color color) {

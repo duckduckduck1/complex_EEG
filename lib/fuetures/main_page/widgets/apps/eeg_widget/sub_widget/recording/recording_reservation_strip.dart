@@ -288,7 +288,7 @@ class _RecordingControls extends StatelessWidget {
           // длительность, не заглядывая в json.
           label: Text(
             state.fbmOn
-                ? 'Свет выкл · ${formatClockFromSamples(state.sampleCount - (state.fbmOnSampleIndex ?? state.sampleCount))}'
+                ? 'Свет выкл · ${formatClockFromSamples(state.fbmElapsedSamples ?? 0)}'
                 : 'Свет вкл',
           ),
         ),
@@ -436,7 +436,15 @@ class _FbmAutoOffControl extends StatelessWidget {
     60: '1 мин',
     300: '5 мин',
     900: '15 мин',
+    1800: '30 мин',
   };
+
+  /// Подпись кнопки: у пресета своя, у произвольного времени — само время.
+  String get _label {
+    final current = seconds;
+    if (current == null) return 'Вручную';
+    return _presets[current] ?? formatClock(current);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -449,8 +457,18 @@ class _FbmAutoOffControl extends StatelessWidget {
               preset.key == seconds ? Icons.check : Icons.timer_outlined,
               size: 16,
             ),
-            child: SizedBox(width: 120, child: Text(preset.value)),
+            child: SizedBox(width: 140, child: Text(preset.value)),
           ),
+        MenuItemButton(
+          onPressed: () => _askCustomTime(context),
+          leadingIcon: Icon(
+            seconds != null && !_presets.containsKey(seconds)
+                ? Icons.check
+                : Icons.edit_outlined,
+            size: 16,
+          ),
+          child: const SizedBox(width: 140, child: Text('Своё время…')),
+        ),
       ],
       builder:
           (context, controller, _) => OutlinedButton.icon(
@@ -458,8 +476,75 @@ class _FbmAutoOffControl extends StatelessWidget {
                 () =>
                     controller.isOpen ? controller.close() : controller.open(),
             icon: const Icon(Icons.timer_outlined),
-            label: Text('Гасить: ${_presets[seconds] ?? 'Вручную'}'),
+            label: Text('Гасить: $_label'),
           ),
+    );
+  }
+
+  Future<void> _askCustomTime(BuildContext context) async {
+    final picked = await showDialog<int>(
+      context: context,
+      builder: (context) => _FbmAutoOffDialog(initialSeconds: seconds),
+    );
+    if (picked != null) {
+      onChanged(picked);
+    }
+  }
+}
+
+/// Ввод произвольного времени автовыключения в `чч:мм:сс`.
+class _FbmAutoOffDialog extends StatefulWidget {
+  final int? initialSeconds;
+
+  const _FbmAutoOffDialog({required this.initialSeconds});
+
+  @override
+  State<_FbmAutoOffDialog> createState() => _FbmAutoOffDialogState();
+}
+
+class _FbmAutoOffDialogState extends State<_FbmAutoOffDialog> {
+  late final TextEditingController _controller = TextEditingController(
+    text: formatClock(widget.initialSeconds ?? 0),
+  );
+  String? _errorText;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final parsed = parseClockToSeconds(_controller.text);
+    if (parsed == null || parsed <= 0) {
+      setState(() => _errorText = 'Введите время в формате чч:мм:сс');
+      return;
+    }
+    Navigator.of(context).pop(parsed);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Через сколько гасить свет'),
+      content: TextField(
+        key: const Key('fbm-auto-off-input'),
+        controller: _controller,
+        autofocus: true,
+        onSubmitted: (_) => _submit(),
+        decoration: InputDecoration(
+          labelText: 'чч:мм:сс',
+          helperText: 'Можно короче: «90» — это 90 секунд, «5:00» — 5 минут',
+          errorText: _errorText,
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Отмена'),
+        ),
+        FilledButton(onPressed: _submit, child: const Text('Готово')),
+      ],
     );
   }
 }
