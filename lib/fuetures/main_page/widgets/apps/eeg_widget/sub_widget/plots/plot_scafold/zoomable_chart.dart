@@ -7,6 +7,12 @@ import 'package:flutter/material.dart';
 /// Сам зум обеспечивается `transformationConfig` внутри `LineChart` —
 /// колесо мыши/тачпад масштабируют нативно; этот виджет добавляет только
 /// клип и управление сбросом.
+///
+/// График скрыт от дерева доступности ([ExcludeSemantics]): живая осциллограмма
+/// скринридеру ничего не даёт, а её узлы (подписи осей и т.п.) пересоздаются на
+/// каждый кадр — до сотен раз в секунду. Windows-мост доступности такой поток
+/// обновлений не переваривает и сыпет в лог `Failed to update ui::AXTree`.
+/// Кнопка сброса масштаба доступной остаётся: это настоящий элемент управления.
 class ZoomableChart extends StatelessWidget {
   final TransformationController transformController;
   final ColorScheme colorScheme;
@@ -23,7 +29,7 @@ class ZoomableChart extends StatelessWidget {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        Positioned.fill(child: ClipRect(child: child)),
+        Positioned.fill(child: ClipRect(child: ExcludeSemantics(child: child))),
         Positioned(
           top: 4,
           right: 4,

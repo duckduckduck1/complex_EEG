@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:eeg_app_max30003_stm32/core/time_format.dart';
 import 'package:eeg_app_max30003_stm32/features/annotation/domain/annotation_models.dart';
 import 'package:eeg_app_max30003_stm32/features/recording/domain/experiment_folder_name.dart';
 import 'package:eeg_app_max30003_stm32/features/recording/domain/experiment_readme.dart';
@@ -70,6 +71,7 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
     on<FbmOnRequested>(_onFbmOnRequested);
     on<FbmOffRequested>(_onFbmOffRequested);
     on<FbmPwmChanged>(_onFbmPwmChanged);
+    on<FbmAutoOffChanged>(_onFbmAutoOffChanged);
     on<RecordingStateLabelStarted>(_onStateLabelStarted);
     on<RecordingActiveStateLabelClosed>(_onActiveStateLabelClosed);
     on<RecordingPointLabelAdded>(_onPointLabelAdded);
@@ -198,7 +200,11 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
         sampleCount: state.sampleCount + filtered.length,
       );
       emit(updated);
-      await _writeJsonSnapshot(updated);
+      final afterAutoOff = await _autoOffFbmIfDue(updated);
+      if (!identical(afterAutoOff, updated)) {
+        emit(afterAutoOff);
+      }
+      await _writeJsonSnapshot(afterAutoOff);
     } catch (error) {
       await _safeCloseStorage();
       emit(
@@ -443,6 +449,42 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
         ),
       );
     }
+  }
+
+  Future<void> _onFbmAutoOffChanged(
+    FbmAutoOffChanged event,
+    Emitter<RecordingState> emit,
+  ) async {
+    final seconds = event.seconds;
+    if (seconds != null && seconds <= 0) {
+      return;
+    }
+    emit(state.copyWith(fbmAutoOffSeconds: seconds));
+  }
+
+  /// Гасит ФБМ, когда истекло заданное время.
+  ///
+  /// Считаем по потоку отсчётов, а не по таймеру: устройство идёт ровно 250 Гц,
+  /// поэтому счётчик отсчётов и есть часы записи — и длительность света в
+  /// журнале совпадает с тем, что видно на сигнале. Таймер бы ещё и висел
+  /// в тестах.
+  Future<RecordingState> _autoOffFbmIfDue(RecordingState current) async {
+    final autoOffSeconds = current.fbmAutoOffSeconds;
+    final onSampleIndex = current.fbmOnSampleIndex;
+    if (!current.fbmOn || autoOffSeconds == null || onSampleIndex == null) {
+      return current;
+    }
+    final elapsedSamples = current.sampleCount - onSampleIndex;
+    if (elapsedSamples < secondsToSamples(autoOffSeconds)) {
+      return current;
+    }
+    return _applyFbmEvent(
+      current,
+      isOn: false,
+      sendCommand: true,
+      allowUndelivered: true,
+      reason: 'auto_off_timer',
+    );
   }
 
   Future<void> _onStateLabelStarted(
@@ -959,6 +1001,13 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
       pwmByte: pwmByte,
       commandDelivered: commandDelivered,
       reason: reason,
+      // Длительность считаем только на выключении: сколько свет реально горел.
+      // По счётчику отсчётов, а не по разнице индексов событий — иначе на
+      // границе получается на отсчёт меньше.
+      durationSamples:
+          !isOn && stateToUpdate.fbmOnSampleIndex != null
+              ? stateToUpdate.sampleCount - stateToUpdate.fbmOnSampleIndex!
+              : null,
     );
 
     await _storage.appendJournal(
@@ -975,6 +1024,12 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
 
     return stateToUpdate.copyWith(
       fbmOn: isOn,
+      // Момент включения нужен и таймеру в интерфейсе, и автовыключению.
+      // Смена ШИМ на горящем свете сеанс не прерывает — точку отсчёта храним.
+      fbmOnSampleIndex:
+          isOn
+              ? (stateToUpdate.fbmOnSampleIndex ?? stateToUpdate.sampleCount)
+              : null,
       pwmLevel: effectivePwmLevel,
       fbmEvents: [...stateToUpdate.fbmEvents, fbmEvent],
     );
