@@ -13,6 +13,7 @@ import 'package:eeg_app_max30003_stm32/features/recording/presentation/recording
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/device_eeg_tab.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/recording/recording_reservation_strip.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/tabs/bloc/tab_bloc.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/tabs/device_view_session.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/tabs/tab_active_scope.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/tabs/widgets/app_selector_diolog.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/tabs/widgets/tab_bar.dart';
@@ -66,16 +67,17 @@ class _MainPageState extends State<MainPage> with TickerProviderStateMixin {
   }
 
   void _openDeviceTab(DeviceSession session) {
-    final recordingBloc = _createRecordingBloc(session);
+    // Сессия вида переживает сам вид: владение сразу отдаём TabBloc, он же её
+    // и закроет. Иначе уход вкладки с экрана оборвал бы идущую запись.
+    final viewSession = DeviceViewSession(
+      connection: session.connection,
+      recordingBloc: _createRecordingBloc(session),
+    );
     _tabBloc.add(
       NewTabAdded(
         newTab: Text(eegDisplayName(session.deviceId)),
-        content: DeviceEegTab(
-          connection: session.connection,
-          recordingBloc: recordingBloc,
-        ),
-        connectionBloc: session.connection,
-        recordingBloc: recordingBloc,
+        content: DeviceEegTab(session: viewSession),
+        session: viewSession,
       ),
     );
   }

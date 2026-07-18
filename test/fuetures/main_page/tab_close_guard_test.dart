@@ -3,9 +3,10 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:eeg_app_max30003_stm32/features/recording/application/recording_bloc.dart';
 import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_models.dart';
-import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_ports.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/tabs/bloc/tab_bloc.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/tabs/widgets/tab_bar.dart';
+
+import '../../support/device_view_session_fakes.dart';
 
 void main() {
   Widget wrap(TabBloc tabBloc) {
@@ -21,24 +22,14 @@ void main() {
     );
   }
 
-  RecordingBloc createRecordingBloc() {
-    return RecordingBloc(
-      storage: _MemoryExperimentStorage(),
-      filterFactory: const PassThroughStreamingFilterFactory(),
-      idGenerator: const _FixedIdGenerator(),
-      fbmTransport: const _FakeFbmTransport(),
-    );
-  }
-
   testWidgets('во время записи крестик объясняет, почему нельзя закрыть', (
     tester,
   ) async {
-    final recordingBloc = createRecordingBloc();
+    final session = createTestViewSession();
+    final recordingBloc = session.recordingBloc;
     final tabBloc = TabBloc(vsync: tester);
+    // Сессию закрывает TabBloc вместе с вкладкой.
     addTearDown(tabBloc.close);
-    addTearDown(() async {
-      if (!recordingBloc.isClosed) await recordingBloc.close();
-    });
 
     recordingBloc.add(
       const RecordingStartRequested(
@@ -55,7 +46,7 @@ void main() {
       NewTabAdded(
         newTab: const Text('Мышь 1'),
         content: const SizedBox(),
-        recordingBloc: recordingBloc,
+        session: session,
       ),
     );
     await tester.pumpWidget(wrap(tabBloc));
@@ -99,51 +90,4 @@ void main() {
     await tester.pumpAndSettle();
     expect(tabBloc.state.tabs, hasLength(1));
   });
-}
-
-class _MemoryExperimentStorage implements ExperimentStorage {
-  @override
-  Future<void> createExperiment({
-    required String rootDirectory,
-    required String experimentId,
-    required String folderName,
-  }) async {}
-
-  @override
-  Future<void> appendSamples({
-    required List<int> filtered,
-    required List<int> raw,
-  }) async {}
-
-  @override
-  Future<void> appendJournal(
-    Map<String, Object?> event, {
-    bool flush = false,
-  }) async {}
-
-  @override
-  Future<void> flush() async {}
-
-  @override
-  Future<void> writeReadme(String text) async {}
-
-  @override
-  Future<void> writeExperimentJson(Map<String, Object?> experimentJson) async {}
-
-  @override
-  Future<void> close() async {}
-}
-
-class _FixedIdGenerator implements ExperimentIdGenerator {
-  const _FixedIdGenerator();
-
-  @override
-  String nextId() => '01KXTF74CQSD65FWE0S2DF1WWZ';
-}
-
-class _FakeFbmTransport implements FbmTransport {
-  const _FakeFbmTransport();
-
-  @override
-  Future<bool> setLed({required bool on, required int pwmByte}) async => true;
 }
