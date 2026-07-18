@@ -34,8 +34,10 @@ class _RecordingAnnotationDialogState extends State<RecordingAnnotationDialog> {
   late String _typeId = _stateTypes.first.id;
   String? _manualError;
 
+  /// Вручную интервалом ставятся и состояния, и артефакты сигнала: у обоих есть
+  /// начало и конец. Точечные события добавляются одним кликом из панели.
   static final List<LabelType> _stateTypes = defaultLabelTypes
-      .where((type) => type.kind == AnnotationKind.state)
+      .where((type) => type.kind != AnnotationKind.event && type.isActive)
       .toList(growable: false);
 
   @override
@@ -135,9 +137,9 @@ class _RecordingAnnotationDialogState extends State<RecordingAnnotationDialog> {
                   const SizedBox(height: 4),
                   Text(
                     'Если выбрали не то и удалили — можно поставить метку руками. '
-                    'Выберите состояние, введите время начала и конца по часам '
-                    'графика (чч:мм:сс или мм:сс). Пример: сон с 00:05:00 до '
-                    '00:12:30. Сегмент подтянется сам.',
+                    'Выберите состояние или «Артефакт сигнала», введите время '
+                    'начала и конца по часам графика (чч:мм:сс или мм:сс). '
+                    'Пример: сон с 00:05:00 до 00:12:30. Сегмент подтянется сам.',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),

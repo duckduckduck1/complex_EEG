@@ -149,6 +149,17 @@ class FileExperimentStorage implements ExperimentStorage {
   }
 
   @override
+  Future<void> writeReadme(String text) async {
+    final experimentDirectory = _experimentDirectory;
+    if (experimentDirectory == null) {
+      throw StateError('Experiment storage is not opened');
+    }
+    await File.fromUri(
+      experimentDirectory.uri.resolve('readme.txt'),
+    ).writeAsString(text, encoding: utf8);
+  }
+
+  @override
   Future<void> writeExperimentJson(Map<String, Object?> experimentJson) async {
     final experimentDirectory = _experimentDirectory;
     if (experimentDirectory == null) {

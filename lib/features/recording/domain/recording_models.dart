@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'package:eeg_app_max30003_stm32/core/time_format.dart';
 import 'package:eeg_app_max30003_stm32/features/annotation/domain/annotation_models.dart';
 
 enum RecordingStatus {
@@ -116,6 +117,8 @@ class RecordingFbmEvent extends Equatable {
     'sample_index': globalSampleIndex,
     'segment_sample_index': segmentSampleIndex,
     'global_sample_index': globalSampleIndex,
+    // Дублируем время в чч:мм:сс — читать глазами, не переводя семплы.
+    'time': formatClockFromSamples(globalSampleIndex),
     'wall_clock_time': wallClockTime.toUtc().toIso8601String(),
     'on': isOn,
     'pwm_level': pwmLevel,
@@ -172,6 +175,8 @@ class RecordingSegment extends Equatable {
     'segment_id': segmentId,
     'start_sample': startSample,
     'end_sample': endSample,
+    'start_time': formatClockFromSamples(startSample),
+    if (endSample != null) 'end_time': formatClockFromSamples(endSample!),
     'started_at_wall_clock': startedAtWallClock.toUtc().toIso8601String(),
     if (endedAtWallClock != null)
       'ended_at_wall_clock': endedAtWallClock!.toUtc().toIso8601String(),
@@ -203,6 +208,7 @@ class RecordingGap extends Equatable {
     if (endedAtWallClock != null)
       'ended_at_wall_clock': endedAtWallClock!.toUtc().toIso8601String(),
     'sample_index': sampleIndex,
+    'time': formatClockFromSamples(sampleIndex),
   };
 
   @override
@@ -233,6 +239,7 @@ class RecordingState extends Equatable {
     this.gaps = const <RecordingGap>[],
     this.labels = const <AnnotationLabel>[],
     this.activeDraftLabel,
+    this.filters = const RecordingFilters(),
     this.pwmLevel,
     this.fbmOn = false,
     this.fbmEvents = const <RecordingFbmEvent>[],
@@ -248,6 +255,11 @@ class RecordingState extends Equatable {
   final List<RecordingGap> gaps;
   final List<AnnotationLabel> labels;
   final AnnotationLabel? activeDraftLabel;
+
+  /// Фильтры, выбранные при старте записи. Их же вкладка применяет к графику,
+  /// чтобы оператор видел ровно то, что пишется, и не выставлял руками заново.
+  final RecordingFilters filters;
+
   final int? pwmLevel;
   final bool fbmOn;
   final List<RecordingFbmEvent> fbmEvents;
@@ -265,6 +277,7 @@ class RecordingState extends Equatable {
     List<RecordingGap>? gaps,
     List<AnnotationLabel>? labels,
     Object? activeDraftLabel = _unset,
+    RecordingFilters? filters,
     Object? pwmLevel = _unset,
     bool? fbmOn,
     List<RecordingFbmEvent>? fbmEvents,
@@ -288,6 +301,7 @@ class RecordingState extends Equatable {
           activeDraftLabel == _unset
               ? this.activeDraftLabel
               : activeDraftLabel as AnnotationLabel?,
+      filters: filters ?? this.filters,
       pwmLevel: pwmLevel == _unset ? this.pwmLevel : pwmLevel as int?,
       fbmOn: fbmOn ?? this.fbmOn,
       fbmEvents: fbmEvents ?? this.fbmEvents,
