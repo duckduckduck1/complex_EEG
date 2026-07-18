@@ -30,7 +30,9 @@ void main() {
 
     final futures = <Future<void>>[];
     for (var i = 0; i < 50; i++) {
-      futures.add(storage.appendSamples([i, -i]));
+      futures.add(
+        storage.appendSamples(filtered: [i, -i], raw: [i * 2, -i * 2]),
+      );
     }
     futures.add(storage.flush());
 
@@ -68,7 +70,7 @@ void main() {
       experimentId: 'exp_first',
       folderName: 'Мышь 1',
     );
-    await first.appendSamples([1, 2, 3]);
+    await first.appendSamples(filtered: [1, 2, 3], raw: [1, 2, 3]);
     await first.close();
 
     final signal = File.fromUri(root.uri.resolve('Мышь%201/signal.bin'));
@@ -89,6 +91,33 @@ void main() {
     expect(await signal.length(), sizeBefore);
   });
 
+  test('сырой сигнал пишется вторым файлом той же длины', () async {
+    final storage = FileExperimentStorage(flushInterval: Duration.zero);
+    await storage.createExperiment(
+      rootDirectory: root.path,
+      experimentId: '01KXTF74CQSD65FWE0S2DF1WWZ',
+      folderName: 'Мышь 1',
+    );
+    // Фильтр меняет значения, но количество отсчётов совпадает.
+    await storage.appendSamples(filtered: [10, 20, 30], raw: [11, 21, 31]);
+    await storage.close();
+
+    final folder = root.uri.resolve('Мышь%201/');
+    final signal = File.fromUri(folder.resolve('signal.bin'));
+    final rawSignal = File.fromUri(folder.resolve('signal_raw.bin'));
+
+    expect(await rawSignal.exists(), isTrue);
+    expect(await signal.length(), 3 * 4);
+    expect(
+      await rawSignal.length(),
+      await signal.length(),
+      reason: 'по индексу отсчёта оба файла должны совпадать',
+    );
+
+    // Содержимое разное: фильтрованный не равен сырому.
+    expect(await signal.readAsBytes(), isNot(await rawSignal.readAsBytes()));
+  });
+
   test('close дожидается записи и закрывает файл без гонки', () async {
     final storage = FileExperimentStorage(flushInterval: Duration.zero);
     await storage.createExperiment(
@@ -98,7 +127,7 @@ void main() {
     );
 
     // append и close «одновременно»: close должен встать в очередь после append.
-    final append = storage.appendSamples([1, 2, 3]);
+    final append = storage.appendSamples(filtered: [1, 2, 3], raw: [1, 2, 3]);
     final close = storage.close();
     await Future.wait([append, close]);
 

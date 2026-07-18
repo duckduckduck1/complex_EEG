@@ -17,10 +17,18 @@ abstract interface class ExperimentStorage {
     required String folderName,
   });
 
-  /// Дописать отсчёты в `signal.bin` (int32 little-endian, микровольты).
+  /// Дописать отсчёты: [filtered] в `signal.bin`, [raw] в `signal_raw.bin`
+  /// (оба — int32 little-endian, микровольты).
+  ///
+  /// Пишутся парой и одной длины: по индексу отсчёта из одного файла можно
+  /// смотреть тот же отсчёт в другом. Фильтр необратим, поэтому сырой сигнал
+  /// сохраняем — по нему можно перефильтровать иначе.
   ///
   /// Только append: уже записанное не переписывается никогда.
-  Future<void> appendSamples(List<int> samples);
+  Future<void> appendSamples({
+    required List<int> filtered,
+    required List<int> raw,
+  });
 
   /// Дописать событие в `journal.ndjson` (append-only, одна JSON-строка).
   ///

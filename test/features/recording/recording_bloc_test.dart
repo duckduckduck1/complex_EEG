@@ -59,6 +59,59 @@ void main() {
     },
   );
 
+  test('во время записи периодически пишется снимок experiment.json', () async {
+    // Отдельный блок с нулевым интервалом: снимок должен появиться сразу, не
+    // дожидаясь остановки — после падения приложения папка остаётся пригодной.
+    final snapshotStorage = _MemoryExperimentStorage();
+    final snapshotBloc = RecordingBloc(
+      storage: snapshotStorage,
+      filterFactory: const _OffsetFilterFactory(),
+      idGenerator: const _FixedIdGenerator('01KXTF74CQSD65FWE0S2DF1WWZ'),
+      fbmTransport: _FakeFbmTransport(),
+      jsonSnapshotInterval: Duration.zero,
+    );
+    addTearDown(() async {
+      if (!snapshotBloc.isClosed) await snapshotBloc.close();
+    });
+
+    snapshotBloc.add(RecordingStartRequested(_startConfig()));
+    await pumpEventQueue();
+    expect(
+      snapshotStorage.experimentJson,
+      isNull,
+      reason: 'данных ещё не было',
+    );
+
+    snapshotBloc.add(const RecordingSamplesReceived([1, 2, 3, 4]));
+    await pumpEventQueue();
+
+    final snapshot = snapshotStorage.experimentJson;
+    expect(snapshot, isNotNull, reason: 'снимок пишется, не дожидаясь стопа');
+
+    // Активный сегмент в снимке закрыт текущим счётчиком, иначе json был бы
+    // вообще без сегментов.
+    final segments = snapshot!['segments']! as List<Object?>;
+    expect(segments, hasLength(1));
+    final segment = segments.single! as Map<String, Object?>;
+    expect(segment['start_sample'], 0);
+    expect(segment['end_sample'], 4);
+  });
+
+  test('обрыв связи сразу сохраняет снимок, не дожидаясь интервала', () async {
+    bloc.add(RecordingStartRequested(_startConfig()));
+    await pumpEventQueue();
+    bloc.add(const RecordingSamplesReceived([1, 2, 3]));
+    await pumpEventQueue();
+    expect(storage.experimentJson, isNull, reason: 'интервал ещё не истёк');
+
+    bloc.add(const RecordingConnectionLost());
+    await pumpEventQueue(times: 5);
+
+    expect(storage.experimentJson, isNotNull);
+    final segments = storage.experimentJson!['segments']! as List<Object?>;
+    expect(segments, hasLength(1));
+  });
+
   test('stop writes valid experiment json without zero-fill samples', () async {
     bloc.add(RecordingStartRequested(_startConfig()));
     await pumpEventQueue();
@@ -466,7 +519,9 @@ RecordingStartConfig _startConfig({int pwmLevel = 50}) {
 class _MemoryExperimentStorage implements ExperimentStorage {
   String? createdRootDirectory;
   String? createdExperimentId;
+  String? createdFolderName;
   final List<int> samples = <int>[];
+  final List<int> rawSamples = <int>[];
   final List<Map<String, Object?>> journal = <Map<String, Object?>>[];
   Map<String, Object?>? experimentJson;
   int flushCount = 0;
@@ -480,12 +535,17 @@ class _MemoryExperimentStorage implements ExperimentStorage {
   }) async {
     createdRootDirectory = rootDirectory;
     createdExperimentId = experimentId;
+    createdFolderName = folderName;
     closed = false;
   }
 
   @override
-  Future<void> appendSamples(List<int> samples) async {
-    this.samples.addAll(samples);
+  Future<void> appendSamples({
+    required List<int> filtered,
+    required List<int> raw,
+  }) async {
+    samples.addAll(filtered);
+    rawSamples.addAll(raw);
   }
 
   @override

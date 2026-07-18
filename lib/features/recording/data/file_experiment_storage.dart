@@ -28,8 +28,10 @@ class FileExperimentStorage implements ExperimentStorage {
 
   Directory? _experimentDirectory;
   RandomAccessFile? _signalFile;
+  RandomAccessFile? _rawSignalFile;
   IOSink? _journalSink;
   final List<int> _pendingSamples = <int>[];
+  final List<int> _pendingRawSamples = <int>[];
   DateTime _lastSignalFlush = DateTime.fromMillisecondsSinceEpoch(0);
   Future<void> _fileQueue = Future<void>.value();
 
@@ -70,21 +72,29 @@ class FileExperimentStorage implements ExperimentStorage {
     final signalFile = File.fromUri(
       experimentDirectory.uri.resolve('signal.bin'),
     );
+    final rawSignalFile = File.fromUri(
+      experimentDirectory.uri.resolve('signal_raw.bin'),
+    );
     final journalFile = File.fromUri(
       experimentDirectory.uri.resolve('journal.ndjson'),
     );
 
     _experimentDirectory = experimentDirectory;
     _signalFile = await signalFile.open(mode: FileMode.write);
+    _rawSignalFile = await rawSignalFile.open(mode: FileMode.write);
     await journalFile.writeAsString('', encoding: utf8);
     _journalSink = journalFile.openWrite(mode: FileMode.append, encoding: utf8);
     _lastSignalFlush = DateTime.now().toUtc();
   }
 
   @override
-  Future<void> appendSamples(List<int> samples) async {
+  Future<void> appendSamples({
+    required List<int> filtered,
+    required List<int> raw,
+  }) async {
     _ensureOpen();
-    _pendingSamples.addAll(samples);
+    _pendingSamples.addAll(filtered);
+    _pendingRawSamples.addAll(raw);
 
     final now = DateTime.now().toUtc();
     if (now.difference(_lastSignalFlush) >= flushInterval) {
@@ -123,6 +133,17 @@ class FileExperimentStorage implements ExperimentStorage {
       await signalFile.writeFrom(bytes);
     }
     await signalFile.flush();
+
+    final rawSignalFile = _rawSignalFile;
+    if (rawSignalFile != null) {
+      if (_pendingRawSamples.isNotEmpty) {
+        final rawBytes = _encodeSamples(_pendingRawSamples);
+        _pendingRawSamples.clear();
+        await rawSignalFile.writeFrom(rawBytes);
+      }
+      await rawSignalFile.flush();
+    }
+
     await _journalSink?.flush();
     _lastSignalFlush = DateTime.now().toUtc();
   }
@@ -155,12 +176,15 @@ class FileExperimentStorage implements ExperimentStorage {
     await _synchronized(() async {
       await _flushLocked();
       await _signalFile?.close();
+      await _rawSignalFile?.close();
       await _journalSink?.flush();
       await _journalSink?.close();
       _signalFile = null;
+      _rawSignalFile = null;
       _journalSink = null;
       _experimentDirectory = null;
       _pendingSamples.clear();
+      _pendingRawSamples.clear();
     });
   }
 

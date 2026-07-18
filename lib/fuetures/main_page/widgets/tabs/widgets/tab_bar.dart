@@ -65,7 +65,8 @@ class IotTabBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<TabBloc, TabState>(
       builder: (context, state) {
-        if (state.controller == null) {
+        // Вкладок может не остаться вовсе: закрыть можно и последнюю.
+        if (state.controller == null || state.tabs.isEmpty) {
           return const SizedBox.shrink();
         }
 
