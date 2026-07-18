@@ -55,7 +55,7 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
     on<RecordingStateLabelStarted>(_onStateLabelStarted);
     on<RecordingActiveStateLabelClosed>(_onActiveStateLabelClosed);
     on<RecordingPointLabelAdded>(_onPointLabelAdded);
-    on<RecordingExcludeIntervalAdded>(_onExcludeIntervalAdded);
+    on<RecordingManualIntervalAdded>(_onManualIntervalAdded);
     on<RecordingAnnotationDeleted>(_onAnnotationDeleted);
   }
 
@@ -496,22 +496,28 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
     }
   }
 
-  Future<void> _onExcludeIntervalAdded(
-    RecordingExcludeIntervalAdded event,
+  Future<void> _onManualIntervalAdded(
+    RecordingManualIntervalAdded event,
     Emitter<RecordingState> emit,
   ) async {
     if (state.status != RecordingStatus.recording) {
       return;
     }
-    final type = _labelType(event.labelTypeId, AnnotationKind.exclude);
-    final segment = _activeSegment(state);
+    final type = _labelType(event.labelTypeId, AnnotationKind.state);
     final experimentId = state.experimentId;
-    if (type == null || segment == null || experimentId == null) {
+    if (type == null || experimentId == null) {
       return;
     }
-    if (event.startSegmentSampleIndex < 0 ||
-        event.endSegmentSampleIndex <= event.startSegmentSampleIndex ||
-        segment.startSample + event.endSegmentSampleIndex > state.sampleCount) {
+    final start = event.startGlobalSampleIndex;
+    final end = event.endGlobalSampleIndex;
+    if (start < 0 || end <= start || end > state.sampleCount) {
+      return;
+    }
+    // Сегмент подтягивается сам: ищем тот, что целиком содержит интервал.
+    // Через разрыв метку ставить нельзя — интервал обязан лежать в одном
+    // сегменте.
+    final segment = _segmentContaining(start, end);
+    if (segment == null) {
       return;
     }
 
@@ -519,15 +525,14 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
       final timestamp = _clock.now();
       final label = AnnotationLabel(
         id: _nextLabelId(),
-        kind: AnnotationKind.exclude,
+        kind: AnnotationKind.state,
         labelTypeId: type.id,
         segmentId: segment.segmentId,
-        startSegmentSampleIndex: event.startSegmentSampleIndex,
-        globalStartSampleIndex:
-            segment.startSample + event.startSegmentSampleIndex,
+        startSegmentSampleIndex: start - segment.startSample,
+        globalStartSampleIndex: start,
         startedAtWallClock: timestamp,
-        endSegmentSampleIndex: event.endSegmentSampleIndex,
-        globalEndSampleIndex: segment.startSample + event.endSegmentSampleIndex,
+        endSegmentSampleIndex: end - segment.startSample,
+        globalEndSampleIndex: end,
         endedAtWallClock: timestamp,
         note: event.note,
       );
@@ -885,6 +890,18 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
     }
     for (final segment in stateToRead.segments) {
       if (segment.segmentId == activeSegmentId) {
+        return segment;
+      }
+    }
+    return null;
+  }
+
+  /// Сегмент, целиком содержащий глобальный интервал `[start, end)`. У открытого
+  /// сегмента правой границей считается текущий `sampleCount`.
+  RecordingSegment? _segmentContaining(int startGlobal, int endGlobal) {
+    for (final segment in state.segments) {
+      final segmentEnd = segment.endSample ?? state.sampleCount;
+      if (segment.startSample <= startGlobal && endGlobal <= segmentEnd) {
         return segment;
       }
     }

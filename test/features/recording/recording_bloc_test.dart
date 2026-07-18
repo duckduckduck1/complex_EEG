@@ -191,11 +191,13 @@ void main() {
     await pumpEventQueue();
     bloc.add(const RecordingPointLabelAdded(labelTypeId: 'startle'));
     await pumpEventQueue();
+    // Ручная метка-состояние интервалом по глобальным индексам; сегмент
+    // подтягивается сам.
     bloc.add(
-      const RecordingExcludeIntervalAdded(
-        labelTypeId: 'bad_segment',
-        startSegmentSampleIndex: 1,
-        endSegmentSampleIndex: 3,
+      const RecordingManualIntervalAdded(
+        labelTypeId: 'sitting',
+        startGlobalSampleIndex: 1,
+        endGlobalSampleIndex: 3,
       ),
     );
     await pumpEventQueue();
@@ -206,7 +208,7 @@ void main() {
     final labels = experimentJson['labels']! as List<Object?>;
     final stateLabel = labels[0]! as Map<String, Object?>;
     final pointLabel = labels[1]! as Map<String, Object?>;
-    final excludeLabel = labels[2]! as Map<String, Object?>;
+    final manualLabel = labels[2]! as Map<String, Object?>;
 
     expect(labels, hasLength(3));
     expect(stateLabel['kind'], 'state');
@@ -216,9 +218,10 @@ void main() {
     expect(pointLabel['kind'], 'event');
     expect(pointLabel['label_type_id'], 'startle');
     expect(pointLabel['sample_index'], 4);
-    expect(excludeLabel['kind'], 'exclude');
-    expect(excludeLabel['start_sample'], 1);
-    expect(excludeLabel['end_sample'], 3);
+    expect(manualLabel['kind'], 'state');
+    expect(manualLabel['label_type_id'], 'sitting');
+    expect(manualLabel['start_sample'], 1);
+    expect(manualLabel['end_sample'], 3);
     expect(
       storage.journal
           .where((event) => '${event['type']}'.startsWith('annotation_'))

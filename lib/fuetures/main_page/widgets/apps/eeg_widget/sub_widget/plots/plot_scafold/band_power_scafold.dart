@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:eeg_app_max30003_stm32/core/time_format.dart';
 import 'package:eeg_app_max30003_stm32/theme.dart';
 
 class BandPowerPlot extends StatelessWidget {
@@ -119,7 +120,7 @@ class BandPowerPlot extends StatelessWidget {
                       reservedSize: 30,
                       getTitlesWidget:
                           (value, _) => _AxisLabel(
-                            text: '${_formatTick(value, xInterval)} с',
+                            text: formatClock(value.round()),
                             style: axisStyle,
                             padding: const EdgeInsets.only(top: 8),
                           ),

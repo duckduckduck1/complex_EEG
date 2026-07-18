@@ -279,7 +279,7 @@ void main() {
     expect(recordingBloc.state.labels.single.labelTypeId, 'startle');
   });
 
-  testWidgets('annotation list dialog validates exclude interval', (
+  testWidgets('ручное добавление метки по времени валидирует интервал', (
     tester,
   ) async {
     final recordingBloc = _createRecordingBloc();
@@ -295,7 +295,8 @@ void main() {
       ),
     );
     await tester.pump();
-    recordingBloc.add(const RecordingSamplesReceived([1, 2, 3, 4, 5]));
+    // 10 секунд записи (2500 отсчётов при 250 Гц), чтобы ввод времени имел смысл.
+    recordingBloc.add(RecordingSamplesReceived(List<int>.filled(2500, 1)));
     await tester.pump();
 
     await tester.pumpWidget(
@@ -309,35 +310,32 @@ void main() {
     );
 
     final noteField = find.byKey(const Key('recording-annotation-note-field'));
-    final excludeStartField = find.byKey(
-      const Key('recording-annotation-exclude-start-field'),
+    final startField = find.byKey(
+      const Key('recording-annotation-manual-start-field'),
     );
-    final excludeEndField = find.byKey(
-      const Key('recording-annotation-exclude-end-field'),
+    final endField = find.byKey(
+      const Key('recording-annotation-manual-end-field'),
     );
-    final addExcludeButton = find.byKey(
-      const Key('recording-annotation-add-exclude'),
-    );
+    final addButton = find.byKey(const Key('recording-annotation-add-manual'));
 
     await tester.enterText(noteField, 'заметка оператора');
-    await tester.enterText(excludeStartField, '4');
-    await tester.enterText(excludeEndField, '2');
-    await tester.tap(addExcludeButton);
+    // Конец раньше начала — ошибка, метка не добавляется.
+    await tester.enterText(startField, '00:05');
+    await tester.enterText(endField, '00:02');
+    await tester.tap(addButton);
     await tester.pump();
 
-    expect(
-      find.text('Интервал должен быть непустым: start < end'),
-      findsOneWidget,
-    );
+    expect(find.text('Конец должен быть позже начала'), findsOneWidget);
     expect(recordingBloc.state.labels, isEmpty);
 
-    await tester.enterText(excludeStartField, '1');
-    await tester.enterText(excludeEndField, '3');
-    await tester.tap(addExcludeButton);
+    // Корректный интервал 00:02–00:05 — добавляется метка-состояние.
+    await tester.enterText(startField, '00:02');
+    await tester.enterText(endField, '00:05');
+    await tester.tap(addButton);
     await tester.pump();
 
     expect(recordingBloc.state.labels, hasLength(1));
-    expect(recordingBloc.state.labels.single.kind, AnnotationKind.exclude);
+    expect(recordingBloc.state.labels.single.kind, AnnotationKind.state);
     expect(recordingBloc.state.labels.single.note, 'заметка оператора');
   });
 }
