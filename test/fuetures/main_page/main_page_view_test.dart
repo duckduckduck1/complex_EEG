@@ -267,6 +267,7 @@ class _MemoryExperimentStorage implements ExperimentStorage {
   Future<void> createExperiment({
     required String rootDirectory,
     required String experimentId,
+    required String folderName,
   }) async {}
 
   @override

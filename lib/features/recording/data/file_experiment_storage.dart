@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:eeg_app_max30003_stm32/features/recording/domain/experiment_folder_name.dart';
 import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_ports.dart';
 
 /// Пишет пакет эксперимента в папку на диске оператора.
@@ -51,13 +52,19 @@ class FileExperimentStorage implements ExperimentStorage {
   Future<void> createExperiment({
     required String rootDirectory,
     required String experimentId,
+    required String folderName,
   }) async {
     await close();
 
     final root = Directory(rootDirectory);
-    final experimentDirectory = Directory.fromUri(
-      root.uri.resolve('$experimentId/'),
+    final experimentDirectory = Directory(
+      '${root.path}${Platform.pathSeparator}$folderName',
     );
+    // Не дописываем в чужую папку: иначе перемешаем два эксперимента и затрём
+    // signal.bin уже записанного.
+    if (await experimentDirectory.exists()) {
+      throw ExperimentFolderExists(folderName);
+    }
     await experimentDirectory.create(recursive: true);
 
     final signalFile = File.fromUri(
