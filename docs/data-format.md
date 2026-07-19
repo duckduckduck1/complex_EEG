@@ -146,8 +146,8 @@ Butterworth из библиотеки [iirjdart](https://pub.dev/packages/iirjda
 
 Раздел нужен, только если вы разбираете поток с устройства напрямую, минуя
 приложение. Формат общий с прошивкой в
-[Test_eeg](https://github.com/duckduckduck1/Test_eeg) и меняется с обеих сторон
-сразу.
+[smart-sleep-eeg-device](https://github.com/duckduckduck1/smart-sleep-eeg-device)
+и меняется с обеих сторон сразу.
 
 **Транспорт.** Одна BLE-характеристика и на приём сигнала, и на управление:
 `0000ffe1-0000-1000-8000-00805f9b34fb`.

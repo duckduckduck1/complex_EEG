@@ -27,14 +27,16 @@ Bluetooth, показывает графики, ведёт запись эксп
 
 Устройство собрано на АЦП **MAX30003** и микроконтроллере **STM32** (F103),
 связь с ПК — по BLE через модуль **JDY-16**. Прошивка и схемотехника плат живут
-в отдельном репозитории — [duckduckduck1/Test_eeg](https://github.com/duckduckduck1/Test_eeg).
+в отдельном репозитории —
+[duckduckduck1/smart-sleep-eeg-device](https://github.com/duckduckduck1/smart-sleep-eeg-device).
 
 Нужна 64-битная Windows 10 или 11 и Bluetooth на компьютере.
 
 ## Установка
 
 Скачайте `eeg-lab-setup-<версия>.exe` на странице
-[Releases](https://github.com/duckduckduck1/complex_EEG/releases) и запустите.
+[Releases](https://github.com/duckduckduck1/smart-sleep-eeg-app/releases)
+и запустите.
 
 Дальше как у любой программы на Windows: мастер установки, ярлык на рабочем
 столе, удаление через «Программы и компоненты». Права администратора не нужны.
@@ -76,8 +78,8 @@ Bluetooth, показывает графики, ведёт запись эксп
   из `journal.ndjson`.
 
 Не нашли ответа — заведите
-[issue](https://github.com/duckduckduck1/complex_EEG/issues) с описанием того,
-что делали и что получилось.
+[issue](https://github.com/duckduckduck1/smart-sleep-eeg-app/issues)
+с описанием того, что делали и что получилось.
 
 ## Сборка из исходников
 

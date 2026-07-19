@@ -11,7 +11,7 @@ import 'package:eeg_app_max30003_stm32/features/annotation/domain/annotation_mod
 /// который репозиторий не открывал, поэтому ссылка ведёт на `main`, а не на
 /// ветку: она должна пережить любую перестройку веток.
 const readmeDocsUrl =
-    'https://github.com/duckduckduck1/complex_EEG/blob/main/docs/data-format.md';
+    'https://github.com/duckduckduck1/smart-sleep-eeg-app/blob/main/docs/data-format.md';
 
 /// Собирает текст `readme.txt` для папки эксперимента.
 String buildExperimentReadme({
