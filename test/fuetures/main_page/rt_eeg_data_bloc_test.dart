@@ -23,7 +23,7 @@ void main() {
     bloc.add(
       NewSettings(
         newSettings: EegSettings(
-          EegIsShowingSettings(),
+          const EegIsShowingSettings(),
           FillterSettings(isLpOn: true, lp: hz),
         ),
       ),

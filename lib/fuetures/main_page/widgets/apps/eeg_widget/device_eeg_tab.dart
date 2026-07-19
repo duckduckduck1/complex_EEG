@@ -27,13 +27,9 @@ class DeviceEegTab extends StatelessWidget {
     if (!TabActiveScope.of(context)) {
       return const _InactiveTabPlaceholder();
     }
-    return ValueListenableBuilder<int>(
-      valueListenable: session.plotSettingsRevision,
-      builder:
-          (context, revision, _) => EegWidget(
-            key: ValueKey(revision),
-            rtEegDataBloc: session.rtEegDataBloc,
-          ),
+    return EegWidget(
+      rtEegDataBloc: session.rtEegDataBloc,
+      settings: session.settings,
     );
   }
 }

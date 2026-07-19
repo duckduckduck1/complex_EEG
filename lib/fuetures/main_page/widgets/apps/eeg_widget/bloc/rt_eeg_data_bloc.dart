@@ -5,8 +5,6 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:eeg_app_max30003_stm32/core/signal/butterworth_chain.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/bloc/proccesing_math/signal_processor.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/eeg_settings.dart';
-import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/eeg_widget_settings_bar/eeg_settings_bar.dart';
-import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/filter_settings/fillter_settings_class.dart';
 
 part 'rt_eeg_data_vent.dart';
 part 'rt_eeg_data_state.dart';
@@ -52,11 +50,11 @@ class RtEegDataBloc extends Bloc<RtEegData, RtEegState> {
   final double sampleRate;
   final int bufferSize = 1024;
 
-  final processor = SignalProcessor(1024, 250.0, FillterSettings());
-  EegSettings eegSettings = EegSettings(
-    EegIsShowingSettings(),
-    FillterSettings(),
-  );
+  final processor = SignalProcessor(1024, 250.0);
+
+  /// Последние применённые настройки. Владеет ими `EegSettingsCubit`, сюда они
+  /// приезжают событием — bloc их только читает, чтобы пересобрать каскад.
+  EegSettings eegSettings = const EegSettings.initial();
 
   final ListQueue<double> _raw = ListQueue<double>(1024);
   final ListQueue<double> _filtered = ListQueue<double>(1024);
@@ -151,7 +149,6 @@ class RtEegDataBloc extends Bloc<RtEegData, RtEegState> {
 
   void _onNewFilter(NewSettings event, Emitter<RtEegState> emit) {
     eegSettings = event.newSettings;
-    processor.settings = event.newSettings.fillterSettings;
     _rebuildFilter();
   }
 

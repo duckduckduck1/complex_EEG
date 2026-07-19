@@ -2,7 +2,6 @@ import 'dart:math';
 import 'dart:typed_data';
 import 'package:fftea/fftea.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/filter_settings/fillter_settings_class.dart';
 
 class SignalProcessor {
   final int bufferSize;
@@ -14,7 +13,6 @@ class SignalProcessor {
   /// каждом расчёте. Заводить их заново незачем — размер не меняется.
   late final Float64List _windowed;
 
-  FillterSettings settings;
   static const Map<String, List<double>> frequencyBands = {
     'Delta': [0.5, 4.0],
     'Theta': [4.0, 8.0],
@@ -22,7 +20,7 @@ class SignalProcessor {
     'Beta': [13.0, 35.0],
   };
 
-  SignalProcessor(this.bufferSize, this.sampleRate, this.settings) {
+  SignalProcessor(this.bufferSize, this.sampleRate) {
     if (bufferSize <= 0 || !_isPowerOfTwo(bufferSize)) {
       throw ArgumentError('Buffer size must be a positive power of two');
     }

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/bloc/eeg_settings_cubit.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/bloc/rt_eeg_data_bloc.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/eeg_settings.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/eeg_layout/thrid_hight_layout.dart';
@@ -6,125 +8,89 @@ import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widge
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/filter_settings/filter_settings.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/plots/plots.dart';
 
-class EegWidget extends StatefulWidget {
-  final RtEegDataBloc rtEegDataBloc;
-  final double eegToFftRatio;
-  final double filterToEegRatio;
-
+/// Живые графики одного устройства во вкладке.
+///
+/// Состав и фильтры приходят из [EegSettingsCubit] — виджет их не хранит.
+/// Раньше он держал ссылку на общий изменяемый объект настроек, менял его на
+/// месте и звал `setState`, а вкладка сверх того пересоздавала весь виджет по
+/// ключу через счётчик ревизии, чтобы панель фильтров перечитала значения.
+/// Со значением, которое сравнивается по содержимому, достаточно `BlocBuilder`.
+class EegWidget extends StatelessWidget {
   const EegWidget({
     super.key,
     required this.rtEegDataBloc,
-    this.eegToFftRatio = 2.0,
-    this.filterToEegRatio = 2,
+    required this.settings,
   });
 
-  @override
-  State<EegWidget> createState() => _EegWidgetState();
-}
+  final RtEegDataBloc rtEegDataBloc;
+  final EegSettingsCubit settings;
 
-class _EegWidgetState extends State<EegWidget> {
-  final bool _isFiltter = true;
-  late EegSettings _settings;
-
-  @override
-  void initState() {
-    super.initState();
-    _settings = widget.rtEegDataBloc.eegSettings;
-  }
+  /// Графики показывают фильтрованный сигнал: сырой нужен разве что для отладки.
+  static const bool _isFiltered = true;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        children: [
-          EegWidgetSettingsBar(
-            initialSettings:
-                widget.rtEegDataBloc.eegSettings.eegIsShowingSettings,
-            onChaged: (val) {
-              _settings.eegIsShowingSettings = val;
-              widget.rtEegDataBloc.add(NewSettings(newSettings: _settings));
-              setState(() {});
-            },
+    return BlocBuilder<EegSettingsCubit, EegSettings>(
+      bloc: settings,
+      builder: (context, state) {
+        final showing = state.eegIsShowingSettings;
+        return Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            children: [
+              EegWidgetSettingsBar(
+                initialSettings: showing,
+                onChaged: settings.setShowing,
+              ),
+              const SizedBox(height: 8),
+              Expanded(child: _buildContent(showing, state)),
+            ],
           ),
-          const SizedBox(height: 8),
-          Expanded(child: _buildContent()),
-        ],
-      ),
+        );
+      },
     );
   }
 
-  Widget _buildContent() {
-    if (widget.rtEegDataBloc.eegSettings.eegIsShowingSettings.isFftShowing &&
-        widget.rtEegDataBloc.eegSettings.eegIsShowingSettings.isBandsShowing) {
+  Widget _buildContent(EegIsShowingSettings showing, EegSettings state) {
+    final signalPlot = EegPlot(dataBloc: rtEegDataBloc, isFiltter: _isFiltered);
+    final filterPanel = FillterSettingsWidget(
+      initSetting: state.fillterSettings,
+      onChanged: settings.setFilters,
+    );
+
+    if (showing.isFftShowing && showing.isBandsShowing) {
       return EegLayout(
-        isFiltterShowing:
-            widget
-                .rtEegDataBloc
-                .eegSettings
-                .eegIsShowingSettings
-                .isFilterShowing,
-        firtsWidget: EegPlot(
-          dataBloc: widget.rtEegDataBloc,
-          isFiltter: _isFiltter,
-        ),
-        secondWidget: FftPlot(
-          dataBloc: widget.rtEegDataBloc,
-          isFilt: _isFiltter,
-        ),
-        thirdWidget: BandPowerWidget(dataBloc: widget.rtEegDataBloc),
+        isFiltterShowing: showing.isFilterShowing,
+        firtsWidget: signalPlot,
+        secondWidget: FftPlot(dataBloc: rtEegDataBloc, isFilt: _isFiltered),
+        thirdWidget: BandPowerWidget(dataBloc: rtEegDataBloc),
         secondTitle: 'Спектр',
         secondMeta: 'дБ',
         thirdTitle: 'Ритмы',
         thirdMeta: 'отн.',
-        fillterWidget: _buildFilterSettings(),
+        fillterWidget: filterPanel,
       );
     }
 
-    final onlyBandsShowing =
-        widget.rtEegDataBloc.eegSettings.eegIsShowingSettings.isBandsShowing;
-    if (widget.rtEegDataBloc.eegSettings.eegIsShowingSettings.isFftShowing ||
-        onlyBandsShowing) {
+    if (showing.isFftShowing || showing.isBandsShowing) {
+      final onlyBands = showing.isBandsShowing;
       return EegLayout(
-        isFiltterShowing:
-            widget
-                .rtEegDataBloc
-                .eegSettings
-                .eegIsShowingSettings
-                .isFilterShowing,
-        firtsWidget: EegPlot(
-          dataBloc: widget.rtEegDataBloc,
-          isFiltter: _isFiltter,
-        ),
+        isFiltterShowing: showing.isFilterShowing,
+        firtsWidget: signalPlot,
         secondWidget:
-            onlyBandsShowing
-                ? BandPowerWidget(dataBloc: widget.rtEegDataBloc)
-                : FftPlot(dataBloc: widget.rtEegDataBloc, isFilt: _isFiltter),
-        secondTitle: onlyBandsShowing ? 'Ритмы' : 'Спектр',
-        secondMeta: onlyBandsShowing ? 'отн.' : 'дБ',
-        fillterWidget: _buildFilterSettings(),
+            onlyBands
+                ? BandPowerWidget(dataBloc: rtEegDataBloc)
+                : FftPlot(dataBloc: rtEegDataBloc, isFilt: _isFiltered),
+        secondTitle: onlyBands ? 'Ритмы' : 'Спектр',
+        secondMeta: onlyBands ? 'отн.' : 'дБ',
+        fillterWidget: filterPanel,
       );
     }
 
     return EegLayout(
-      isFiltterShowing:
-          widget.rtEegDataBloc.eegSettings.eegIsShowingSettings.isFilterShowing,
-      firtsWidget: EegPlot(
-        dataBloc: widget.rtEegDataBloc,
-        isFiltter: _isFiltter,
-      ),
-      fillterWidget: _buildFilterSettings(),
-    );
-  }
-
-  Widget _buildFilterSettings() {
-    return FillterSettingsWidget(
-      initSetting: widget.rtEegDataBloc.eegSettings.fillterSettings,
-      onChanged: (val) {
-        _settings.fillterSettings = val;
-        widget.rtEegDataBloc.add(NewSettings(newSettings: _settings));
-        setState(() {});
-      },
+      isFiltterShowing: showing.isFilterShowing,
+      firtsWidget: signalPlot,
+      fillterWidget: filterPanel,
     );
   }
 }
