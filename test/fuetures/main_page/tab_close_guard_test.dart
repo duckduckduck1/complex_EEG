@@ -55,7 +55,11 @@ void main() {
     await tester.tap(find.byIcon(Icons.close));
     await tester.pump();
 
-    expect(find.textContaining('Идёт запись эксперимента'), findsOneWidget);
+    // Теперь это модальное окно, а не снекбар в углу: оператор его точно
+    // увидит и закроет сам.
+    await tester.pumpAndSettle();
+    expect(find.text('Сейчас закрыть нельзя'), findsOneWidget);
+    expect(find.textContaining('идёт запись эксперимента'), findsOneWidget);
     expect(tabBloc.state.tabs, hasLength(1), reason: 'вкладка не закрылась');
   });
 

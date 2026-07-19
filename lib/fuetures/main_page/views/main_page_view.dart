@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:eeg_app_max30003_stm32/features/alerts/operator_message.dart';
 import 'package:eeg_app_max30003_stm32/features/devices/application/device_session.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/presentation/blocs/device_connection_bloc.dart';
+import 'package:eeg_app_max30003_stm32/features/devices/presentation/blocs/device_connection_state.dart';
+import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_models.dart';
 import 'package:eeg_app_max30003_stm32/features/devices/application/sessions_cubit.dart';
 import 'package:eeg_app_max30003_stm32/features/devices/presentation/blocs/device_connection_event.dart';
 import 'package:eeg_app_max30003_stm32/features/devices/presentation/device_display_name.dart';
@@ -84,6 +88,38 @@ class _MainPageState extends State<MainPage> with TickerProviderStateMixin {
         content: DeviceEegTab(session: viewSession),
         session: viewSession,
       ),
+    );
+  }
+
+  /// Сообщает оператору об обрыве связи.
+  ///
+  /// Раньше про обрыв нигде не говорилось: менялась подпись на карточке в
+  /// поиске, и всё. Человек, смотревший на график, видел только, что тот встал.
+  /// Переподключение остаётся ручным — окно просто зовёт нажать кнопку.
+  void _onConnectionLost(BuildContext context, DeviceViewSession session) {
+    final isRecording = isRecordingBusy(session.recordingBloc.state.status);
+    showOperatorMessage(
+      context,
+      title: 'Связь с устройством потеряна',
+      deviceLabel: session.title,
+      kind: OperatorMessageKind.danger,
+      message:
+          isRecording
+              ? 'Запись поставлена на паузу. Всё, что записано до обрыва, уже '
+                  'сохранено, и запись продолжится сама, как только связь '
+                  'вернётся.\n\nПроверьте, включено ли устройство и не '
+                  'разрядилось ли оно, затем нажмите «Переподключить».'
+              : 'График остановился, потому что данные больше не приходят.\n\n'
+                  'Проверьте, включено ли устройство и рядом ли оно, затем '
+                  'нажмите «Переподключить».',
+      actions: [
+        OperatorMessageAction(
+          label: 'Переподключить',
+          isPrimary: true,
+          onPressed:
+              () => session.connection.add(const ManualReconnectRequested()),
+        ),
+      ],
     );
   }
 
@@ -252,44 +288,66 @@ class _MainPageState extends State<MainPage> with TickerProviderStateMixin {
               if (state.controller == null || state.tabContents.isEmpty) {
                 return const _NoTabsView();
               }
-              return BlocBuilder<ViewModeCubit, DeviceViewMode>(
-                bloc: _viewModeCubit,
-                builder: (context, mode) {
-                  if (mode == DeviceViewMode.mosaic) {
-                    // Виды снимаются с экрана без последствий: всё, что должно
-                    // жить, лежит в сессиях, а вкладка и панель — только вид.
-                    return DeviceMosaicView(
-                      sessions: [
-                        for (final session in state.sessions)
-                          if (session != null) session,
-                      ],
-                      selectedIndex: state.currentIndex,
-                      onSelected: (index) => _tabBloc.add(TabChanged(index)),
-                      onExpand: (index) {
-                        _tabBloc.add(TabChanged(index));
-                        _viewModeCubit.showTabs();
-                      },
-                      onStartRecording:
-                          (session) => _startRecording(session.recordingBloc),
-                    );
-                  }
-
-                  return IndexedStack(
-                    index: state.currentIndex,
-                    children: [
-                      for (var i = 0; i < state.tabContents.length; i++)
-                        TabActiveScope(
-                          active: i == state.currentIndex,
-                          child: state.tabContents[i],
-                        ),
-                    ],
-                  );
-                },
+              // Слушаем связь всех открытых устройств, а не только текущего:
+              // оборваться может любое, и узнать об этом надо сразу.
+              return MultiBlocListener(
+                listeners: [
+                  for (final session in state.sessions)
+                    if (session != null)
+                      BlocListener<DeviceConnectionBloc, DeviceConnectionState>(
+                        bloc: session.connection,
+                        listenWhen:
+                            (previous, current) =>
+                                previous.status !=
+                                    DeviceConnectionStatus.lost &&
+                                current.status == DeviceConnectionStatus.lost,
+                        listener:
+                            (context, _) => _onConnectionLost(context, session),
+                      ),
+                ],
+                child: _buildBody(state),
               );
             },
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildBody(TabState state) {
+    return BlocBuilder<ViewModeCubit, DeviceViewMode>(
+      bloc: _viewModeCubit,
+      builder: (context, mode) {
+        if (mode == DeviceViewMode.mosaic) {
+          // Виды снимаются с экрана без последствий: всё, что должно
+          // жить, лежит в сессиях, а вкладка и панель — только вид.
+          return DeviceMosaicView(
+            sessions: [
+              for (final session in state.sessions)
+                if (session != null) session,
+            ],
+            selectedIndex: state.currentIndex,
+            onSelected: (index) => _tabBloc.add(TabChanged(index)),
+            onExpand: (index) {
+              _tabBloc.add(TabChanged(index));
+              _viewModeCubit.showTabs();
+            },
+            onStartRecording:
+                (session) => _startRecording(session.recordingBloc),
+          );
+        }
+
+        return IndexedStack(
+          index: state.currentIndex,
+          children: [
+            for (var i = 0; i < state.tabContents.length; i++)
+              TabActiveScope(
+                active: i == state.currentIndex,
+                child: state.tabContents[i],
+              ),
+          ],
+        );
+      },
     );
   }
 
