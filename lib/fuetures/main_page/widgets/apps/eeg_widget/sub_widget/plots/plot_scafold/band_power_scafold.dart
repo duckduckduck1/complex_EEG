@@ -20,6 +20,11 @@ class BandPowerPlot extends StatelessWidget {
   final Color? alphaColor;
   final Color? betaColor;
 
+  /// Режим панели мозаики: без легенды, подписи мельче, засечек меньше.
+  /// Подсказка при наведении остаётся — ради значений ритмов в мозаику и
+  /// смотрят.
+  final bool compact;
+
   const BandPowerPlot({
     super.key,
     required this.deltaData,
@@ -31,6 +36,7 @@ class BandPowerPlot extends StatelessWidget {
     this.thetaColor,
     this.alphaColor,
     this.betaColor,
+    this.compact = false,
   });
 
   @override
@@ -52,27 +58,32 @@ class BandPowerPlot extends StatelessWidget {
             ? allData.map((spot) => spot.x).reduce(max)
             : maxFrequency;
     final ensuredMaxX = max(maxX, minX + 1);
-    final xInterval = _niceInterval(ensuredMaxX - minX);
-    final yInterval = _niceInterval(1);
+    final ticks = compact ? 3 : 5;
+    final xInterval = _niceInterval(ensuredMaxX - minX, targetTicks: ticks);
+    final yInterval = _niceInterval(1, targetTicks: ticks);
     final gridColor = palette.grid.withValues(alpha: 0.72);
     final baselineColor = colorScheme.onSurfaceVariant.withValues(alpha: 0.34);
     final axisStyle = theme.textTheme.labelSmall?.copyWith(
-      color: colorScheme.onSurface,
-      fontSize: 13,
+      color: compact ? colorScheme.onSurfaceVariant : colorScheme.onSurface,
+      fontSize: compact ? 10 : 13,
       fontWeight: FontWeight.w600,
     );
 
     return Column(
       children: [
-        _Legend(
-          items: [
-            _LegendItemData(colors.delta, _bandNames[0]),
-            _LegendItemData(colors.theta, _bandNames[1]),
-            _LegendItemData(colors.alpha, _bandNames[2]),
-            _LegendItemData(colors.beta, _bandNames[3]),
-          ],
-        ),
-        const SizedBox(height: 8),
+        // Легенда в мозаике не нужна: цвета те же, что во вкладке, а место на
+        // панели дороже. Названия ритмов всё равно видны в подсказке.
+        if (!compact) ...[
+          _Legend(
+            items: [
+              _LegendItemData(colors.delta, _bandNames[0]),
+              _LegendItemData(colors.theta, _bandNames[1]),
+              _LegendItemData(colors.alpha, _bandNames[2]),
+              _LegendItemData(colors.beta, _bandNames[3]),
+            ],
+          ),
+          const SizedBox(height: 8),
+        ],
         Expanded(
           // Скрыт от дерева доступности по той же причине, что и остальные
           // графики: узлы пересоздаются на каждый кадр и ломают AXTree.
@@ -125,12 +136,12 @@ class BandPowerPlot extends StatelessWidget {
                       sideTitles: SideTitles(
                         showTitles: true,
                         interval: xInterval,
-                        reservedSize: 30,
+                        reservedSize: compact ? 22 : 30,
                         getTitlesWidget:
                             (value, _) => _AxisLabel(
                               text: formatClock(value.round()),
                               style: axisStyle,
-                              padding: const EdgeInsets.only(top: 8),
+                              padding: EdgeInsets.only(top: compact ? 4 : 8),
                             ),
                       ),
                     ),
@@ -143,7 +154,7 @@ class BandPowerPlot extends StatelessWidget {
                             (value, _) => _AxisLabel(
                               text: _formatTick(value, yInterval),
                               style: axisStyle,
-                              padding: const EdgeInsets.only(right: 8),
+                              padding: EdgeInsets.only(right: compact ? 5 : 8),
                               alignRight: true,
                             ),
                       ),
@@ -303,6 +314,11 @@ class _AxisLabel extends StatelessWidget {
         text,
         textAlign: alignRight ? TextAlign.right : TextAlign.center,
         style: style,
+        // Строго одна строка: в компактном режиме места в отведённой полосе
+        // ровно на неё, а перенос уводил бы вторую строку под сам график.
+        maxLines: 1,
+        softWrap: false,
+        overflow: TextOverflow.visible,
       ),
     );
   }

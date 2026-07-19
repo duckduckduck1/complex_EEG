@@ -1,105 +1,24 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
-import 'package:eeg_app_max30003_stm32/features/devices/presentation/blocs/device_connection_bloc.dart';
-import 'package:eeg_app_max30003_stm32/features/recording/application/recording_bloc.dart';
-import 'package:eeg_app_max30003_stm32/features/recording/application/recording_bridge.dart';
-import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_models.dart';
-import 'package:eeg_app_max30003_stm32/fuetures/ble_page/bloc/device_eeg_bridge.dart';
-import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/bloc/rt_eeg_data_bloc.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/eeg_widget.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/tabs/device_view_session.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/tabs/tab_active_scope.dart';
 
 /// Вкладка живого графика одного подключённого устройства.
 ///
-/// Владеет визуализацией ([RtEegDataBloc] + [DeviceEegBridge]) и закрывает её
-/// в [State.dispose]. НЕ владеет подключением: [connection] принадлежит
-/// `SessionsCubit`, закрытие вкладки не отключает устройство
-/// (docs/flutter_app/architecture.md, «Изоляция нескольких устройств»).
+/// Ничем не владеет: и графики, и запись живут в [DeviceViewSession], которую
+/// держит `TabBloc`. Вкладка — только вид, поэтому её уход с экрана (например
+/// при переключении на мозаику) не трогает ни поток данных, ни запись.
 ///
 /// `IndexedStack` держит все вкладки живыми, поэтому неактивная вкладка строила
 /// бы график впустую (offstage-виджет всё равно перестраивается на каждый emit).
 /// Пока вкладка неактивна, вместо [EegWidget] строится лёгкая заглушка —
 /// перестройки и перерисовки графика прекращаются. **Пайплайн данных при этом
-/// не трогается**: [RtEegDataBloc] продолжает считать, поэтому при возврате на
-/// вкладку график сразу живой, без зависания. Запись ведёт отдельный
-/// [RecordingBridge] и она идёт всегда.
-class DeviceEegTab extends StatefulWidget {
-  const DeviceEegTab({
-    super.key,
-    required this.connection,
-    required this.recordingBloc,
-  });
+/// не трогается**: [RtEegDataBloc] в сессии продолжает считать, поэтому при
+/// возврате на вкладку график сразу живой, без зависания.
+class DeviceEegTab extends StatelessWidget {
+  const DeviceEegTab({super.key, required this.session});
 
-  /// BLoC подключения устройства; жизненным циклом владеет `SessionsCubit`.
-  final DeviceConnectionBloc connection;
-  final RecordingBloc recordingBloc;
-
-  @override
-  State<DeviceEegTab> createState() => _DeviceEegTabState();
-}
-
-class _DeviceEegTabState extends State<DeviceEegTab> {
-  late final RtEegDataBloc _rtEegDataBloc;
-  late final DeviceEegBridge _bridge;
-  late final RecordingBridge _recordingBridge;
-  late final StreamSubscription<RecordingState> _recordingSub;
-  RecordingStatus _lastRecordingStatus = RecordingStatus.idle;
-  int _plotSettingsRevision = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _rtEegDataBloc = RtEegDataBloc(250);
-    _bridge = DeviceEegBridge(
-      connection: widget.connection,
-      rtEegDataBloc: _rtEegDataBloc,
-    );
-    _recordingBridge = RecordingBridge(
-      connection: widget.connection,
-      recordingBloc: widget.recordingBloc,
-    );
-    _recordingSub = widget.recordingBloc.stream.listen((state) {
-      if (_lastRecordingStatus == RecordingStatus.preparing &&
-          state.status == RecordingStatus.recording) {
-        _rtEegDataBloc.add(RtEegResetRequested());
-        _applyRecordingFiltersToPlot(state.filters);
-      }
-      _lastRecordingStatus = state.status;
-    });
-  }
-
-  @override
-  void dispose() {
-    // Только визуализация: мост и график. connection.close() НЕ вызывается.
-    _recordingSub.cancel();
-    _bridge.dispose();
-    _recordingBridge.dispose();
-    widget.recordingBloc.close();
-    _rtEegDataBloc.close();
-    super.dispose();
-  }
-
-  /// Переносит фильтры, выбранные при старте записи, на живой график.
-  ///
-  /// Иначе оператор выставляет их дважды: один раз в диалоге старта (для
-  /// записи) и второй раз руками в панели (для картинки). Настройки —
-  /// изменяемый объект, общий с графиком, поэтому правим на месте; счётчик
-  /// [_plotSettingsRevision] пересоздаёт [EegWidget], чтобы панель фильтров
-  /// перечитала значения, а не показывала старые.
-  void _applyRecordingFiltersToPlot(RecordingFilters filters) {
-    final plotFilters = _rtEegDataBloc.eegSettings.fillterSettings;
-    plotFilters.lp = filters.lpHz;
-    plotFilters.hp = filters.hpHz;
-    plotFilters.notch = filters.notchHz;
-    plotFilters.isLpOn = filters.isLpEnabled;
-    plotFilters.isHpOn = filters.isHpEnabled;
-    plotFilters.isNotchOn = filters.isNotchEnabled;
-    _rtEegDataBloc.add(NewSettings(newSettings: _rtEegDataBloc.eegSettings));
-    if (mounted) {
-      setState(() => _plotSettingsRevision++);
-    }
-  }
+  final DeviceViewSession session;
 
   @override
   Widget build(BuildContext context) {
@@ -108,9 +27,13 @@ class _DeviceEegTabState extends State<DeviceEegTab> {
     if (!TabActiveScope.of(context)) {
       return const _InactiveTabPlaceholder();
     }
-    return EegWidget(
-      key: ValueKey(_plotSettingsRevision),
-      rtEegDataBloc: _rtEegDataBloc,
+    return ValueListenableBuilder<int>(
+      valueListenable: session.plotSettingsRevision,
+      builder:
+          (context, revision, _) => EegWidget(
+            key: ValueKey(revision),
+            rtEegDataBloc: session.rtEegDataBloc,
+          ),
     );
   }
 }

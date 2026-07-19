@@ -11,8 +11,11 @@ import 'package:eeg_app_max30003_stm32/features/recording/application/recording_
 import 'package:eeg_app_max30003_stm32/features/recording/data/device_connection_fbm_transport.dart';
 import 'package:eeg_app_max30003_stm32/features/recording/presentation/recording_start_dialog.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/device_eeg_tab.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/mosaic/device_mosaic_view.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/recording/recording_reservation_strip.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/tabs/bloc/tab_bloc.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/tabs/bloc/view_mode_cubit.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/tabs/device_view_session.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/tabs/tab_active_scope.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/tabs/widgets/app_selector_diolog.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/tabs/widgets/tab_bar.dart';
@@ -51,11 +54,13 @@ class MainPage extends StatefulWidget {
 
 class _MainPageState extends State<MainPage> with TickerProviderStateMixin {
   late final TabBloc _tabBloc;
+  late final ViewModeCubit _viewModeCubit;
 
   @override
   void initState() {
     super.initState();
     _tabBloc = TabBloc(vsync: this);
+    _viewModeCubit = ViewModeCubit();
   }
 
   Future<void> _addNewTabWithApp() async {
@@ -66,16 +71,18 @@ class _MainPageState extends State<MainPage> with TickerProviderStateMixin {
   }
 
   void _openDeviceTab(DeviceSession session) {
-    final recordingBloc = _createRecordingBloc(session);
+    // Сессия вида переживает сам вид: владение сразу отдаём TabBloc, он же её
+    // и закроет. Иначе уход вкладки с экрана оборвал бы идущую запись.
+    final viewSession = DeviceViewSession(
+      connection: session.connection,
+      recordingBloc: _createRecordingBloc(session),
+      title: eegDisplayName(session.deviceId),
+    );
     _tabBloc.add(
       NewTabAdded(
-        newTab: Text(eegDisplayName(session.deviceId)),
-        content: DeviceEegTab(
-          connection: session.connection,
-          recordingBloc: recordingBloc,
-        ),
-        connectionBloc: session.connection,
-        recordingBloc: recordingBloc,
+        newTab: Text(viewSession.title),
+        content: DeviceEegTab(session: viewSession),
+        session: viewSession,
       ),
     );
   }
@@ -139,7 +146,15 @@ class _MainPageState extends State<MainPage> with TickerProviderStateMixin {
             ),
             title: Row(
               children: [
-                const Text('Лаборатория «Умного сна»'),
+                // Название ужимается первым: на узком окне важнее видеть
+                // вкладки устройств, чем полное имя лаборатории.
+                const Flexible(
+                  child: Text(
+                    'Лаборатория «Умного сна»',
+                    overflow: TextOverflow.ellipsis,
+                    softWrap: false,
+                  ),
+                ),
                 const SizedBox(width: 16),
                 Container(
                   width: 1,
@@ -192,6 +207,28 @@ class _MainPageState extends State<MainPage> with TickerProviderStateMixin {
               ),
             ),
             actions: [
+              BlocBuilder<ViewModeCubit, DeviceViewMode>(
+                bloc: _viewModeCubit,
+                builder: (context, mode) {
+                  final isMosaic = mode == DeviceViewMode.mosaic;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: IconButton(
+                      key: const Key('view-mode-toggle'),
+                      icon: Icon(
+                        isMosaic ? Icons.crop_square : Icons.grid_view_rounded,
+                        size: 22,
+                      ),
+                      tooltip:
+                          isMosaic
+                              ? 'Вернуться к одному устройству'
+                              : 'Показать все устройства сеткой',
+                      isSelected: isMosaic,
+                      onPressed: _viewModeCubit.toggle,
+                    ),
+                  );
+                },
+              ),
               Padding(
                 padding: const EdgeInsets.only(right: 12),
                 child: IconButton(
@@ -215,15 +252,39 @@ class _MainPageState extends State<MainPage> with TickerProviderStateMixin {
               if (state.controller == null || state.tabContents.isEmpty) {
                 return const _NoTabsView();
               }
-              return IndexedStack(
-                index: state.currentIndex,
-                children: [
-                  for (var i = 0; i < state.tabContents.length; i++)
-                    TabActiveScope(
-                      active: i == state.currentIndex,
-                      child: state.tabContents[i],
-                    ),
-                ],
+              return BlocBuilder<ViewModeCubit, DeviceViewMode>(
+                bloc: _viewModeCubit,
+                builder: (context, mode) {
+                  if (mode == DeviceViewMode.mosaic) {
+                    // Виды снимаются с экрана без последствий: всё, что должно
+                    // жить, лежит в сессиях, а вкладка и панель — только вид.
+                    return DeviceMosaicView(
+                      sessions: [
+                        for (final session in state.sessions)
+                          if (session != null) session,
+                      ],
+                      selectedIndex: state.currentIndex,
+                      onSelected: (index) => _tabBloc.add(TabChanged(index)),
+                      onExpand: (index) {
+                        _tabBloc.add(TabChanged(index));
+                        _viewModeCubit.showTabs();
+                      },
+                      onStartRecording:
+                          (session) => _startRecording(session.recordingBloc),
+                    );
+                  }
+
+                  return IndexedStack(
+                    index: state.currentIndex,
+                    children: [
+                      for (var i = 0; i < state.tabContents.length; i++)
+                        TabActiveScope(
+                          active: i == state.currentIndex,
+                          child: state.tabContents[i],
+                        ),
+                    ],
+                  );
+                },
               );
             },
           ),
@@ -234,6 +295,7 @@ class _MainPageState extends State<MainPage> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    _viewModeCubit.close();
     _tabBloc.close();
     super.dispose();
   }

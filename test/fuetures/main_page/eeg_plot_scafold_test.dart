@@ -153,6 +153,51 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('компактный сигнал сохраняет оси, но теряет зум', (tester) async {
+    final data = List<FlSpot>.generate(
+      64,
+      (index) => FlSpot(index.toDouble(), index.isEven ? 12.0 : -9.0),
+    );
+
+    await tester.pumpWidget(wrap(PlotScafold(data: data, compact: true)));
+    await tester.pump();
+
+    final chart = tester.widget<LineChart>(find.byType(LineChart));
+    // Оси со значениями — то, ради чего компактный режим вообще существует.
+    expect(chart.data.titlesData.leftTitles.sideTitles.showTitles, isTrue);
+    expect(chart.data.titlesData.bottomTitles.sideTitles.showTitles, isTrue);
+    // Зума в сетке нет: колесо мыши прокручивает саму сетку.
+    expect(chart.transformationConfig.transformationController, isNull);
+    expect(chart.transformationConfig.scaleEnabled, isFalse);
+    expect(chart.duration, Duration.zero);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('компактные ритмы держат подсказку, но без легенды', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      wrap(
+        const BandPowerPlot(
+          deltaData: [FlSpot(0, 0.1), FlSpot(30, 0.4)],
+          thetaData: [FlSpot(0, 0.2), FlSpot(30, 0.5)],
+          alphaData: [FlSpot(0, 0.3), FlSpot(30, 0.6)],
+          betaData: [FlSpot(0, 0.4), FlSpot(30, 0.7)],
+          compact: true,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final chart = tester.widget<LineChart>(find.byType(LineChart));
+    // Значения ритмов при наведении — ровно то, за чем в мозаику и смотрят.
+    expect(chart.data.lineTouchData.enabled, isTrue);
+    expect(chart.data.titlesData.leftTitles.sideTitles.showTitles, isTrue);
+    // Легенда съедала бы место панели, а цвета те же, что во вкладке.
+    expect(find.text('Delta'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('подсказка по ритмам показывает время и все ритмы', (
     tester,
   ) async {

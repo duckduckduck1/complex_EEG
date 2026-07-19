@@ -12,6 +12,7 @@ import 'package:eeg_app_max30003_stm32/features/recording/application/recording_
 import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_ports.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/views/main_page_view.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/device_eeg_tab.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/mosaic/mosaic_panel.dart';
 
 class _FakeConnection implements BleConnection {
   late final StreamController<List<int>> _packets;
@@ -243,6 +244,59 @@ void main() {
     await tester.tap(find.text('EEG-device:4F'));
     await tester.pump();
 
+    expect(connectionA.packetCancelCount, 0);
+    expect(connectionB.packetCancelCount, 0);
+  });
+
+  testWidgets('мозаика показывает все устройства и не рвёт поток данных', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    const deviceA = DiscoveredDevice(
+      id: BleDeviceId('AA:BB:CC:DD:EE:4F'),
+      name: 'JDY-16-A',
+    );
+    const deviceB = DiscoveredDevice(
+      id: BleDeviceId('AA:BB:CC:DD:EE:50'),
+      name: 'JDY-16-B',
+    );
+    sessionsCubit.openSession(deviceA);
+    sessionsCubit.openSession(deviceB);
+    await tester.pumpWidget(buildApp());
+    await tester.pump();
+
+    navigationCubit.setPendingTab(deviceA.id);
+    await tester.pump();
+    await tester.pump();
+    navigationCubit.setPendingTab(deviceB.id);
+    await tester.pump();
+    await tester.pump();
+
+    final connectionA = adapter.connectionFor(deviceA.id);
+    final connectionB = adapter.connectionFor(deviceB.id);
+    expect(find.byType(DeviceMosaicPanel), findsNothing);
+
+    await tester.tap(find.byKey(const Key('view-mode-toggle')));
+    await tester.pump();
+    await tester.pump();
+
+    // Оба устройства видны сразу, вкладок на экране больше нет.
+    expect(find.byType(DeviceMosaicPanel), findsNWidgets(2));
+    expect(find.byType(DeviceEegTab, skipOffstage: false), findsNothing);
+    // Главное: вкладки ушли с экрана, а подписки на пакеты остались живы —
+    // именно ради этого владение переехало в DeviceViewSession.
+    expect(connectionA.packetCancelCount, 0);
+    expect(connectionB.packetCancelCount, 0);
+
+    await tester.tap(find.byKey(const Key('view-mode-toggle')));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.byType(DeviceMosaicPanel), findsNothing);
+    expect(find.byType(DeviceEegTab, skipOffstage: false), findsNWidgets(2));
     expect(connectionA.packetCancelCount, 0);
     expect(connectionB.packetCancelCount, 0);
   });
