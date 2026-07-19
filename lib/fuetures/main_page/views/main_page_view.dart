@@ -90,18 +90,42 @@ class _MainPageState extends State<MainPage> with TickerProviderStateMixin {
     );
   }
 
-  /// Сообщает оператору об обрыве связи.
+  /// Устройства, ждущие своего окна обрыва, и то, что показано сейчас.
   ///
-  /// Раньше про обрыв нигде не говорилось: менялась подпись на карточке в
-  /// поиске, и всё. Человек, смотревший на график, видел только, что тот встал.
-  /// Переподключение остаётся ручным — окно просто зовёт нажать кнопку.
+  /// Окно модальное, поэтому одновременно их может быть только одно. Без
+  /// очереди четыре одновременно отвалившихся устройства открыли бы четыре
+  /// окна стопкой: оператор видел бы верхнее, а те, что под ним, продолжали бы
+  /// жить невидимыми — включая уже переподключившиеся. Сюда же попадает защита
+  /// от повторного окна для одного устройства: оно могло отвалиться ещё раз,
+  /// пока оператор не закрыл предыдущее.
+  final List<DeviceViewSession> _pendingLostDialogs = [];
+  DeviceViewSession? _shownLostDialog;
+
   void _onConnectionLost(BuildContext context, DeviceViewSession session) {
-    showReconnectDialog(
+    if (_shownLostDialog == session || _pendingLostDialogs.contains(session)) {
+      return;
+    }
+    _pendingLostDialogs.add(session);
+    _showNextLostDialog(context);
+  }
+
+  Future<void> _showNextLostDialog(BuildContext context) async {
+    if (_shownLostDialog != null || _pendingLostDialogs.isEmpty) {
+      return;
+    }
+    final session = _pendingLostDialogs.removeAt(0);
+    _shownLostDialog = session;
+    await showReconnectDialog(
       context,
       deviceLabel: session.title,
       connection: session.connection,
       recording: session.recordingBloc,
     );
+    _shownLostDialog = null;
+    if (!mounted) return;
+    // Следующее устройство из очереди — оператор разбирается с ними по
+    // одному, а не ищет нужное окно в стопке.
+    await _showNextLostDialog(this.context);
   }
 
   RecordingBloc _createRecordingBloc(DeviceSession session) {
