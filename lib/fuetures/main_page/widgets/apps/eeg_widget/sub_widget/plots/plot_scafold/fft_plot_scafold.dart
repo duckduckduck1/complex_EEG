@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/plots/plot_scafold/chart_axis.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/plots/plot_scafold/zoomable_chart.dart';
 import 'package:eeg_app_max30003_stm32/theme.dart';
 
@@ -49,6 +50,14 @@ class _FrequencyPlotState extends State<FrequencyPlot> {
 
   @override
   Widget build(BuildContext context) {
+    // Размер нужен до сборки графика: от него считаются шрифт подписей, место
+    // под них, число засечек и размер подсказки.
+    return LayoutBuilder(
+      builder: (context, constraints) => _build(context, constraints.biggest),
+    );
+  }
+
+  Widget _build(BuildContext context, Size chartSize) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final palette = theme.extension<EegPalette>() ?? EegPalette.oscilloscope;
@@ -76,16 +85,35 @@ class _FrequencyPlotState extends State<FrequencyPlot> {
 
     final yRange = _stableRangeFor(validData);
     final compact = widget.compact;
-    final ticks = compact ? 3 : 5;
-    final yInterval = _niceInterval(yRange.span, targetTicks: ticks);
-    final xInterval = _niceInterval(widget.maxFrequency, targetTicks: ticks);
     final gridColor = palette.grid.withValues(alpha: 0.72);
     final baselineColor = colorScheme.onSurfaceVariant.withValues(alpha: 0.34);
-    final axisStyle = theme.textTheme.labelSmall?.copyWith(
+
+    final axis = ChartAxis.of(context, chartSize);
+    final axisStyle = axis.labelStyle.copyWith(
       color: compact ? colorScheme.onSurfaceVariant : colorScheme.onSurface,
-      fontSize: compact ? 10 : 13,
-      fontWeight: FontWeight.w600,
     );
+    final yLabels = [
+      _formatTick(yRange.min, yRange.span),
+      _formatTick(yRange.max, yRange.span),
+    ];
+    final xLabel = '${_formatTick(widget.maxFrequency, 1)} Гц';
+    final yInterval = _niceInterval(
+      yRange.span,
+      targetTicks: axis.ticksAlong(Axis.vertical, yLabels.first),
+    );
+    final xInterval = _niceInterval(
+      widget.maxFrequency,
+      targetTicks: axis.ticksAlong(Axis.horizontal, xLabel),
+    );
+
+    final tooltipStyle = axis.labelStyle.copyWith(
+      color: colorScheme.onSurface,
+      fontWeight: FontWeight.bold,
+      fontSize: (axis.labelStyle.fontSize ?? 11) + 1,
+    );
+    final tooltipFontSize = tooltipStyle.fontSize!;
+    final tooltipWidth =
+        axis.measure('000.0 Гц', style: tooltipStyle).width + 4;
 
     final chart = LineChart(
       LineChartData(
@@ -128,11 +156,18 @@ class _FrequencyPlotState extends State<FrequencyPlot> {
           touchTooltipData: LineTouchTooltipData(
             fitInsideVertically: true,
             fitInsideHorizontally: true,
+            // Ширина окошка — по измеренной строке, а не по умолчанию в 120
+            // пикселей: на панели мозаики содержимое в него не помещалось.
+            maxContentWidth: tooltipWidth,
+            tooltipPadding: EdgeInsets.symmetric(
+              horizontal: tooltipFontSize * 0.7,
+              vertical: tooltipFontSize * 0.45,
+            ),
             getTooltipItems: (touchedSpots) {
               return touchedSpots.map((spot) {
                 return LineTooltipItem(
-                  '${spot.x.toStringAsFixed(1)} Hz\n${spot.y.toStringAsFixed(1)} dB',
-                  TextStyle(color: colorScheme.onSurface, fontSize: 12),
+                  '${spot.x.toStringAsFixed(1)} Гц\n${spot.y.toStringAsFixed(1)} дБ',
+                  tooltipStyle,
                   textDirection: TextDirection.ltr,
                 );
               }).toList();
@@ -156,12 +191,13 @@ class _FrequencyPlotState extends State<FrequencyPlot> {
             sideTitles: SideTitles(
               showTitles: true,
               interval: xInterval,
-              reservedSize: compact ? 22 : 30,
+              reservedSize: axis.reservedBottom(xLabel),
+              maxIncluded: false,
               getTitlesWidget:
-                  (value, meta) => _AxisLabel(
+                  (value, meta) => chartAxisLabel(
+                    meta: meta,
                     text: '${_formatTick(value, xInterval)} Гц',
                     style: axisStyle,
-                    padding: EdgeInsets.only(top: compact ? 4 : 8),
                   ),
             ),
           ),
@@ -169,13 +205,14 @@ class _FrequencyPlotState extends State<FrequencyPlot> {
             sideTitles: SideTitles(
               showTitles: true,
               interval: yInterval,
-              reservedSize: compact ? 40 : 42,
+              reservedSize: axis.reservedLeft(yLabels),
+              maxIncluded: false,
+              minIncluded: false,
               getTitlesWidget:
-                  (value, meta) => _AxisLabel(
+                  (value, meta) => chartAxisLabel(
+                    meta: meta,
                     text: _formatTick(value, yInterval),
                     style: axisStyle,
-                    padding: EdgeInsets.only(right: compact ? 5 : 8),
-                    alignRight: true,
                   ),
             ),
           ),
@@ -278,37 +315,6 @@ class _ChartRange {
   const _ChartRange(this.min, this.max);
 
   double get span => max - min;
-}
-
-class _AxisLabel extends StatelessWidget {
-  final String text;
-  final TextStyle? style;
-  final EdgeInsets padding;
-  final bool alignRight;
-
-  const _AxisLabel({
-    required this.text,
-    required this.style,
-    required this.padding,
-    this.alignRight = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: padding,
-      child: Text(
-        text,
-        textAlign: alignRight ? TextAlign.right : TextAlign.center,
-        style: style,
-        // Строго одна строка: в компактном режиме места в отведённой полосе
-        // ровно на неё, а перенос уводил бы вторую строку под сам график.
-        maxLines: 1,
-        softWrap: false,
-        overflow: TextOverflow.visible,
-      ),
-    );
-  }
 }
 
 double _niceInterval(double range, {int targetTicks = 5}) {

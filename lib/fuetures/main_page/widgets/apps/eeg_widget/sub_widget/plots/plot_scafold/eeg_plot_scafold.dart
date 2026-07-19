@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:eeg_app_max30003_stm32/core/time_format.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/plots/plot_scafold/chart_axis.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/plots/plot_scafold/zoomable_chart.dart';
 import 'package:eeg_app_max30003_stm32/theme.dart';
 
@@ -51,6 +52,14 @@ class _PlotScafoldState extends State<PlotScafold> {
 
   @override
   Widget build(BuildContext context) {
+    // Размер нужен до сборки графика: от него считаются и шрифт подписей, и
+    // место под них, и число засечек.
+    return LayoutBuilder(
+      builder: (context, constraints) => _build(context, constraints.biggest),
+    );
+  }
+
+  Widget _build(BuildContext context, Size chartSize) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final palette = theme.extension<EegPalette>() ?? EegPalette.oscilloscope;
@@ -73,16 +82,27 @@ class _PlotScafoldState extends State<PlotScafold> {
     final yRange = _stableRangeFor(validData);
     final minX = validData.first.x;
     final maxX = max(validData.last.x, minX + 1);
-    // На панели мозаики засечек меньше: подписи там дороже самого сигнала.
-    final ticks = compact ? 3 : 5;
-    final yInterval = _niceInterval(yRange.span, targetTicks: ticks);
-    final xInterval = _niceInterval(maxX - minX, targetTicks: ticks);
     final gridColor = palette.grid.withValues(alpha: 0.72);
     final baselineColor = colorScheme.onSurfaceVariant.withValues(alpha: 0.34);
-    final axisStyle = theme.textTheme.labelSmall?.copyWith(
+
+    final axis = ChartAxis.of(context, chartSize);
+    final axisStyle = axis.labelStyle.copyWith(
       color: compact ? colorScheme.onSurfaceVariant : colorScheme.onSurface,
-      fontSize: compact ? 10 : 13,
-      fontWeight: FontWeight.w600,
+    );
+    // Крайние значения оси — они же самые длинные подписи: больше знаков, а у
+    // минимума ещё и минус.
+    final yLabels = [
+      _formatTick(yRange.min, yRange.span),
+      _formatTick(yRange.max, yRange.span),
+    ];
+    final xLabel = formatClock(maxX.round());
+    final yInterval = _niceInterval(
+      yRange.span,
+      targetTicks: axis.ticksAlong(Axis.vertical, yLabels.first),
+    );
+    final xInterval = _niceInterval(
+      maxX - minX,
+      targetTicks: axis.ticksAlong(Axis.horizontal, xLabel),
     );
 
     final chart = LineChart(
@@ -115,12 +135,15 @@ class _PlotScafoldState extends State<PlotScafold> {
             sideTitles: SideTitles(
               showTitles: true,
               interval: xInterval,
-              reservedSize: compact ? 22 : 28,
+              reservedSize: axis.reservedBottom(xLabel),
+              // Крайние подписи рисуются сверх засечек по интервалу — на узкой
+              // панели последняя налезала на предыдущую и обе были нечитаемы.
+              maxIncluded: false,
               getTitlesWidget:
-                  (value, meta) => _AxisLabel(
+                  (value, meta) => chartAxisLabel(
+                    meta: meta,
                     text: formatClock(value.round()),
                     style: axisStyle,
-                    padding: EdgeInsets.only(top: compact ? 4 : 8),
                   ),
             ),
           ),
@@ -128,13 +151,16 @@ class _PlotScafoldState extends State<PlotScafold> {
             sideTitles: SideTitles(
               showTitles: true,
               interval: yInterval,
-              reservedSize: 40,
+              reservedSize: axis.reservedLeft(yLabels),
+              // Подпись максимума прижата к самому краю: её верхняя половина
+              // уходила за рамку графика.
+              maxIncluded: false,
+              minIncluded: false,
               getTitlesWidget:
-                  (value, meta) => _AxisLabel(
+                  (value, meta) => chartAxisLabel(
+                    meta: meta,
                     text: _formatTick(value, yInterval),
                     style: axisStyle,
-                    padding: EdgeInsets.only(right: compact ? 5 : 8),
-                    alignRight: true,
                   ),
             ),
           ),
@@ -252,37 +278,6 @@ class _ChartRange {
   const _ChartRange(this.min, this.max);
 
   double get span => max - min;
-}
-
-class _AxisLabel extends StatelessWidget {
-  final String text;
-  final TextStyle? style;
-  final EdgeInsets padding;
-  final bool alignRight;
-
-  const _AxisLabel({
-    required this.text,
-    required this.style,
-    required this.padding,
-    this.alignRight = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: padding,
-      child: Text(
-        text,
-        textAlign: alignRight ? TextAlign.right : TextAlign.center,
-        style: style,
-        // Строго одна строка: в компактном режиме места в отведённой полосе
-        // ровно на неё, а перенос уводил бы вторую строку под сам график.
-        maxLines: 1,
-        softWrap: false,
-        overflow: TextOverflow.visible,
-      ),
-    );
-  }
 }
 
 double _niceInterval(double range, {int targetTicks = 5}) {

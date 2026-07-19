@@ -42,7 +42,13 @@ void main() {
     );
     expect(chart.data.extraLinesData.extraLinesOnTop, isFalse);
     expect(chart.data.extraLinesData.horizontalLines.single.y, 0);
-    expect(chart.data.titlesData.leftTitles.sideTitles.reservedSize, 40);
+    // Место под подписи считается по измеренной ширине самой длинной из них,
+    // а не берётся константой: раньше здесь стояло 40, и на другом размере
+    // окна подпись за него вылезала.
+    expect(
+      chart.data.titlesData.leftTitles.sideTitles.reservedSize,
+      greaterThan(0),
+    );
     expect(chart.transformationConfig.scaleAxis, FlScaleAxis.free);
     expect(chart.transformationConfig.transformationController, isNotNull);
     expect(tester.takeException(), isNull);
@@ -95,7 +101,10 @@ void main() {
     );
     expect(chart.data.extraLinesData.extraLinesOnTop, isFalse);
     expect(chart.data.extraLinesData.horizontalLines.single.y, 0);
-    expect(chart.data.titlesData.leftTitles.sideTitles.reservedSize, 42);
+    expect(
+      chart.data.titlesData.leftTitles.sideTitles.reservedSize,
+      greaterThan(0),
+    );
     expect(chart.transformationConfig.scaleAxis, FlScaleAxis.free);
     expect(chart.transformationConfig.transformationController, isNotNull);
     // Резкие выбросы (провал -80, пик 12) должны помещаться в диапазон с
@@ -196,6 +205,69 @@ void main() {
     // Легенда съедала бы место панели, а цвета те же, что во вкладке.
     expect(find.text('Delta'), findsNothing);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('крайние подписи осей не рисуются поверх засечек', (
+    tester,
+  ) async {
+    // Крайние подписи fl_chart рисует дополнительно к засечкам по интервалу.
+    // На узкой панели последняя подпись времени налезала на предыдущую, а
+    // верхняя подпись по Y обрезалась рамкой.
+    final data = List<FlSpot>.generate(
+      64,
+      (index) => FlSpot(index.toDouble(), index.isEven ? 30.0 : -30.0),
+    );
+
+    await tester.pumpWidget(wrap(PlotScafold(data: data, compact: true)));
+    await tester.pump();
+
+    final titles =
+        tester.widget<LineChart>(find.byType(LineChart)).data.titlesData;
+    expect(titles.bottomTitles.sideTitles.maxIncluded, isFalse);
+    expect(titles.leftTitles.sideTitles.maxIncluded, isFalse);
+    expect(titles.leftTitles.sideTitles.minIncluded, isFalse);
+  });
+
+  testWidgets('место под подписи и их размер зависят от размера графика', (
+    tester,
+  ) async {
+    // Ни одного подобранного руками пикселя: на маленьком графике подписи
+    // мельче и полоса под них уже, чем на большом.
+    final data = List<FlSpot>.generate(
+      64,
+      (index) => FlSpot(index.toDouble(), index.isEven ? 120.0 : -120.0),
+    );
+
+    Future<SideTitles> leftTitlesFor(Size size) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: theme,
+          home: Scaffold(
+            body: SizedBox(
+              width: size.width,
+              height: size.height,
+              child: PlotScafold(data: data, compact: true),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      return tester
+          .widget<LineChart>(find.byType(LineChart))
+          .data
+          .titlesData
+          .leftTitles
+          .sideTitles;
+    }
+
+    final small = await leftTitlesFor(const Size(260, 150));
+    final large = await leftTitlesFor(const Size(900, 500));
+
+    expect(
+      small.reservedSize,
+      lessThan(large.reservedSize),
+      reason: 'мелкому графику нужна более узкая полоса под подписи',
+    );
   });
 
   testWidgets('подсказка по ритмам показывает время и все ритмы', (

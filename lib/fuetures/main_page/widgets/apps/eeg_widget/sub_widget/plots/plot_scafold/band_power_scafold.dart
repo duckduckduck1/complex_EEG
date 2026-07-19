@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:eeg_app_max30003_stm32/core/time_format.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/plots/plot_scafold/chart_axis.dart';
 import 'package:eeg_app_max30003_stm32/theme.dart';
 
 /// Порядок ритмов: он же порядок полос в `lineBarsData`, легенды и тултипа.
@@ -41,6 +42,14 @@ class BandPowerPlot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Размер нужен до сборки графика: от него считаются шрифт подписей, место
+    // под них, число засечек и размер подсказки.
+    return LayoutBuilder(
+      builder: (context, constraints) => _build(context, constraints.biggest),
+    );
+  }
+
+  Widget _build(BuildContext context, Size chartSize) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final palette = theme.extension<EegPalette>() ?? EegPalette.oscilloscope;
@@ -58,16 +67,34 @@ class BandPowerPlot extends StatelessWidget {
             ? allData.map((spot) => spot.x).reduce(max)
             : maxFrequency;
     final ensuredMaxX = max(maxX, minX + 1);
-    final ticks = compact ? 3 : 5;
-    final xInterval = _niceInterval(ensuredMaxX - minX, targetTicks: ticks);
-    final yInterval = _niceInterval(1, targetTicks: ticks);
     final gridColor = palette.grid.withValues(alpha: 0.72);
     final baselineColor = colorScheme.onSurfaceVariant.withValues(alpha: 0.34);
-    final axisStyle = theme.textTheme.labelSmall?.copyWith(
+
+    final axis = ChartAxis.of(context, chartSize);
+    final axisStyle = axis.labelStyle.copyWith(
       color: compact ? colorScheme.onSurfaceVariant : colorScheme.onSurface,
-      fontSize: compact ? 10 : 13,
-      fontWeight: FontWeight.w600,
     );
+    // Ось Y тут всегда 0..1, поэтому самая длинная подпись известна заранее.
+    const yLabel = '0.0';
+    final xLabel = formatClock(ensuredMaxX.round());
+    final xInterval = _niceInterval(
+      ensuredMaxX - minX,
+      targetTicks: axis.ticksAlong(Axis.horizontal, xLabel),
+    );
+    final yInterval = _niceInterval(
+      1,
+      targetTicks: axis.ticksAlong(Axis.vertical, yLabel),
+    );
+
+    // Подсказка живёт по тем же правилам, что подписи: размер от размера
+    // графика, ширина окошка — по измеренной строке, а не по умолчанию.
+    final tooltipStyle = axis.labelStyle.copyWith(
+      fontWeight: FontWeight.bold,
+      fontSize: (axis.labelStyle.fontSize ?? 11) + 1,
+    );
+    final tooltipFontSize = tooltipStyle.fontSize!;
+    final tooltipWidth =
+        axis.measure('Theta  0.000 отн.', style: tooltipStyle).width + 4;
 
     return Column(
       children: [
@@ -114,13 +141,22 @@ class BandPowerPlot extends StatelessWidget {
                     touchTooltipData: LineTouchTooltipData(
                       fitInsideVertically: true,
                       fitInsideHorizontally: true,
+                      // Ширину окошка меряем по самой длинной строке, а не
+                      // держим умолчание в 120 пикселей: на панели мозаики
+                      // «Theta 0.593 отн.» в него не помещалось и обрезалось.
+                      maxContentWidth: tooltipWidth,
+                      tooltipPadding: EdgeInsets.symmetric(
+                        horizontal: tooltipFontSize * 0.7,
+                        vertical: tooltipFontSize * 0.45,
+                      ),
                       getTooltipItems:
                           (touchedSpots) => _buildTooltipItems(
                             touchedSpots,
-                            headerStyle: TextStyle(
+                            headerStyle: tooltipStyle.copyWith(
                               color: colorScheme.onSurfaceVariant,
                               fontWeight: FontWeight.w600,
                             ),
+                            bodyStyle: tooltipStyle,
                           ),
                     ),
                   ),
@@ -136,12 +172,15 @@ class BandPowerPlot extends StatelessWidget {
                       sideTitles: SideTitles(
                         showTitles: true,
                         interval: xInterval,
-                        reservedSize: compact ? 22 : 30,
+                        reservedSize: axis.reservedBottom(xLabel),
+                        // Крайняя подпись рисуется сверх засечек по интервалу
+                        // и налезала на соседнюю у правого края.
+                        maxIncluded: false,
                         getTitlesWidget:
-                            (value, _) => _AxisLabel(
+                            (value, meta) => chartAxisLabel(
+                              meta: meta,
                               text: formatClock(value.round()),
                               style: axisStyle,
-                              padding: EdgeInsets.only(top: compact ? 4 : 8),
                             ),
                       ),
                     ),
@@ -149,13 +188,14 @@ class BandPowerPlot extends StatelessWidget {
                       sideTitles: SideTitles(
                         showTitles: true,
                         interval: yInterval,
-                        reservedSize: 40,
+                        reservedSize: axis.reservedLeft(const [yLabel]),
+                        // Верхняя «1.0» упиралась в край и обрезалась.
+                        maxIncluded: false,
                         getTitlesWidget:
-                            (value, _) => _AxisLabel(
+                            (value, meta) => chartAxisLabel(
+                              meta: meta,
                               text: _formatTick(value, yInterval),
                               style: axisStyle,
-                              padding: EdgeInsets.only(right: compact ? 5 : 8),
-                              alignRight: true,
                             ),
                       ),
                     ),
@@ -198,6 +238,7 @@ class BandPowerPlot extends StatelessWidget {
   List<LineTooltipItem> _buildTooltipItems(
     List<LineBarSpot> touchedSpots, {
     required TextStyle headerStyle,
+    required TextStyle bodyStyle,
   }) {
     final sorted = [...touchedSpots]
       ..sort((a, b) => a.barIndex.compareTo(b.barIndex));
@@ -211,10 +252,7 @@ class BandPowerPlot extends StatelessWidget {
                   ? _bandNames[spot.barIndex]
                   : '—';
           final line = '$name  ${spot.y.toStringAsFixed(3)} отн.';
-          final lineStyle = TextStyle(
-            color: spot.bar.color,
-            fontWeight: FontWeight.bold,
-          );
+          final lineStyle = bodyStyle.copyWith(color: spot.bar.color);
           if (i > 0) {
             return LineTooltipItem(line, lineStyle, textAlign: TextAlign.left);
           }
@@ -291,37 +329,6 @@ class _LegendItemData {
   final String label;
 
   const _LegendItemData(this.color, this.label);
-}
-
-class _AxisLabel extends StatelessWidget {
-  final String text;
-  final TextStyle? style;
-  final EdgeInsets padding;
-  final bool alignRight;
-
-  const _AxisLabel({
-    required this.text,
-    required this.style,
-    required this.padding,
-    this.alignRight = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: padding,
-      child: Text(
-        text,
-        textAlign: alignRight ? TextAlign.right : TextAlign.center,
-        style: style,
-        // Строго одна строка: в компактном режиме места в отведённой полосе
-        // ровно на неё, а перенос уводил бы вторую строку под сам график.
-        maxLines: 1,
-        softWrap: false,
-        overflow: TextOverflow.visible,
-      ),
-    );
-  }
 }
 
 double _niceInterval(double range, {int targetTicks = 5}) {
