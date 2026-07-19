@@ -1,4 +1,4 @@
-# Собирает установщик приложения оператора ЭЭГ.
+﻿# Собирает установщик приложения оператора ЭЭГ.
 #
 # Запускать из корня репозитория:
 #   powershell -ExecutionPolicy Bypass -File installer\build_installer.ps1
