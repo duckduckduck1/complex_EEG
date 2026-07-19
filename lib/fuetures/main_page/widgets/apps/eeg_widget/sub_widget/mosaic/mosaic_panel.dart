@@ -25,7 +25,7 @@ class DeviceMosaicPanel extends StatelessWidget {
     required this.onSelected,
     required this.onExpand,
     required this.onStartRecording,
-    this.refreshInterval = const Duration(milliseconds: 100),
+    this.refreshInterval = const Duration(milliseconds: 16),
   });
 
   final DeviceViewSession session;
@@ -42,9 +42,16 @@ class DeviceMosaicPanel extends StatelessWidget {
   /// на экране, а не в панели.
   final VoidCallback onStartRecording;
 
-  /// Как часто перерисовывать графики панели. По умолчанию 10 кадров в секунду:
-  /// на панели в несколько сотен пикселей разницы с 250 не видно, а нагрузка
-  /// отличается в разы.
+  /// Как часто перерисовывать графики панели.
+  ///
+  /// 16 мс — чуть чаще кадра при 60 Гц, то есть ограничитель срезает лишние
+  /// перестройки (их прилетает 250 в секунду), но ни одного кадра не
+  /// пропускает. Первая версия стояла на 100 мс: нагрузка была ниже, зато
+  /// задержка стала видна глазом — на стенде это читалось как подтормаживание,
+  /// хотя кадры не терялись.
+  ///
+  /// Больше кадра в секунду отрисовать всё равно нельзя: несколько setState
+  /// внутри одного кадра схлопываются в одну перестройку.
   final Duration refreshInterval;
 
   @override

@@ -1,5 +1,7 @@
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/bloc/rt_eeg_data_bloc.dart';
 import 'package:eeg_app_max30003_stm32/features/recording/application/recording_bloc.dart';
 import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_models.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/mosaic/device_mosaic_view.dart';
@@ -189,6 +191,47 @@ void main() {
     // Открытое состояние видно прямо в панели, иначе метка тянулась бы
     // до конца записи незамеченной.
     expect(find.text('Спит'), findsOneWidget);
+  });
+
+  testWidgets('панель обновляется покадрово, а не раз в десятую секунды', (
+    tester,
+  ) async {
+    // На стенде 100 мс читались как подтормаживание, хотя кадры не терялись.
+    // 16 мс — чуть чаще кадра при 60 Гц: лишние перестройки срезаны, но ни
+    // один кадр не пропущен.
+    final sessions = makeSessions(tester, 1);
+    await pumpMosaic(tester, sessions);
+
+    final panel = tester.widget<DeviceMosaicPanel>(
+      find.byType(DeviceMosaicPanel),
+    );
+    expect(
+      panel.refreshInterval.inMilliseconds,
+      lessThanOrEqualTo(16),
+      reason: 'задержка не должна быть заметна глазом',
+    );
+  });
+
+  testWidgets('в панели видны оси со значениями', (tester) async {
+    final sessions = makeSessions(tester, 2);
+    final rtBloc = sessions.first.rtEegDataBloc;
+    await pumpMosaic(tester, sessions);
+
+    for (var i = 0; i < 300; i++) {
+      rtBloc.add(NewEegDataReceived(newEegData: (i % 20) - 10.0));
+    }
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump();
+
+    // Оси рисует общий с вкладкой график: значения по амплитуде и время по X.
+    final charts = tester.widgetList<LineChart>(find.byType(LineChart));
+    expect(charts, isNotEmpty);
+    for (final chart in charts) {
+      expect(chart.data.titlesData.leftTitles.sideTitles.showTitles, isTrue);
+      expect(chart.data.titlesData.bottomTitles.sideTitles.showTitles, isTrue);
+    }
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('пустой список не роняет мозаику', (tester) async {

@@ -12,6 +12,16 @@ class PlotScafold extends StatefulWidget {
   final double maxY;
   final double paddingFactor; // Множитель для отступа (0.1 = 10%)
   final int? visibleTimeSeconds; // Видимое время в секундах (опционально)
+
+  /// Режим панели мозаики: те же оси и тот же устойчивый масштаб, но подписи
+  /// мельче, засечек меньше и зума нет.
+  ///
+  /// Отдельного графика для мозаики нет намеренно: он разошёлся бы с этим —
+  /// стабилизация диапазона Y, формат времени и шаг засечек живут в одном
+  /// месте. Зум выключен, потому что в сетке колесо мыши прокручивает саму
+  /// сетку, а не масштабирует панель.
+  final bool compact;
+
   const PlotScafold({
     super.key,
     required this.data,
@@ -19,6 +29,7 @@ class PlotScafold extends StatefulWidget {
     this.minY = -2,
     this.paddingFactor = 0.1,
     this.visibleTimeSeconds,
+    this.compact = false,
   });
 
   @override
@@ -58,116 +69,133 @@ class _PlotScafoldState extends State<PlotScafold> {
       );
     }
 
+    final compact = widget.compact;
     final yRange = _stableRangeFor(validData);
     final minX = validData.first.x;
     final maxX = max(validData.last.x, minX + 1);
-    final yInterval = _niceInterval(yRange.span);
-    final xInterval = _niceInterval(maxX - minX);
+    // На панели мозаики засечек меньше: подписи там дороже самого сигнала.
+    final ticks = compact ? 3 : 5;
+    final yInterval = _niceInterval(yRange.span, targetTicks: ticks);
+    final xInterval = _niceInterval(maxX - minX, targetTicks: ticks);
     final gridColor = palette.grid.withValues(alpha: 0.72);
     final baselineColor = colorScheme.onSurfaceVariant.withValues(alpha: 0.34);
     final axisStyle = theme.textTheme.labelSmall?.copyWith(
-      color: colorScheme.onSurface,
-      fontSize: 13,
+      color: compact ? colorScheme.onSurfaceVariant : colorScheme.onSurface,
+      fontSize: compact ? 10 : 13,
       fontWeight: FontWeight.w600,
     );
 
+    final chart = LineChart(
+      LineChartData(
+        minX: minX,
+        maxX: maxX,
+        minY: yRange.min,
+        maxY: yRange.max,
+        clipData: const FlClipData.all(),
+        extraLinesData: ExtraLinesData(
+          extraLinesOnTop: false,
+          horizontalLines: [
+            if (yRange.min <= 0 && yRange.max >= 0)
+              HorizontalLine(y: 0, color: baselineColor, strokeWidth: 1.1),
+          ],
+        ),
+        lineTouchData: const LineTouchData(handleBuiltInTouches: false),
+        gridData: FlGridData(
+          show: true,
+          verticalInterval: xInterval,
+          horizontalInterval: yInterval,
+          getDrawingVerticalLine:
+              (value) => FlLine(color: gridColor, strokeWidth: 0.8),
+          getDrawingHorizontalLine:
+              (value) => FlLine(color: gridColor, strokeWidth: 0.8),
+        ),
+        titlesData: FlTitlesData(
+          show: true,
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              interval: xInterval,
+              reservedSize: compact ? 16 : 28,
+              getTitlesWidget:
+                  (value, meta) => _AxisLabel(
+                    text: formatClock(value.round()),
+                    style: axisStyle,
+                    padding: EdgeInsets.only(top: compact ? 2 : 8),
+                  ),
+            ),
+          ),
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              interval: yInterval,
+              reservedSize: compact ? 30 : 40,
+              getTitlesWidget:
+                  (value, meta) => _AxisLabel(
+                    text: _formatTick(value, yInterval),
+                    style: axisStyle,
+                    padding: EdgeInsets.only(right: compact ? 3 : 8),
+                    alignRight: true,
+                  ),
+            ),
+          ),
+          rightTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          topTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+        ),
+        borderData: FlBorderData(show: false),
+        lineBarsData: [
+          LineChartBarData(
+            spots: validData,
+            dotData: const FlDotData(show: false),
+            color: palette.signal,
+            barWidth: compact ? 1.2 : 2.2,
+            isCurved: false,
+            isStrokeCapRound: true,
+            // Заливку под кривой в мозаике не рисуем: десять градиентов за
+            // кадр стоят заметно, а на мелкой панели их почти не видно.
+            belowBarData: BarAreaData(
+              show: !compact,
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  palette.signal.withValues(alpha: 0.22),
+                  palette.signal.withValues(alpha: 0.03),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+      duration: Duration.zero,
+      transformationConfig:
+          compact
+              ? const FlTransformationConfig(
+                scaleAxis: FlScaleAxis.none,
+                panEnabled: false,
+                scaleEnabled: false,
+              )
+              : FlTransformationConfig(
+                scaleAxis: FlScaleAxis.free,
+                minScale: 1,
+                maxScale: 12,
+                panEnabled: true,
+                scaleEnabled: true,
+                trackpadScrollCausesScale: true,
+                transformationController: _transformController,
+              ),
+    );
+
+    if (compact) {
+      return ClipRect(child: ExcludeSemantics(child: chart));
+    }
     return ZoomableChart(
       transformController: _transformController,
       colorScheme: colorScheme,
-      child: LineChart(
-        LineChartData(
-          minX: minX,
-          maxX: maxX,
-          minY: yRange.min,
-          maxY: yRange.max,
-          clipData: const FlClipData.all(),
-          extraLinesData: ExtraLinesData(
-            extraLinesOnTop: false,
-            horizontalLines: [
-              if (yRange.min <= 0 && yRange.max >= 0)
-                HorizontalLine(y: 0, color: baselineColor, strokeWidth: 1.1),
-            ],
-          ),
-          lineTouchData: const LineTouchData(handleBuiltInTouches: false),
-          gridData: FlGridData(
-            show: true,
-            verticalInterval: xInterval,
-            horizontalInterval: yInterval,
-            getDrawingVerticalLine:
-                (value) => FlLine(color: gridColor, strokeWidth: 0.8),
-            getDrawingHorizontalLine:
-                (value) => FlLine(color: gridColor, strokeWidth: 0.8),
-          ),
-          titlesData: FlTitlesData(
-            show: true,
-            bottomTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                interval: xInterval,
-                reservedSize: 28,
-                getTitlesWidget:
-                    (value, meta) => _AxisLabel(
-                      text: formatClock(value.round()),
-                      style: axisStyle,
-                      padding: const EdgeInsets.only(top: 8),
-                    ),
-              ),
-            ),
-            leftTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                interval: yInterval,
-                reservedSize: 40,
-                getTitlesWidget:
-                    (value, meta) => _AxisLabel(
-                      text: _formatTick(value, yInterval),
-                      style: axisStyle,
-                      padding: const EdgeInsets.only(right: 8),
-                      alignRight: true,
-                    ),
-              ),
-            ),
-            rightTitles: const AxisTitles(
-              sideTitles: SideTitles(showTitles: false),
-            ),
-            topTitles: const AxisTitles(
-              sideTitles: SideTitles(showTitles: false),
-            ),
-          ),
-          borderData: FlBorderData(show: false),
-          lineBarsData: [
-            LineChartBarData(
-              spots: validData,
-              dotData: const FlDotData(show: false),
-              color: palette.signal,
-              barWidth: 2.2,
-              isCurved: false,
-              isStrokeCapRound: true,
-              belowBarData: BarAreaData(
-                show: true,
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    palette.signal.withValues(alpha: 0.22),
-                    palette.signal.withValues(alpha: 0.03),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-        duration: Duration.zero,
-        transformationConfig: FlTransformationConfig(
-          scaleAxis: FlScaleAxis.free,
-          minScale: 1,
-          maxScale: 12,
-          panEnabled: true,
-          scaleEnabled: true,
-          trackpadScrollCausesScale: true,
-          transformationController: _transformController,
-        ),
-      ),
+      child: chart,
     );
   }
 
