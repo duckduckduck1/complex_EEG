@@ -28,7 +28,7 @@ class EegPlot extends StatelessWidget {
             paddingFactor: 0.35,
           );
         }
-        return Container();
+        return const SizedBox.shrink();
       },
     );
   }

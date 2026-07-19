@@ -209,14 +209,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.9.3+5"
-  filters_sdk:
-    dependency: "direct main"
-    description:
-      name: filters_sdk
-      sha256: "5972eee0faaf96d5d06bc00422bc57bd125406bfad5eaa1aacd37c4d71d0ac49"
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.0.2"
   fl_chart:
     dependency: "direct main"
     description:
@@ -551,14 +543,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.6.0"
-  scidart:
-    dependency: "direct main"
-    description:
-      name: scidart
-      sha256: af816eed552cadb6a9a324c594515b0cdff41617839345c382047927bd8dc02d
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.0.2-dev.12"
   sky_engine:
     dependency: transitive
     description: flutter

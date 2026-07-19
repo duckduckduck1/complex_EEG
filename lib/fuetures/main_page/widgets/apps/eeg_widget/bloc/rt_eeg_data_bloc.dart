@@ -148,12 +148,27 @@ class RtEegDataBloc extends Bloc<RtEegData, RtEegState> {
   }
 
   void _onNewFilter(NewSettings event, Emitter<RtEegState> emit) {
+    final previous = eegSettings.fillterSettings;
     eegSettings = event.newSettings;
-    _rebuildFilter();
+    // Пересобираем каскад, только если поменялись сами фильтры. Событие
+    // настроек приходит и на смену состава графиков — от кнопок «Спектр»,
+    // «Ритмы», «Фильтр», — а те к сигналу отношения не имеют. Раньше каскад
+    // пересобирался на любое событие, и каждое нажатие этих кнопок роняло
+    // график переходным процессом фильтра с нуля.
+    if (event.newSettings.fillterSettings != previous) {
+      _rebuildFilter();
+    }
   }
 
-  /// Каскад пересобирается только здесь — при смене настроек. На потоке отсчётов
-  /// он не трогается вообще, иначе состояние фильтра сбрасывалось бы постоянно.
+  /// Пересобирает каскад под текущие настройки и перефильтровывает видимое окно.
+  ///
+  /// Вызывается только при смене настроек фильтра — на потоке отсчётов каскад
+  /// не трогается вообще, иначе состояние сбрасывалось бы постоянно.
+  ///
+  /// Окно пересчитывается целиком, из сырых отсчётов: иначе на графике осталась
+  /// бы половина, отфильтрованная старыми настройками, а новый каскад начал бы с
+  /// нуля и дал заметный провал у правого края. Это единственный прогон по
+  /// буферу — один на нажатие, а не на каждый отсчёт, как было раньше.
   void _rebuildFilter() {
     final settings = eegSettings.fillterSettings;
     _filter = ButterworthChain.build(
@@ -162,6 +177,18 @@ class RtEegDataBloc extends Bloc<RtEegData, RtEegState> {
       highPassHz: settings.isHpOn ? settings.hp : null,
       notchHz: settings.isNotchOn ? settings.notch : null,
     );
+
+    // Один проход по сырому окну: заодно считаем и значения, и точки графика.
+    // Порядок важен — каскад с состоянием, значения должны идти как во времени.
+    final rawValues = _raw.toList(growable: false);
+    final rawSpotsSnapshot = _rawPlot.toList(growable: false);
+    _filtered.clear();
+    _filteredPlot.clear();
+    for (var i = 0; i < rawValues.length; i++) {
+      final value = _filter.filter(rawValues[i]);
+      _filtered.addLast(value);
+      _filteredPlot.addLast(FlSpot(rawSpotsSnapshot[i].x, value));
+    }
   }
 
   void _onResetRequested(RtEegResetRequested event, Emitter<RtEegState> emit) {

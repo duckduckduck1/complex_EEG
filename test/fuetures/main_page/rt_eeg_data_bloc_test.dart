@@ -96,6 +96,49 @@ void main() {
     expect(bloc.filteredSpots.last.y, lessThan(100));
   });
 
+  test('смена состава графиков фильтр не трогает', () async {
+    // Кнопки «Спектр», «Ритмы» и «Фильтр» шлют то же событие настроек, что и
+    // ползунки. Раньше каскад пересобирался на любое из них, и каждое нажатие
+    // роняло график переходным процессом фильтра с нуля.
+    enableLowPass(20);
+    feed(List<double>.filled(600, 100));
+    await pumpEventQueue();
+    final before = bloc.filteredSpots.map((spot) => spot.y).toList();
+
+    bloc.add(
+      NewSettings(
+        newSettings: EegSettings(
+          const EegIsShowingSettings(isFftShowing: true),
+          bloc.eegSettings.fillterSettings,
+        ),
+      ),
+    );
+    await pumpEventQueue();
+
+    expect(
+      bloc.filteredSpots.map((spot) => spot.y).toList(),
+      before,
+      reason: 'сигнал не должен дёрнуться от переключения графиков',
+    );
+  });
+
+  test('смена фильтра пересчитывает всё видимое окно', () async {
+    // Иначе на графике осталась бы половина, отфильтрованная старыми
+    // настройками, а новый каскад начал бы с нуля и дал провал у правого края.
+    feed(List<double>.filled(600, 100));
+    await pumpEventQueue();
+
+    enableLowPass(1);
+    await pumpEventQueue();
+
+    final spots = bloc.filteredSpots;
+    expect(spots, hasLength(600));
+    // Начало окна — переходный процесс, конец уже на полке: значит новым
+    // каскадом прогнали всю историю, а не только новые отсчёты.
+    expect(spots.first.y, lessThan(50));
+    expect(spots.last.y, closeTo(100, 5));
+  });
+
   test('битый отсчёт не отравляет фильтр', () async {
     enableLowPass(20);
     await pumpEventQueue();
