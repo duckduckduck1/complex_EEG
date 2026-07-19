@@ -235,7 +235,7 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
       stateToFinalize = await _autoTurnFbmOff(
         stateToFinalize,
         allowUndelivered: true,
-        reason: 'recording_stop',
+        endReason: FbmEndReason.recordingStopped,
       );
       emit(await _finalizeRecording(stateToFinalize));
     } catch (error) {
@@ -272,7 +272,7 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
       stateBeforeLost = await _autoTurnFbmOff(
         stateBeforeLost,
         allowUndelivered: true,
-        reason: 'connection_lost',
+        endReason: FbmEndReason.connectionLost,
       );
       await _storage.flush();
 
@@ -470,11 +470,10 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
   /// в тестах.
   Future<RecordingState> _autoOffFbmIfDue(RecordingState current) async {
     final autoOffSeconds = current.fbmAutoOffSeconds;
-    final onSampleIndex = current.fbmOnSampleIndex;
-    if (!current.fbmOn || autoOffSeconds == null || onSampleIndex == null) {
+    final elapsedSamples = current.fbmElapsedSamples;
+    if (autoOffSeconds == null || elapsedSamples == null) {
       return current;
     }
-    final elapsedSamples = current.sampleCount - onSampleIndex;
     if (elapsedSamples < secondsToSamples(autoOffSeconds)) {
       return current;
     }
@@ -483,7 +482,7 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
       isOn: false,
       sendCommand: true,
       allowUndelivered: true,
-      reason: 'auto_off_timer',
+      endReason: FbmEndReason.autoOffTimer,
     );
   }
 
@@ -771,7 +770,7 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
         segments: segments,
         gaps: stateToFinalize.gaps,
         labels: stateToFinalize.labels,
-        fbmEvents: stateToFinalize.fbmEvents,
+        fbmSessions: stateToFinalize.fbmSessions,
       ),
     );
     await _storage.flush();
@@ -790,7 +789,7 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
     required List<RecordingSegment> segments,
     required List<RecordingGap> gaps,
     required List<AnnotationLabel> labels,
-    required List<RecordingFbmEvent> fbmEvents,
+    required List<RecordingFbmSession> fbmSessions,
   }) {
     return {
       'experiment_id': experimentId,
@@ -812,8 +811,8 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
           .where((label) => !label.isDraft)
           .map((label) => label.toExperimentJson())
           .toList(growable: false),
-      'fbm_events': fbmEvents
-          .map((event) => event.toJson())
+      'fbm_sessions': fbmSessions
+          .map((session) => session.toJson())
           .toList(growable: false),
     };
   }
@@ -852,6 +851,19 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
             ),
     ];
 
+    // Идущий сеанс ФБМ показываем той же одной записью, что и завершённый:
+    // концом считаем момент снимка и помечаем `in_progress`. Иначе свет,
+    // горящий уже час, в снимке не виден вообще.
+    final fbmSessions = [
+      for (final session in current.fbmSessions)
+        session.isOpen
+            ? session.snapshotAt(
+              sampleCount: current.sampleCount,
+              wallClock: now,
+            )
+            : session,
+    ];
+
     await _storage.writeExperimentJson(
       _buildExperimentJson(
         experimentId: experimentId,
@@ -859,7 +871,7 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
         segments: segments,
         gaps: current.gaps,
         labels: current.labels,
-        fbmEvents: current.fbmEvents,
+        fbmSessions: fbmSessions,
       ),
     );
   }
@@ -885,7 +897,7 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
   Future<RecordingState> _autoTurnFbmOff(
     RecordingState stateToUpdate, {
     bool allowUndelivered = false,
-    String? reason,
+    required FbmEndReason endReason,
   }) async {
     if (!stateToUpdate.fbmOn) {
       return stateToUpdate;
@@ -895,7 +907,7 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
       isOn: false,
       sendCommand: true,
       allowUndelivered: allowUndelivered,
-      reason: reason,
+      endReason: endReason,
     );
   }
 
@@ -957,13 +969,19 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
     );
   }
 
+  /// Включает или гасит ФБМ и ведёт сеанс.
+  ///
+  /// Включение открывает сеанс, выключение закрывает последний открытый. Смена
+  /// яркости на горящем свете сеанс не рвёт — просто обновляет в нём ШИМ.
+  /// В `journal.ndjson` при этом по-прежнему уходит отдельная строка на каждое
+  /// действие: журнал добавочный и нужен для разбора после падения.
   Future<RecordingState> _applyFbmEvent(
     RecordingState stateToUpdate, {
     required bool isOn,
     int? pwmLevel,
     required bool sendCommand,
     bool allowUndelivered = false,
-    String? reason,
+    FbmEndReason endReason = FbmEndReason.manual,
   }) async {
     final effectivePwmLevel = pwmLevel ?? stateToUpdate.pwmLevel;
     if (effectivePwmLevel == null || !_isValidPwmLevel(effectivePwmLevel)) {
@@ -990,25 +1008,6 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
       segment: segment,
       sampleCount: stateToUpdate.sampleCount,
     );
-    final segmentSampleIndex = globalSampleIndex - segment.startSample;
-    final fbmEvent = RecordingFbmEvent(
-      segmentId: segment.segmentId,
-      segmentSampleIndex: segmentSampleIndex,
-      globalSampleIndex: globalSampleIndex,
-      wallClockTime: timestamp,
-      isOn: isOn,
-      pwmLevel: effectivePwmLevel,
-      pwmByte: pwmByte,
-      commandDelivered: commandDelivered,
-      reason: reason,
-      // Длительность считаем только на выключении: сколько свет реально горел.
-      // По счётчику отсчётов, а не по разнице индексов событий — иначе на
-      // границе получается на отсчёт меньше.
-      durationSamples:
-          !isOn && stateToUpdate.fbmOnSampleIndex != null
-              ? stateToUpdate.sampleCount - stateToUpdate.fbmOnSampleIndex!
-              : null,
-    );
 
     await _storage.appendJournal(
       _journalEvent(
@@ -1017,21 +1016,53 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
         timestamp: timestamp,
         segmentId: segment.segmentId,
         sampleIndex: globalSampleIndex,
-        extra: fbmEvent.toJson(),
+        extra: {
+          'on': isOn,
+          'segment_sample_index': globalSampleIndex - segment.startSample,
+          'time': formatClockFromSamples(globalSampleIndex),
+          'pwm_level': effectivePwmLevel,
+          'pwm_byte': pwmByte,
+          'command_delivered': commandDelivered,
+          if (!isOn) 'end_reason': endReason.jsonValue,
+        },
       ),
       flush: true,
     );
 
+    final sessions = List<RecordingFbmSession>.from(stateToUpdate.fbmSessions);
+    final openSession = stateToUpdate.openFbmSession;
+
+    if (isOn) {
+      if (openSession == null) {
+        sessions.add(
+          RecordingFbmSession(
+            segmentId: segment.segmentId,
+            startSample: stateToUpdate.sampleCount,
+            startedAtWallClock: timestamp,
+            pwmLevel: effectivePwmLevel,
+            pwmByte: pwmByte,
+            startCommandDelivered: commandDelivered,
+          ),
+        );
+      } else {
+        // Свет уже горит — это смена яркости, сеанс продолжается.
+        sessions[sessions.length - 1] = openSession.withPwm(
+          pwmLevel: effectivePwmLevel,
+          pwmByte: pwmByte,
+        );
+      }
+    } else if (openSession != null) {
+      sessions[sessions.length - 1] = openSession.close(
+        endSample: stateToUpdate.sampleCount,
+        endedAtWallClock: timestamp,
+        endReason: endReason,
+        endCommandDelivered: commandDelivered,
+      );
+    }
+
     return stateToUpdate.copyWith(
-      fbmOn: isOn,
-      // Момент включения нужен и таймеру в интерфейсе, и автовыключению.
-      // Смена ШИМ на горящем свете сеанс не прерывает — точку отсчёта храним.
-      fbmOnSampleIndex:
-          isOn
-              ? (stateToUpdate.fbmOnSampleIndex ?? stateToUpdate.sampleCount)
-              : null,
       pwmLevel: effectivePwmLevel,
-      fbmEvents: [...stateToUpdate.fbmEvents, fbmEvent],
+      fbmSessions: sessions,
     );
   }
 
@@ -1182,7 +1213,7 @@ class RecordingBloc extends Bloc<RecordingEvent, RecordingState> {
         final stateToClose = await _autoTurnFbmOff(
           state,
           allowUndelivered: true,
-          reason: 'bloc_close',
+          endReason: FbmEndReason.recordingStopped,
         );
         await _finalizeRecording(stateToClose);
       } catch (_) {

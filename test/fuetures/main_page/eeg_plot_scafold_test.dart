@@ -197,4 +197,47 @@ void main() {
     expect(find.text('Delta'), findsNothing);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('подсказка по ритмам показывает время и все ритмы', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      wrap(
+        const BandPowerPlot(
+          deltaData: [FlSpot(0, 0.1), FlSpot(95, 0.4)],
+          thetaData: [FlSpot(0, 0.2), FlSpot(95, 0.5)],
+          alphaData: [FlSpot(0, 0.3), FlSpot(95, 0.6)],
+          betaData: [FlSpot(0, 0.4), FlSpot(95, 0.7)],
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final chart = tester.widget<LineChart>(find.byType(LineChart));
+    final touchData = chart.data.lineTouchData;
+    final bars = chart.data.lineBarsData;
+
+    // Курсор попадает не в один ритм, а во все четыре: их и надо сравнивать.
+    expect(touchData.touchSpotThreshold, greaterThan(10));
+
+    // Порядок касания намеренно перепутан — в подсказке он должен быть
+    // тем же, что в легенде.
+    final touched = [
+      LineBarSpot(bars[2], 2, bars[2].spots[1]),
+      LineBarSpot(bars[0], 0, bars[0].spots[1]),
+      LineBarSpot(bars[3], 3, bars[3].spots[1]),
+      LineBarSpot(bars[1], 1, bars[1].spots[1]),
+    ];
+    final items = touchData.touchTooltipData.getTooltipItems(touched);
+
+    expect(items, hasLength(4));
+    // 95 секунд на оси X — это 01:35, время сразу видно в подсказке.
+    expect(items[0]!.text, '01:35');
+    expect(items[0]!.children!.single.toPlainText(), '\nDelta  0.400 отн.');
+    expect(items[1]!.text, 'Theta  0.500 отн.');
+    expect(items[2]!.text, 'Alpha  0.600 отн.');
+    expect(items[3]!.text, 'Beta  0.700 отн.');
+    expect(items[0]!.textStyle.color, isNot(bars[0].color));
+    expect(items[1]!.textStyle.color, EegPalette.oscilloscope.theta);
+  });
 }

@@ -89,65 +89,164 @@ class RecordingStartConfig extends Equatable {
   ];
 }
 
-class RecordingFbmEvent extends Equatable {
-  const RecordingFbmEvent({
+/// Почему сеанс ФБМ закончился.
+enum FbmEndReason {
+  /// Оператор нажал «Свет выкл».
+  manual('manual'),
+
+  /// Истекло время, выставленное таймером автовыключения.
+  autoOffTimer('auto_off_timer'),
+
+  /// Связь оборвалась. Команда «погасить» могла не доехать до устройства —
+  /// смотреть `end_command_delivered`.
+  connectionLost('connection_lost'),
+
+  /// Запись остановили, не погасив свет вручную.
+  recordingStopped('recording_stopped');
+
+  const FbmEndReason(this.jsonValue);
+
+  final String jsonValue;
+}
+
+/// Один сеанс горения ФБМ: включили — погасло.
+///
+/// В json это одна запись, а не пара «включили»/«выключили»: оператору нужна
+/// длительность сеанса, а не два момента, между которыми надо вычитать самому.
+/// Пока свет горит, запись уже лежит в снимке json с пометкой `in_progress` —
+/// снимок пишется каждые полминуты, и незакрытый сеанс виден сразу, а не
+/// появляется задним числом. Отдельные моменты включения и выключения никуда не
+/// делись: они остаются строками в `journal.ndjson`, который пишется на лету.
+class RecordingFbmSession extends Equatable {
+  const RecordingFbmSession({
     required this.segmentId,
-    required this.segmentSampleIndex,
-    required this.globalSampleIndex,
-    required this.wallClockTime,
-    required this.isOn,
+    required this.startSample,
+    required this.startedAtWallClock,
     required this.pwmLevel,
     required this.pwmByte,
-    required this.commandDelivered,
-    this.reason,
-    this.durationSamples,
+    required this.startCommandDelivered,
+    this.endSample,
+    this.endedAtWallClock,
+    this.endReason,
+    this.endCommandDelivered,
+    this.inProgress = false,
   });
 
-  /// Сколько ФБМ горела до этого выключения (в отсчётах). Есть только у события
-  /// выключения — по нему видно длительность сеанса, не считая руками разницу
-  /// индексов.
-  final int? durationSamples;
-
   final String segmentId;
-  final int segmentSampleIndex;
-  final int globalSampleIndex;
-  final DateTime wallClockTime;
-  final bool isOn;
+  final int startSample;
+  final DateTime startedAtWallClock;
+
+  /// Яркость: если её меняли на горящем свете, здесь последнее значение —
+  /// сеанс сменой яркости не прерывается.
   final int pwmLevel;
   final int pwmByte;
-  final bool commandDelivered;
-  final String? reason;
+  final bool startCommandDelivered;
+
+  final int? endSample;
+  final DateTime? endedAtWallClock;
+  final FbmEndReason? endReason;
+  final bool? endCommandDelivered;
+
+  /// Ставится только у копии для снимка json: сеанс ещё идёт, а `end_sample`
+  /// в записи — момент снимка, а не настоящее выключение.
+  final bool inProgress;
+
+  bool get isOpen => endSample == null;
+
+  int? get durationSamples =>
+      endSample == null ? null : endSample! - startSample;
+
+  RecordingFbmSession close({
+    required int endSample,
+    required DateTime endedAtWallClock,
+    required FbmEndReason endReason,
+    required bool endCommandDelivered,
+  }) {
+    return RecordingFbmSession(
+      segmentId: segmentId,
+      startSample: startSample,
+      startedAtWallClock: startedAtWallClock,
+      pwmLevel: pwmLevel,
+      pwmByte: pwmByte,
+      startCommandDelivered: startCommandDelivered,
+      endSample: endSample,
+      endedAtWallClock: endedAtWallClock,
+      endReason: endReason,
+      endCommandDelivered: endCommandDelivered,
+    );
+  }
+
+  /// Копия для снимка json: сеанс ещё идёт, но длительность уже видна.
+  ///
+  /// Причину конца не выдумываем — её просто нет, пока свет горит.
+  RecordingFbmSession snapshotAt({
+    required int sampleCount,
+    required DateTime wallClock,
+  }) {
+    return RecordingFbmSession(
+      segmentId: segmentId,
+      startSample: startSample,
+      startedAtWallClock: startedAtWallClock,
+      pwmLevel: pwmLevel,
+      pwmByte: pwmByte,
+      startCommandDelivered: startCommandDelivered,
+      endSample: sampleCount,
+      endedAtWallClock: wallClock,
+      inProgress: true,
+    );
+  }
+
+  RecordingFbmSession withPwm({required int pwmLevel, required int pwmByte}) {
+    return RecordingFbmSession(
+      segmentId: segmentId,
+      startSample: startSample,
+      startedAtWallClock: startedAtWallClock,
+      pwmLevel: pwmLevel,
+      pwmByte: pwmByte,
+      startCommandDelivered: startCommandDelivered,
+      endSample: endSample,
+      endedAtWallClock: endedAtWallClock,
+      endReason: endReason,
+      endCommandDelivered: endCommandDelivered,
+      inProgress: inProgress,
+    );
+  }
 
   Map<String, Object?> toJson() => {
     'segment_id': segmentId,
-    'sample_index': globalSampleIndex,
-    'segment_sample_index': segmentSampleIndex,
-    'global_sample_index': globalSampleIndex,
+    'start_sample': startSample,
     // Дублируем время в чч:мм:сс — читать глазами, не переводя семплы.
-    'time': formatClockFromSamples(globalSampleIndex),
-    'wall_clock_time': wallClockTime.toUtc().toIso8601String(),
-    'on': isOn,
-    'pwm_level': pwmLevel,
-    'pwm_byte': pwmByte,
-    'command_delivered': commandDelivered,
-    if (reason != null) 'reason': reason,
+    'start_time': formatClockFromSamples(startSample),
+    'started_at_wall_clock': startedAtWallClock.toUtc().toIso8601String(),
+    if (endSample != null) 'end_sample': endSample,
+    if (endSample != null) 'end_time': formatClockFromSamples(endSample!),
+    if (endedAtWallClock != null)
+      'ended_at_wall_clock': endedAtWallClock!.toUtc().toIso8601String(),
     if (durationSamples != null) 'duration_samples': durationSamples,
     if (durationSamples != null)
       'duration': formatClockFromSamples(durationSamples!),
+    'pwm_level': pwmLevel,
+    'pwm_byte': pwmByte,
+    'start_command_delivered': startCommandDelivered,
+    if (endReason != null) 'end_reason': endReason!.jsonValue,
+    if (endCommandDelivered != null)
+      'end_command_delivered': endCommandDelivered,
+    if (inProgress) 'in_progress': true,
   };
 
   @override
   List<Object?> get props => [
     segmentId,
-    segmentSampleIndex,
-    globalSampleIndex,
-    wallClockTime,
-    isOn,
+    startSample,
+    startedAtWallClock,
     pwmLevel,
     pwmByte,
-    commandDelivered,
-    reason,
-    durationSamples,
+    startCommandDelivered,
+    endSample,
+    endedAtWallClock,
+    endReason,
+    endCommandDelivered,
+    inProgress,
   ];
 }
 
@@ -251,10 +350,8 @@ class RecordingState extends Equatable {
     this.activeDraftLabel,
     this.filters = const RecordingFilters(),
     this.pwmLevel,
-    this.fbmOn = false,
-    this.fbmOnSampleIndex,
     this.fbmAutoOffSeconds,
-    this.fbmEvents = const <RecordingFbmEvent>[],
+    this.fbmSessions = const <RecordingFbmSession>[],
     this.lastError,
   });
 
@@ -273,17 +370,33 @@ class RecordingState extends Equatable {
   final RecordingFilters filters;
 
   final int? pwmLevel;
-  final bool fbmOn;
-
-  /// Индекс отсчёта, на котором ФБМ включили. По нему считается, сколько она
-  /// уже горит, — и в интерфейсе, и для автовыключения.
-  final int? fbmOnSampleIndex;
 
   /// Через сколько секунд после включения гасить свет автоматически.
   /// `null` — только вручную.
   final int? fbmAutoOffSeconds;
-  final List<RecordingFbmEvent> fbmEvents;
+
+  final List<RecordingFbmSession> fbmSessions;
   final RecordingFailure? lastError;
+
+  /// Идущий сеанс ФБМ, если свет горит.
+  ///
+  /// Открытый сеанс — единственный источник правды о том, горит ли свет и с
+  /// какого отсчёта. Раньше рядом жили отдельные `fbmOn` и `fbmOnSampleIndex`,
+  /// и это уже стоило нам бага: поле забыли в `props`, Equatable счёл состояние
+  /// прежним, и bloc проглотил `emit`. Одно поле рассинхронизировать нельзя.
+  RecordingFbmSession? get openFbmSession {
+    if (fbmSessions.isEmpty) return null;
+    final last = fbmSessions.last;
+    return last.isOpen ? last : null;
+  }
+
+  bool get fbmOn => openFbmSession != null;
+
+  /// Сколько отсчётов свет горит прямо сейчас; `null`, если он погашен.
+  int? get fbmElapsedSamples {
+    final session = openFbmSession;
+    return session == null ? null : sampleCount - session.startSample;
+  }
 
   static const _unset = Object();
 
@@ -299,10 +412,8 @@ class RecordingState extends Equatable {
     Object? activeDraftLabel = _unset,
     RecordingFilters? filters,
     Object? pwmLevel = _unset,
-    bool? fbmOn,
-    Object? fbmOnSampleIndex = _unset,
     Object? fbmAutoOffSeconds = _unset,
-    List<RecordingFbmEvent>? fbmEvents,
+    List<RecordingFbmSession>? fbmSessions,
     Object? lastError = _unset,
   }) {
     return RecordingState(
@@ -325,16 +436,11 @@ class RecordingState extends Equatable {
               : activeDraftLabel as AnnotationLabel?,
       filters: filters ?? this.filters,
       pwmLevel: pwmLevel == _unset ? this.pwmLevel : pwmLevel as int?,
-      fbmOn: fbmOn ?? this.fbmOn,
-      fbmOnSampleIndex:
-          fbmOnSampleIndex == _unset
-              ? this.fbmOnSampleIndex
-              : fbmOnSampleIndex as int?,
       fbmAutoOffSeconds:
           fbmAutoOffSeconds == _unset
               ? this.fbmAutoOffSeconds
               : fbmAutoOffSeconds as int?,
-      fbmEvents: fbmEvents ?? this.fbmEvents,
+      fbmSessions: fbmSessions ?? this.fbmSessions,
       lastError:
           lastError == _unset ? this.lastError : lastError as RecordingFailure?,
     );
@@ -353,10 +459,8 @@ class RecordingState extends Equatable {
     activeDraftLabel,
     filters,
     pwmLevel,
-    fbmOn,
-    fbmOnSampleIndex,
     fbmAutoOffSeconds,
-    fbmEvents,
+    fbmSessions,
     lastError,
   ];
 }
