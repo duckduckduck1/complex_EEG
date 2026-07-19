@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/errors/failures.dart';
@@ -79,11 +81,15 @@ class DeviceConnectionBloc
       _connection = connection;
       final token = ++_token;
       // Обрыв со стороны устройства приходит как завершение onDisconnected.
-      connection.onDisconnected.then((_) {
-        if (!isClosed && token == _token) {
-          add(const ConnectionLost());
-        }
-      });
+      // Ждать его здесь нельзя — это подписка на будущее событие, а не шаг
+      // подключения; `unawaited` говорит это и анализатору, и читателю.
+      unawaited(
+        connection.onDisconnected.then((_) {
+          if (!isClosed && token == _token) {
+            add(const ConnectionLost());
+          }
+        }),
+      );
       emit(
         DeviceConnectionState(
           status: DeviceConnectionStatus.connected,

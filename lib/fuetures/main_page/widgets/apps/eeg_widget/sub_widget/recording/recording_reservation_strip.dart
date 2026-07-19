@@ -23,7 +23,7 @@ class RecordingReservationStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     final bloc = recordingBloc;
     if (bloc == null) {
-      return _StripShell(
+      return const _StripShell(
         child: _MutedStatus(
           icon: Icons.tab_outlined,
           text: 'Откройте вкладку устройства для записи',

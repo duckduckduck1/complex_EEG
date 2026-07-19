@@ -18,15 +18,15 @@ void main() {
 
     await tester.pumpWidget(
       wrap(
-        SizedBox(
+        const SizedBox(
           width: 600,
           height: 500,
           child: EegLayout(
             isFiltterShowing: true,
-            fillterWidget: const SizedBox(height: 400, child: Text('filters')),
-            firtsWidget: const ColoredBox(key: firstPlotKey, color: Colors.red),
-            secondWidget: const ColoredBox(color: Colors.green),
-            thirdWidget: const ColoredBox(color: Colors.blue),
+            fillterWidget: SizedBox(height: 400, child: Text('filters')),
+            firtsWidget: ColoredBox(key: firstPlotKey, color: Colors.red),
+            secondWidget: ColoredBox(color: Colors.green),
+            thirdWidget: ColoredBox(color: Colors.blue),
           ),
         ),
       ),

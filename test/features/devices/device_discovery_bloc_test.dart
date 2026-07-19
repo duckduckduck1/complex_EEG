@@ -23,6 +23,10 @@ class _FakeAdapter implements BleAdapter {
   @override
   Future<void> stopScan() async => stopped = true;
 
+  /// Останов поиска поток не закрывает: после него ищут снова. Закрываем
+  /// отдельно, когда фейк больше не нужен.
+  Future<void> dispose() => controller.close();
+
   @override
   Future<BleConnection> connect(BleDeviceId id) async =>
       throw UnimplementedError();
@@ -47,7 +51,7 @@ void main() {
 
   tearDown(() async {
     await bloc.close();
-    await adapter.controller.close();
+    await adapter.dispose();
   });
 
   test('начальное состояние — idle без устройств', () {

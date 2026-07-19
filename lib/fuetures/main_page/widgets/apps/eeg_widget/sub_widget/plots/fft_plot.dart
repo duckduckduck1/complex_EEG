@@ -18,7 +18,7 @@ class FftPlot extends StatelessWidget {
       builder: (context, state) {
         if (state is DataUpdated) {
           return FrequencyPlot(
-            data: isFilt ? state.filtSpectrum : state.spectrum,
+            data: isFilt ? dataBloc.filteredSpectrum : dataBloc.spectrum,
             paddingFactor: 0.35,
             showTooltip: true,
             maxFrequency: 70,

@@ -22,7 +22,7 @@ void main() {
   testWidgets('EEG visibility controls are compact and update settings', (
     tester,
   ) async {
-    var latestSettings = EegIsShowingSettings();
+    var latestSettings = const EegIsShowingSettings();
 
     await tester.pumpWidget(
       wrap(
@@ -48,7 +48,7 @@ void main() {
   testWidgets('disabled filters keep their displayed frequency values', (
     tester,
   ) async {
-    final initialSettings = FillterSettings(
+    const initialSettings = FillterSettings(
       lp: 42.5,
       hp: 0.5,
       notch: 50,

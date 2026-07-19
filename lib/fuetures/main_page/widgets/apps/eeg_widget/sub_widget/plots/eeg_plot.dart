@@ -23,11 +23,12 @@ class EegPlot extends StatelessWidget {
       builder: (context, state) {
         if (state is DataUpdated) {
           return PlotScafold(
-            data: isFiltter ? state.filterData : state.newData,
+            // Точки берём из bloc в момент отрисовки: состояние их не носит.
+            data: isFiltter ? dataBloc.filteredSpots : dataBloc.rawSpots,
             paddingFactor: 0.35,
           );
         }
-        return Container();
+        return const SizedBox.shrink();
       },
     );
   }

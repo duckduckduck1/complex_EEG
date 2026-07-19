@@ -35,7 +35,9 @@ class _EegWidgetSettingsBarState extends State<EegWidgetSettingsBar> {
           title: 'Фильтр',
           onChaged: (val) {
             setState(() {
-              _currentSettings.isFilterShowing = val;
+              _currentSettings = _currentSettings.copyWith(
+                isFilterShowing: val,
+              );
             });
             widget.onChaged(_currentSettings);
           },
@@ -45,7 +47,7 @@ class _EegWidgetSettingsBarState extends State<EegWidgetSettingsBar> {
           title: 'Спектр',
           onChaged: (val) {
             setState(() {
-              _currentSettings.isFftShowing = val;
+              _currentSettings = _currentSettings.copyWith(isFftShowing: val);
             });
             widget.onChaged(_currentSettings);
           },
@@ -55,7 +57,7 @@ class _EegWidgetSettingsBarState extends State<EegWidgetSettingsBar> {
           title: 'Ритмы',
           onChaged: (val) {
             setState(() {
-              _currentSettings.isBandsShowing = val;
+              _currentSettings = _currentSettings.copyWith(isBandsShowing: val);
             });
             widget.onChaged(_currentSettings);
           },
