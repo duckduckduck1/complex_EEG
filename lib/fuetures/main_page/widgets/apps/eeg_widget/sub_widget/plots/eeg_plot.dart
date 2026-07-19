@@ -1,26 +1,29 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/bloc/rt_eeg_data_bloc.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/plots/plot_scafold/plot_scafolds.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/plots/throttled_bloc_builder.dart';
 
-class EegPlot extends StatefulWidget {
+/// Живой сигнал во вкладке.
+///
+/// Перерисовка ограничена кадровым темпом, как и в мозаике: раньше вкладка
+/// строилась на каждый отсчёт, то есть 250 раз в секунду при 60 кадрах экрана —
+/// четыре перестройки из пяти уходили в мусор и отнимали время у самой
+/// отрисовки. Отсюда и ощущение, что мозаика идёт глаже вкладки.
+class EegPlot extends StatelessWidget {
   final RtEegDataBloc dataBloc;
   final bool isFiltter;
+
   const EegPlot({super.key, required this.dataBloc, required this.isFiltter});
 
   @override
-  State<EegPlot> createState() => _EegPlotState();
-}
-
-class _EegPlotState extends State<EegPlot> {
-  @override
   Widget build(BuildContext context) {
-    return BlocBuilder<RtEegDataBloc, RtEegState>(
-      bloc: widget.dataBloc,
+    return ThrottledBlocBuilder<RtEegDataBloc, RtEegState>(
+      bloc: dataBloc,
+      interval: livePlotRefreshInterval,
       builder: (context, state) {
         if (state is DataUpdated) {
           return PlotScafold(
-            data: widget.isFiltter ? state.filterData : state.newData,
+            data: isFiltter ? state.filterData : state.newData,
             paddingFactor: 0.35,
           );
         }

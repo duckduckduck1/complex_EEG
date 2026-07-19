@@ -34,6 +34,28 @@ class MosaicSignalPlot extends StatelessWidget {
   }
 }
 
+/// Спектр одного устройства.
+class MosaicSpectrumPlot extends StatelessWidget {
+  const MosaicSpectrumPlot({super.key, required this.data});
+
+  final List<FlSpot> data;
+
+  @override
+  Widget build(BuildContext context) {
+    if (data.isEmpty) {
+      return const _WaitingForSignal();
+    }
+    return RepaintBoundary(
+      child: FrequencyPlot(
+        data: data,
+        paddingFactor: 0.35,
+        maxFrequency: 70,
+        compact: true,
+      ),
+    );
+  }
+}
+
 /// Ритмы одного устройства.
 ///
 /// Точка добавляется раз в секунду и хранится их 60, поэтому прореживать тут

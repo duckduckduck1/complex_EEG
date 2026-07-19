@@ -3,13 +3,15 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:eeg_app_max30003_stm32/features/annotation/domain/annotation_models.dart';
 import 'package:eeg_app_max30003_stm32/features/recording/application/recording_bloc.dart';
 import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_models.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/mosaic/mosaic_panel_plots_choice.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/tabs/device_view_session.dart';
 
-/// Управление записью прямо в панели мозаики.
+/// Нижний ряд панели мозаики: состав графиков и управление записью.
 ///
 /// Ради этого мозаика и нужна: оператор с десятью мышами не должен нырять во
-/// вкладку, чтобы поставить метку «проснулась». Кнопок ровно три — запись,
-/// метка, свет; всё остальное живёт во вкладке, где есть место объяснить.
+/// вкладку, чтобы поставить метку «проснулась». Слева — какие графики показывать
+/// (у каждой панели свой набор), справа за разделителем — запись, метка, свет.
+/// Разделитель не украшение: слева кнопки меняют картинку, справа — эксперимент.
 ///
 /// Остановка записи спрашивает подтверждение, а старт — нет. Промах по «стоп»
 /// обрывает многочасовой эксперимент, промах по «старту» создаёт лишнюю папку,
@@ -19,10 +21,17 @@ class MosaicPanelControls extends StatelessWidget {
     super.key,
     required this.session,
     required this.onStartRecording,
+    required this.plots,
+    required this.onTogglePlot,
   });
 
   final DeviceViewSession session;
   final VoidCallback onStartRecording;
+
+  /// Состав графиков этой панели и его переключение. Выбор у каждой панели
+  /// свой: у одной мыши смотрят сигнал, у соседней — спектр.
+  final MosaicPlotsChoice plots;
+  final ValueChanged<MosaicPlotKind> onTogglePlot;
 
   @override
   Widget build(BuildContext context) {
@@ -41,6 +50,16 @@ class MosaicPanelControls extends StatelessWidget {
               )
             else
               const Spacer(),
+            for (final kind in MosaicPlotKind.values)
+              _PlotToggleButton(
+                kind: kind,
+                isOn: plots.isOn(kind),
+                // Последний включённый график погасить нельзя: пустая панель
+                // ничего не показывает, но место в сетке занимает.
+                canToggleOff: plots.canToggleOff(kind),
+                onPressed: () => onTogglePlot(kind),
+              ),
+            _PanelDivider(),
             _PanelIconButton(
               icon: isRecording ? Icons.stop_rounded : Icons.play_arrow_rounded,
               tooltip: isRecording ? 'Завершить запись' : 'Начать эксперимент',
@@ -99,6 +118,76 @@ class MosaicPanelControls extends StatelessWidget {
     if (confirmed ?? false) {
       session.recordingBloc.add(const RecordingStopRequested());
     }
+  }
+}
+
+/// Включение и выключение одного графика панели.
+///
+/// Показывает состав панели без всяких меню: включённые графики подсвечены,
+/// выключенные приглушены. Последний включённый неактивен — так видно, что
+/// панель не может остаться пустой, и не надо это объяснять текстом.
+class _PlotToggleButton extends StatelessWidget {
+  const _PlotToggleButton({
+    required this.kind,
+    required this.isOn,
+    required this.canToggleOff,
+    required this.onPressed,
+  });
+
+  final MosaicPlotKind kind;
+  final bool isOn;
+  final bool canToggleOff;
+  final VoidCallback onPressed;
+
+  static const _icons = {
+    MosaicPlotKind.signal: Icons.show_chart_rounded,
+    MosaicPlotKind.bands: Icons.equalizer_rounded,
+    MosaicPlotKind.spectrum: Icons.graphic_eq_rounded,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final enabled = !isOn || canToggleOff;
+    return Tooltip(
+      message:
+          !enabled
+              ? '${kind.displayName}: последний график, его не убрать'
+              : isOn
+              ? 'Убрать «${kind.displayName}»'
+              : 'Показать «${kind.displayName}»',
+      child: InkResponse(
+        onTap: enabled ? onPressed : null,
+        radius: 16,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+          child: Icon(
+            _icons[kind],
+            size: 16,
+            color:
+                isOn
+                    ? colorScheme.primary.withValues(alpha: enabled ? 1 : 0.55)
+                    : colorScheme.outline.withValues(alpha: 0.7),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Отделяет выбор графиков от управления записью: рядом стоят кнопки, которые
+/// меняют картинку, и кнопки, которые меняют эксперимент.
+class _PanelDivider extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Container(
+        width: 1,
+        height: 14,
+        color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.6),
+      ),
+    );
   }
 }
 

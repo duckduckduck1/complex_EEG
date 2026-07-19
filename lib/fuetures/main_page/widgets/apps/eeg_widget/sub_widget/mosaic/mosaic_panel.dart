@@ -7,6 +7,7 @@ import 'package:eeg_app_max30003_stm32/features/recording/application/recording_
 import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_models.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/bloc/rt_eeg_data_bloc.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/mosaic/mosaic_panel_controls.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/mosaic/mosaic_panel_plots_choice.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/mosaic/mosaic_plots.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/plots/throttled_bloc_builder.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/tabs/device_view_session.dart';
@@ -16,7 +17,7 @@ import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/tabs/device_vi
 /// Панель ничем не владеет — только смотрит в [DeviceViewSession]. Поэтому её
 /// можно свободно создавать и выбрасывать при перекладке сетки, не задевая ни
 /// поток данных, ни запись.
-class DeviceMosaicPanel extends StatelessWidget {
+class DeviceMosaicPanel extends StatefulWidget {
   const DeviceMosaicPanel({
     super.key,
     required this.session,
@@ -25,7 +26,7 @@ class DeviceMosaicPanel extends StatelessWidget {
     required this.onSelected,
     required this.onExpand,
     required this.onStartRecording,
-    this.refreshInterval = const Duration(milliseconds: 16),
+    this.refreshInterval = livePlotRefreshInterval,
   });
 
   final DeviceViewSession session;
@@ -42,20 +43,27 @@ class DeviceMosaicPanel extends StatelessWidget {
   /// на экране, а не в панели.
   final VoidCallback onStartRecording;
 
-  /// Как часто перерисовывать графики панели.
+  /// Как часто перерисовывать графики панели; по умолчанию кадровый темп,
+  /// общий с графиками вкладки ([livePlotRefreshInterval]).
   ///
-  /// 16 мс — чуть чаще кадра при 60 Гц, то есть ограничитель срезает лишние
-  /// перестройки (их прилетает 250 в секунду), но ни одного кадра не
-  /// пропускает. Первая версия стояла на 100 мс: нагрузка была ниже, зато
-  /// задержка стала видна глазом — на стенде это читалось как подтормаживание,
-  /// хотя кадры не терялись.
-  ///
-  /// Больше кадра в секунду отрисовать всё равно нельзя: несколько setState
-  /// внутри одного кадра схлопываются в одну перестройку.
+  /// Первая версия стояла на 100 мс: нагрузка была ниже, зато задержка стала
+  /// видна глазом — на стенде это читалось как подтормаживание, хотя кадры не
+  /// терялись.
   final Duration refreshInterval;
 
   @override
+  State<DeviceMosaicPanel> createState() => _DeviceMosaicPanelState();
+}
+
+class _DeviceMosaicPanelState extends State<DeviceMosaicPanel> {
+  // Состав графиков — местная визуальная мелочь конкретной панели: он ничего
+  // не значит для записи и не переживает закрытие вкладки, поэтому живёт в
+  // State, а не в bloc.
+  MosaicPlotsChoice _plots = const MosaicPlotsChoice();
+
+  @override
   Widget build(BuildContext context) {
+    final session = widget.session;
     final colorScheme = Theme.of(context).colorScheme;
     // Выбор — через Listener, а не через жест: жест участвует в арене и
     // задерживал бы срабатывание. Здесь это не косметика — распознаватель на
@@ -64,17 +72,17 @@ class DeviceMosaicPanel extends StatelessWidget {
     // кликом: так он ещё и заметнее.
     return Listener(
       behavior: HitTestBehavior.opaque,
-      onPointerDown: (_) => onSelected(),
+      onPointerDown: (_) => widget.onSelected(),
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: colorScheme.surface.withValues(alpha: 0.72),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color:
-                isSelected
+                widget.isSelected
                     ? colorScheme.primary
                     : colorScheme.outline.withValues(alpha: 0.9),
-            width: isSelected ? 2 : 1,
+            width: widget.isSelected ? 2 : 1,
           ),
         ),
         child: Padding(
@@ -82,17 +90,25 @@ class DeviceMosaicPanel extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _PanelHeader(session: session, title: title, onExpand: onExpand),
+              _PanelHeader(
+                session: session,
+                title: widget.title,
+                onExpand: widget.onExpand,
+              ),
               const SizedBox(height: 6),
               Expanded(
                 child: _PanelPlots(
                   session: session,
-                  refreshInterval: refreshInterval,
+                  refreshInterval: widget.refreshInterval,
+                  plots: _plots,
                 ),
               ),
               MosaicPanelControls(
                 session: session,
-                onStartRecording: onStartRecording,
+                onStartRecording: widget.onStartRecording,
+                plots: _plots,
+                onTogglePlot:
+                    (kind) => setState(() => _plots = _plots.toggle(kind)),
               ),
             ],
           ),
@@ -214,10 +230,15 @@ class _PanelHeader extends StatelessWidget {
 }
 
 class _PanelPlots extends StatelessWidget {
-  const _PanelPlots({required this.session, required this.refreshInterval});
+  const _PanelPlots({
+    required this.session,
+    required this.refreshInterval,
+    required this.plots,
+  });
 
   final DeviceViewSession session;
   final Duration refreshInterval;
+  final MosaicPlotsChoice plots;
 
   @override
   Widget build(BuildContext context) {
@@ -232,18 +253,32 @@ class _PanelPlots extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // Сигналу отдаём больше места: на него смотрят в первую очередь,
-            // ритмы отвечают на вопрос «спит или нет» и с полоски читаются.
-            Expanded(flex: 3, child: MosaicSignalPlot(data: state.filterData)),
-            const SizedBox(height: 4),
-            Expanded(
-              flex: 2,
-              child: MosaicBandsPlot(
-                delta: state.deltaPower,
-                theta: state.thetaPower,
-                alpha: state.alphaPower,
-                beta: state.betaPower,
+            // остальные графики отвечают на более узкие вопросы и читаются
+            // с полоски. Когда сигнал выключен, оставшиеся делят место поровну.
+            if (plots.signal)
+              Expanded(
+                flex: 3,
+                child: MosaicSignalPlot(data: state.filterData),
               ),
-            ),
+            if (plots.bands) ...[
+              if (plots.signal) const SizedBox(height: 4),
+              Expanded(
+                flex: 2,
+                child: MosaicBandsPlot(
+                  delta: state.deltaPower,
+                  theta: state.thetaPower,
+                  alpha: state.alphaPower,
+                  beta: state.betaPower,
+                ),
+              ),
+            ],
+            if (plots.spectrum) ...[
+              if (plots.signal || plots.bands) const SizedBox(height: 4),
+              Expanded(
+                flex: 2,
+                child: MosaicSpectrumPlot(data: state.filtSpectrum),
+              ),
+            ],
           ],
         );
       },

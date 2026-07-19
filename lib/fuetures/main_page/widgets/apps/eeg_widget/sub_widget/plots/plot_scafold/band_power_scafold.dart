@@ -136,12 +136,12 @@ class BandPowerPlot extends StatelessWidget {
                       sideTitles: SideTitles(
                         showTitles: true,
                         interval: xInterval,
-                        reservedSize: compact ? 16 : 30,
+                        reservedSize: compact ? 22 : 30,
                         getTitlesWidget:
                             (value, _) => _AxisLabel(
                               text: formatClock(value.round()),
                               style: axisStyle,
-                              padding: EdgeInsets.only(top: compact ? 2 : 8),
+                              padding: EdgeInsets.only(top: compact ? 4 : 8),
                             ),
                       ),
                     ),
@@ -149,12 +149,12 @@ class BandPowerPlot extends StatelessWidget {
                       sideTitles: SideTitles(
                         showTitles: true,
                         interval: yInterval,
-                        reservedSize: compact ? 30 : 40,
+                        reservedSize: 40,
                         getTitlesWidget:
                             (value, _) => _AxisLabel(
                               text: _formatTick(value, yInterval),
                               style: axisStyle,
-                              padding: EdgeInsets.only(right: compact ? 3 : 8),
+                              padding: EdgeInsets.only(right: compact ? 5 : 8),
                               alignRight: true,
                             ),
                       ),
@@ -314,6 +314,11 @@ class _AxisLabel extends StatelessWidget {
         text,
         textAlign: alignRight ? TextAlign.right : TextAlign.center,
         style: style,
+        // Строго одна строка: в компактном режиме места в отведённой полосе
+        // ровно на неё, а перенос уводил бы вторую строку под сам график.
+        maxLines: 1,
+        softWrap: false,
+        overflow: TextOverflow.visible,
       ),
     );
   }

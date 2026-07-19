@@ -6,6 +6,7 @@ import 'package:eeg_app_max30003_stm32/features/recording/application/recording_
 import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_models.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/mosaic/device_mosaic_view.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/mosaic/mosaic_panel.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/mosaic/mosaic_plots.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/tabs/device_view_session.dart';
 import 'package:eeg_app_max30003_stm32/theme.dart';
 
@@ -232,6 +233,62 @@ void main() {
       expect(chart.data.titlesData.bottomTitles.sideTitles.showTitles, isTrue);
     }
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('спектр включается в панели и остаётся у соседей выключенным', (
+    tester,
+  ) async {
+    final sessions = makeSessions(tester, 2);
+    final rtBloc = sessions.first.rtEegDataBloc;
+    await pumpMosaic(tester, sessions);
+
+    for (var i = 0; i < 400; i++) {
+      rtBloc.add(NewEegDataReceived(newEegData: (i % 20) - 10.0));
+    }
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump();
+
+    expect(find.byType(MosaicSpectrumPlot), findsNothing);
+
+    await tester.tap(find.byTooltip('Показать «Спектр»').first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump();
+
+    // Состав графиков у каждой панели свой: соседнюю трогать нельзя.
+    expect(find.byType(MosaicSpectrumPlot), findsOneWidget);
+    expect(find.byTooltip('Убрать «Спектр»'), findsOneWidget);
+    expect(find.byTooltip('Показать «Спектр»'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('последний график панели выключить нельзя', (tester) async {
+    // Пустая панель ничего не показывает, но место в сетке занимает.
+    final sessions = makeSessions(tester, 1);
+    await pumpMosaic(tester, sessions);
+
+    await tester.tap(find.byTooltip('Убрать «Ритмы»'));
+    await tester.pump();
+
+    expect(find.byTooltip('Показать «Ритмы»'), findsOneWidget);
+    expect(
+      find.byTooltip('Сигнал: последний график, его не убрать'),
+      findsOneWidget,
+      reason: 'кнопка сама объясняет, почему не нажимается',
+    );
+
+    await tester.tap(
+      find.byTooltip('Сигнал: последний график, его не убрать'),
+      warnIfMissed: false,
+    );
+    await tester.pump();
+
+    expect(
+      find.byTooltip('Сигнал: последний график, его не убрать'),
+      findsOneWidget,
+      reason: 'состав не изменился',
+    );
   });
 
   testWidgets('пустой список не роняет мозаику', (tester) async {
