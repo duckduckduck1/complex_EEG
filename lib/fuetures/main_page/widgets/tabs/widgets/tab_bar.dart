@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:eeg_app_max30003_stm32/features/alerts/operator_message.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:eeg_app_max30003_stm32/features/recording/domain/recording_models.dart';
 import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/tabs/bloc/tab_bloc.dart';
@@ -24,12 +25,15 @@ class IotTabBar extends StatelessWidget {
             : null;
 
     if (isRecordingBusy(recordingBloc?.state.status)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Идёт запись эксперимента — сначала остановите её, потом закрывайте',
-          ),
-        ),
+      // Это блокирующее объяснение, почему крестик не сработал: снекбар в
+      // углу оператор пропускал и жал крестик снова.
+      await showOperatorMessage(
+        context,
+        title: 'Сейчас закрыть нельзя',
+        kind: OperatorMessageKind.warning,
+        message:
+            'На этой вкладке идёт запись эксперимента. Сначала остановите её '
+            'кнопкой «Завершить», иначе часть данных не попадёт в файл.',
       );
       return;
     }
