@@ -12,9 +12,12 @@ Future<RecordingStartConfig?> showRecordingStartDialog(
   final notchController = TextEditingController(text: '50');
   final pwmController = TextEditingController(text: '50');
   String? rootDirectory;
+  // Все три фильтра включены сразу: оператор — биолог, а не инженер, и решать,
+  // нужен ли ему режекторный фильтр на 50 Гц, ему не с чем. Сетевая наводка
+  // есть всегда, так что выключенный notch — почти наверняка забытый notch.
   var lpEnabled = true;
   var hpEnabled = true;
-  var notchEnabled = false;
+  var notchEnabled = true;
   var pwmLevel = 50;
 
   try {
