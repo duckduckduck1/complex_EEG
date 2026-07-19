@@ -258,17 +258,19 @@ class _PanelPlots extends StatelessWidget {
             if (plots.signal)
               Expanded(
                 flex: 3,
-                child: MosaicSignalPlot(data: state.filterData),
+                child: MosaicSignalPlot(
+                  data: session.rtEegDataBloc.filteredSpots,
+                ),
               ),
             if (plots.bands) ...[
               if (plots.signal) const SizedBox(height: 4),
               Expanded(
                 flex: 2,
                 child: MosaicBandsPlot(
-                  delta: state.deltaPower,
-                  theta: state.thetaPower,
-                  alpha: state.alphaPower,
-                  beta: state.betaPower,
+                  delta: session.rtEegDataBloc.deltaPower,
+                  theta: session.rtEegDataBloc.thetaPower,
+                  alpha: session.rtEegDataBloc.alphaPower,
+                  beta: session.rtEegDataBloc.betaPower,
                 ),
               ),
             ],
@@ -276,7 +278,9 @@ class _PanelPlots extends StatelessWidget {
               if (plots.signal || plots.bands) const SizedBox(height: 4),
               Expanded(
                 flex: 2,
-                child: MosaicSpectrumPlot(data: state.filtSpectrum),
+                child: MosaicSpectrumPlot(
+                  data: session.rtEegDataBloc.filteredSpectrum,
+                ),
               ),
             ],
           ],

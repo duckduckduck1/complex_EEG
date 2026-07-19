@@ -78,8 +78,11 @@ void main() {
     rtEegDataBloc = RtEegDataBloc(250);
     received = <double>[];
     rtSub = rtEegDataBloc.stream.listen((state) {
-      if (state is DataUpdated && state.newData.isNotEmpty) {
-        received.add(state.newData.last.y);
+      // Точки лежат в bloc, а не в состоянии: состояние только сообщает, что
+      // данные обновились.
+      final spots = rtEegDataBloc.rawSpots;
+      if (state is DataUpdated && spots.isNotEmpty) {
+        received.add(spots.last.y);
       }
     });
   });

@@ -17,10 +17,10 @@ class BandPowerWidget extends StatelessWidget {
       builder: (context, state) {
         if (state is DataUpdated) {
           return BandPowerPlot(
-            deltaData: state.deltaPower,
-            thetaData: state.thetaPower,
-            alphaData: state.alphaPower,
-            betaData: state.betaPower,
+            deltaData: dataBloc.deltaPower,
+            thetaData: dataBloc.thetaPower,
+            alphaData: dataBloc.alphaPower,
+            betaData: dataBloc.betaPower,
           );
         }
         return const Center(child: CircularProgressIndicator());
