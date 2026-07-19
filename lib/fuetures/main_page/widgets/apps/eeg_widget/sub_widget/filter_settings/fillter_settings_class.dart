@@ -8,14 +8,20 @@ import 'package:equatable/equatable.dart';
 /// ревизии и пересоздавать виджет по ключу, чтобы панель перечитала значения.
 /// Со значением, которое сравнивается по содержимому, всё это не нужно:
 /// изменилось — приехало новое.
+/// Все три фильтра включены по умолчанию: сырой сигнал с сетевой наводкой и
+/// дрейфом изоляции читать невозможно, а оператор первым делом всё равно их
+/// включает. Выключить их по-прежнему можно — панель фильтров на месте.
+///
+/// На запись это не влияет: там свой набор, который выбирается в диалоге
+/// старта, и сырой сигнал в любом случае пишется в `signal_raw.bin`.
 class FillterSettings extends Equatable {
   const FillterSettings({
     this.lp = 40,
     this.hp = 0.5,
     this.notch = 50,
-    this.isLpOn = false,
-    this.isHpOn = false,
-    this.isNotchOn = false,
+    this.isLpOn = true,
+    this.isHpOn = true,
+    this.isNotchOn = true,
   });
 
   final double lp;
