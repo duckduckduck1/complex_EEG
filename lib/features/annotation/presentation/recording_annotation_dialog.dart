@@ -133,7 +133,7 @@ class _RecordingAnnotationDialogState extends State<RecordingAnnotationDialog> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  _SectionTitle(text: 'Добавить метку вручную'),
+                  const _SectionTitle(text: 'Добавить метку вручную'),
                   const SizedBox(height: 4),
                   Text(
                     'Если выбрали не то и удалили — можно поставить метку руками. '
@@ -156,7 +156,7 @@ class _RecordingAnnotationDialogState extends State<RecordingAnnotationDialog> {
                     onAdd: () => _addManualLabel(bloc, state),
                   ),
                   const SizedBox(height: 16),
-                  _SectionTitle(text: 'Список'),
+                  const _SectionTitle(text: 'Список'),
                   const SizedBox(height: 8),
                   SizedBox(
                     height: state.labels.isEmpty ? 96 : 200,

@@ -280,7 +280,7 @@ class _FrequencyPlotState extends State<FrequencyPlot> {
       dataMaxY += 1;
     }
 
-    final minRange = 20.0;
+    const minRange = 20.0;
     final effectiveRange = max(dataMaxY - dataMinY, minRange);
     final padding = effectiveRange * widget.paddingFactor.clamp(0.0, 1.0);
     final calculatedMin = dataMinY - padding;

@@ -148,6 +148,8 @@ class _FakeConnection implements BleConnection {
     if (!_disconnected.isCompleted) {
       _disconnected.complete();
     }
+    // Отключённое устройство пакетов не шлёт — закрываем поток, как настоящее.
+    _packets.close();
   }
 }
 

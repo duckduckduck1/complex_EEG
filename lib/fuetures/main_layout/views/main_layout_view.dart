@@ -13,11 +13,11 @@ class MainLayout extends StatelessWidget {
   const MainLayout({super.key});
 
   static final List<Widget> _pages = [
-    PageStorage(bucket: PageStorageBucket(), child: MainPage()),
+    PageStorage(bucket: PageStorageBucket(), child: const MainPage()),
     PageStorage(bucket: PageStorageBucket(), child: const BlePageView()),
     PageStorage(
       bucket: PageStorageBucket(),
-      child: Center(
+      child: const Center(
         child: Text('Настройки ⚙️', style: TextStyle(fontSize: 24)),
       ),
     ),

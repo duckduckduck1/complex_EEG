@@ -21,7 +21,7 @@ class TabBloc extends Bloc<TabEvent, TabState> {
   final TickerProvider vsync;
   late TabController _controller;
 
-  TabBloc({required this.vsync}) : super(TabInitial()) {
+  TabBloc({required this.vsync}) : super(const TabInitial()) {
     _controller = TabController(length: 0, vsync: vsync);
     on<NewTabAdded>(_onNewTabAdded);
     on<TabChanged>(_onTabChanged);

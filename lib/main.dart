@@ -13,5 +13,5 @@ void main() {
     // поэтому Future осознанно не ожидается.
     unawaited(FlutterBluePlus.setLogLevel(LogLevel.verbose));
   }
-  runApp(MainApp());
+  runApp(const MainApp());
 }

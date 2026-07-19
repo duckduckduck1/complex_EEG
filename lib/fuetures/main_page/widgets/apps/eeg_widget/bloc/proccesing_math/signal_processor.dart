@@ -67,7 +67,7 @@ class SignalProcessor {
 
   List<double> _filter(List<double> raw, int filtType) {
     //int filtType - тип фильтрации 0 - lp, 1 - hp , 2 - notch
-    List<double> filteredData = [];
+    final List<double> filteredData = [];
     switch (filtType) {
       case 0:
         butterworth.lowPass(1, sampleRate, settings.lp);

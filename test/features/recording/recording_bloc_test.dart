@@ -744,7 +744,7 @@ RecordingStartConfig _startConfig({int pwmLevel = 50}) {
     rootDirectory: 'memory-root',
     pwmLevel: pwmLevel,
     displayName: 'test recording',
-    metadata: {'animal_id': 'mouse_1'},
+    metadata: const {'animal_id': 'mouse_1'},
     filters: const RecordingFilters(isLpEnabled: true),
   );
 }

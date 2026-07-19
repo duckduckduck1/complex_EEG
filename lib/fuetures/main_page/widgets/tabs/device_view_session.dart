@@ -98,9 +98,15 @@ class DeviceViewSession {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
-    await _recordingSub.cancel();
-    _eegBridge.dispose();
-    _recordingBridge.dispose();
+    // Порядок важен: сначала перекрываем всё, что шлёт события, и **дожидаемся**
+    // отмены подписок, потом закрываем получателей. Мосты отменяют подписки
+    // асинхронно, и без await пакет, пришедший в этом окне, летел бы в уже
+    // закрывающийся bloc — «Cannot add new events after calling close».
+    await Future.wait([
+      _recordingSub.cancel(),
+      _eegBridge.dispose(),
+      _recordingBridge.dispose(),
+    ]);
     plotSettingsRevision.dispose();
     await recordingBloc.close();
     await rtEegDataBloc.close();

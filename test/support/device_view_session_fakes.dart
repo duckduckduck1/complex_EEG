@@ -29,6 +29,8 @@ class FakeBleConnection implements BleConnection {
   @override
   Future<void> disconnect() async {
     if (!_disconnected.isCompleted) _disconnected.complete();
+    // Настоящее устройство после отключения пакетов не шлёт — фейк тоже.
+    await _packets.close();
   }
 }
 
