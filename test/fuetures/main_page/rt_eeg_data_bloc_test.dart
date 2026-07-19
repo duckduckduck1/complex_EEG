@@ -24,7 +24,27 @@ void main() {
       NewSettings(
         newSettings: EegSettings(
           const EegIsShowingSettings(),
-          FillterSettings(isLpOn: true, lp: hz),
+          FillterSettings(
+            isLpOn: true,
+            lp: hz,
+            // Остальные гасим явно: по умолчанию включены все три, а тест
+            // сверяет ровно один каскад.
+            isHpOn: false,
+            isNotchOn: false,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// По умолчанию включены все три фильтра — так удобнее оператору. Тестам,
+  /// которым нужен нетронутый сигнал, гасим их явно.
+  void disableFilters() {
+    bloc.add(
+      NewSettings(
+        newSettings: const EegSettings(
+          EegIsShowingSettings(),
+          FillterSettings(isLpOn: false, isHpOn: false, isNotchOn: false),
         ),
       ),
     );
@@ -82,6 +102,8 @@ void main() {
   });
 
   test('смена настроек пересобирает каскад', () async {
+    disableFilters();
+    await pumpEventQueue();
     feed(List<double>.filled(300, 100));
     await pumpEventQueue();
     final unfiltered = bloc.filteredSpots.last.y;
@@ -125,6 +147,8 @@ void main() {
   test('смена фильтра пересчитывает всё видимое окно', () async {
     // Иначе на графике осталась бы половина, отфильтрованная старыми
     // настройками, а новый каскад начал бы с нуля и дал провал у правого края.
+    disableFilters();
+    await pumpEventQueue();
     feed(List<double>.filled(600, 100));
     await pumpEventQueue();
 
