@@ -15,6 +15,10 @@ class FrequencyPlot extends StatefulWidget {
   final double paddingFactor;
   final bool showTooltip;
 
+  /// Режим панели мозаики: подписи мельче, засечек меньше, зума нет.
+  /// Смысл тот же, что у compact в остальных графиках.
+  final bool compact;
+
   const FrequencyPlot({
     super.key,
     required this.data,
@@ -25,6 +29,7 @@ class FrequencyPlot extends StatefulWidget {
     this.smoothingFactor = 0.1,
     this.paddingFactor = 0.2,
     this.showTooltip = true,
+    this.compact = false,
   });
 
   @override
@@ -70,131 +75,145 @@ class _FrequencyPlotState extends State<FrequencyPlot> {
     }
 
     final yRange = _stableRangeFor(validData);
-    final yInterval = _niceInterval(yRange.span);
-    final xInterval = _niceInterval(widget.maxFrequency);
+    final compact = widget.compact;
+    final ticks = compact ? 3 : 5;
+    final yInterval = _niceInterval(yRange.span, targetTicks: ticks);
+    final xInterval = _niceInterval(widget.maxFrequency, targetTicks: ticks);
     final gridColor = palette.grid.withValues(alpha: 0.72);
     final baselineColor = colorScheme.onSurfaceVariant.withValues(alpha: 0.34);
     final axisStyle = theme.textTheme.labelSmall?.copyWith(
-      color: colorScheme.onSurface,
-      fontSize: 13,
+      color: compact ? colorScheme.onSurfaceVariant : colorScheme.onSurface,
+      fontSize: compact ? 10 : 13,
       fontWeight: FontWeight.w600,
     );
 
+    final chart = LineChart(
+      LineChartData(
+        minX: 0,
+        maxX: widget.maxFrequency,
+        minY: yRange.min,
+        maxY: yRange.max,
+        clipData: const FlClipData.all(),
+        extraLinesData: ExtraLinesData(
+          extraLinesOnTop: false,
+          horizontalLines: [
+            if (yRange.min <= 0 && yRange.max >= 0)
+              HorizontalLine(y: 0, color: baselineColor, strokeWidth: 1.1),
+          ],
+        ),
+        lineBarsData: [
+          LineChartBarData(
+            isCurved: true,
+            curveSmoothness: 0.15,
+            spots: validData,
+            dotData: const FlDotData(show: false),
+            color: lineColor,
+            barWidth: 2,
+            isStrokeCapRound: true,
+            belowBarData: BarAreaData(
+              show: true,
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  lineColor.withValues(alpha: 0.22),
+                  lineColor.withValues(alpha: 0.03),
+                ],
+              ),
+            ),
+          ),
+        ],
+        lineTouchData: LineTouchData(
+          enabled: widget.showTooltip,
+          touchTooltipData: LineTouchTooltipData(
+            fitInsideVertically: true,
+            fitInsideHorizontally: true,
+            getTooltipItems: (touchedSpots) {
+              return touchedSpots.map((spot) {
+                return LineTooltipItem(
+                  '${spot.x.toStringAsFixed(1)} Hz\n${spot.y.toStringAsFixed(1)} dB',
+                  TextStyle(color: colorScheme.onSurface, fontSize: 12),
+                  textDirection: TextDirection.ltr,
+                );
+              }).toList();
+            },
+          ),
+        ),
+        gridData: FlGridData(
+          show: true,
+          drawVerticalLine: true,
+          drawHorizontalLine: true,
+          verticalInterval: xInterval,
+          horizontalInterval: yInterval,
+          getDrawingVerticalLine:
+              (value) => FlLine(color: gridColor, strokeWidth: 0.8),
+          getDrawingHorizontalLine:
+              (value) => FlLine(color: gridColor, strokeWidth: 0.8),
+        ),
+        titlesData: FlTitlesData(
+          show: true,
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              interval: xInterval,
+              reservedSize: compact ? 22 : 30,
+              getTitlesWidget:
+                  (value, meta) => _AxisLabel(
+                    text: '${_formatTick(value, xInterval)} Гц',
+                    style: axisStyle,
+                    padding: EdgeInsets.only(top: compact ? 4 : 8),
+                  ),
+            ),
+          ),
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              interval: yInterval,
+              reservedSize: compact ? 40 : 42,
+              getTitlesWidget:
+                  (value, meta) => _AxisLabel(
+                    text: _formatTick(value, yInterval),
+                    style: axisStyle,
+                    padding: EdgeInsets.only(right: compact ? 5 : 8),
+                    alignRight: true,
+                  ),
+            ),
+          ),
+          rightTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          topTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+        ),
+        borderData: FlBorderData(show: false),
+      ),
+      duration: Duration.zero,
+      transformationConfig:
+          compact
+              ? const FlTransformationConfig(
+                scaleAxis: FlScaleAxis.none,
+                panEnabled: false,
+                scaleEnabled: false,
+              )
+              : FlTransformationConfig(
+                scaleAxis: FlScaleAxis.free,
+                minScale: 1,
+                maxScale: 12,
+                panEnabled: true,
+                scaleEnabled: true,
+                trackpadScrollCausesScale: true,
+                transformationController: _transformController,
+              ),
+    );
+
+    if (compact) {
+      return ClipRect(child: ExcludeSemantics(child: chart));
+    }
     return ZoomableChart(
       transformController: _transformController,
       colorScheme: colorScheme,
-      child: LineChart(
-        LineChartData(
-          minX: 0,
-          maxX: widget.maxFrequency,
-          minY: yRange.min,
-          maxY: yRange.max,
-          clipData: const FlClipData.all(),
-          extraLinesData: ExtraLinesData(
-            extraLinesOnTop: false,
-            horizontalLines: [
-              if (yRange.min <= 0 && yRange.max >= 0)
-                HorizontalLine(y: 0, color: baselineColor, strokeWidth: 1.1),
-            ],
-          ),
-          lineBarsData: [
-            LineChartBarData(
-              isCurved: true,
-              curveSmoothness: 0.15,
-              spots: validData,
-              dotData: const FlDotData(show: false),
-              color: lineColor,
-              barWidth: 2,
-              isStrokeCapRound: true,
-              belowBarData: BarAreaData(
-                show: true,
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    lineColor.withValues(alpha: 0.22),
-                    lineColor.withValues(alpha: 0.03),
-                  ],
-                ),
-              ),
-            ),
-          ],
-          lineTouchData: LineTouchData(
-            enabled: widget.showTooltip,
-            touchTooltipData: LineTouchTooltipData(
-              fitInsideVertically: true,
-              fitInsideHorizontally: true,
-              getTooltipItems: (touchedSpots) {
-                return touchedSpots.map((spot) {
-                  return LineTooltipItem(
-                    '${spot.x.toStringAsFixed(1)} Hz\n${spot.y.toStringAsFixed(1)} dB',
-                    TextStyle(color: colorScheme.onSurface, fontSize: 12),
-                    textDirection: TextDirection.ltr,
-                  );
-                }).toList();
-              },
-            ),
-          ),
-          gridData: FlGridData(
-            show: true,
-            drawVerticalLine: true,
-            drawHorizontalLine: true,
-            verticalInterval: xInterval,
-            horizontalInterval: yInterval,
-            getDrawingVerticalLine:
-                (value) => FlLine(color: gridColor, strokeWidth: 0.8),
-            getDrawingHorizontalLine:
-                (value) => FlLine(color: gridColor, strokeWidth: 0.8),
-          ),
-          titlesData: FlTitlesData(
-            show: true,
-            bottomTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                interval: xInterval,
-                reservedSize: 30,
-                getTitlesWidget:
-                    (value, meta) => _AxisLabel(
-                      text: '${_formatTick(value, xInterval)} Гц',
-                      style: axisStyle,
-                      padding: const EdgeInsets.only(top: 8),
-                    ),
-              ),
-            ),
-            leftTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                interval: yInterval,
-                reservedSize: 42,
-                getTitlesWidget:
-                    (value, meta) => _AxisLabel(
-                      text: _formatTick(value, yInterval),
-                      style: axisStyle,
-                      padding: const EdgeInsets.only(right: 8),
-                      alignRight: true,
-                    ),
-              ),
-            ),
-            rightTitles: const AxisTitles(
-              sideTitles: SideTitles(showTitles: false),
-            ),
-            topTitles: const AxisTitles(
-              sideTitles: SideTitles(showTitles: false),
-            ),
-          ),
-          borderData: FlBorderData(show: false),
-        ),
-        duration: Duration.zero,
-        transformationConfig: FlTransformationConfig(
-          scaleAxis: FlScaleAxis.free,
-          minScale: 1,
-          maxScale: 12,
-          panEnabled: true,
-          scaleEnabled: true,
-          trackpadScrollCausesScale: true,
-          transformationController: _transformController,
-        ),
-      ),
+      child: chart,
     );
   }
 
@@ -282,6 +301,11 @@ class _AxisLabel extends StatelessWidget {
         text,
         textAlign: alignRight ? TextAlign.right : TextAlign.center,
         style: style,
+        // Строго одна строка: в компактном режиме места в отведённой полосе
+        // ровно на неё, а перенос уводил бы вторую строку под сам график.
+        maxLines: 1,
+        softWrap: false,
+        overflow: TextOverflow.visible,
       ),
     );
   }
