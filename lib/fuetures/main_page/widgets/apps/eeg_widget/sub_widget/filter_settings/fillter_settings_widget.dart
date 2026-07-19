@@ -52,7 +52,7 @@ class _FillterSettingsWidgetState extends State<FillterSettingsWidget> {
               title: 'LP',
               enabled: _currentSettings.isLpOn,
               onEnabledChanged: (val) {
-                _currentSettings.isLpOn = val;
+                _currentSettings = _currentSettings.copyWith(isLpOn: val);
                 _updateSettings(_currentSettings);
               },
               child: FilterSlider(
@@ -60,7 +60,7 @@ class _FillterSettingsWidgetState extends State<FillterSettingsWidget> {
                 title: 'LP',
                 isActive: _currentSettings.isLpOn,
                 onChanged: (val) {
-                  _currentSettings.lp = val;
+                  _currentSettings = _currentSettings.copyWith(lp: val);
                   _updateSettings(_currentSettings);
                 },
               ),
@@ -70,7 +70,7 @@ class _FillterSettingsWidgetState extends State<FillterSettingsWidget> {
               title: 'HP',
               enabled: _currentSettings.isHpOn,
               onEnabledChanged: (val) {
-                _currentSettings.isHpOn = val;
+                _currentSettings = _currentSettings.copyWith(isHpOn: val);
                 _updateSettings(_currentSettings);
               },
               child: FilterSlider(
@@ -78,7 +78,7 @@ class _FillterSettingsWidgetState extends State<FillterSettingsWidget> {
                 title: 'HP',
                 isActive: _currentSettings.isHpOn,
                 onChanged: (val) {
-                  _currentSettings.hp = val;
+                  _currentSettings = _currentSettings.copyWith(hp: val);
                   _updateSettings(_currentSettings);
                 },
               ),
@@ -88,7 +88,7 @@ class _FillterSettingsWidgetState extends State<FillterSettingsWidget> {
               title: 'Notch',
               enabled: _currentSettings.isNotchOn,
               onEnabledChanged: (val) {
-                _currentSettings.isNotchOn = val;
+                _currentSettings = _currentSettings.copyWith(isNotchOn: val);
                 _updateSettings(_currentSettings);
               },
               child: FilterSlider(
@@ -96,7 +96,7 @@ class _FillterSettingsWidgetState extends State<FillterSettingsWidget> {
                 title: 'Notch',
                 isActive: _currentSettings.isNotchOn,
                 onChanged: (val) {
-                  _currentSettings.notch = val;
+                  _currentSettings = _currentSettings.copyWith(notch: val);
                   _updateSettings(_currentSettings);
                 },
               ),

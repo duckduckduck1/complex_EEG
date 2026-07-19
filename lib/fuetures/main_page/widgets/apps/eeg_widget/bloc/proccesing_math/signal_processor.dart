@@ -2,16 +2,17 @@ import 'dart:math';
 import 'dart:typed_data';
 import 'package:fftea/fftea.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:iirjdart/butterworth.dart';
-import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/sub_widget/filter_settings/fillter_settings_class.dart';
 
 class SignalProcessor {
   final int bufferSize;
   final double sampleRate;
   late final FFT _fft;
-  late final List<double> _hannWindow;
-  FillterSettings settings;
-  late final Butterworth butterworth;
+  late final Float64List _hannWindow;
+
+  /// Переиспользуемый вход FFT: 1024 значения, которые перезаписываются на
+  /// каждом расчёте. Заводить их заново незачем — размер не меняется.
+  late final Float64List _windowed;
+
   static const Map<String, List<double>> frequencyBands = {
     'Delta': [0.5, 4.0],
     'Theta': [4.0, 8.0],
@@ -19,33 +20,44 @@ class SignalProcessor {
     'Beta': [13.0, 35.0],
   };
 
-  SignalProcessor(this.bufferSize, this.sampleRate, this.settings) {
+  SignalProcessor(this.bufferSize, this.sampleRate) {
     if (bufferSize <= 0 || !_isPowerOfTwo(bufferSize)) {
       throw ArgumentError('Buffer size must be a positive power of two');
     }
     _fft = FFT(bufferSize);
     _hannWindow = _createHannWindow(bufferSize);
-    butterworth = Butterworth();
+    _windowed = Float64List(bufferSize);
   }
 
   bool _isPowerOfTwo(int n) => (n & (n - 1)) == 0 && n != 0;
 
-  List<FlSpot> computeFrequencySpectrum(List<double> timeDomainData) {
+  /// Спектр окна отсчётов.
+  ///
+  /// Принимает [Iterable], а не [List], чтобы кольцевой буфер графика не надо
+  /// было раскладывать в отдельный список ради вызова. Оконная функция
+  /// применяется прямо в переиспользуемый [_windowed] — раньше здесь на каждый
+  /// вызов создавались два новых списка по 1024 значения.
+  List<FlSpot> computeFrequencySpectrum(Iterable<double> timeDomainData) {
     if (timeDomainData.length != bufferSize) {
       throw ArgumentError('Input data length must match buffer size');
     }
 
-    final windowed = _applyWindow(timeDomainData, _hannWindow);
-    final spectrum = _fft.realFft(Float64List.fromList(windowed));
+    var i = 0;
+    for (final value in timeDomainData) {
+      _windowed[i] = value * _hannWindow[i];
+      i++;
+    }
+    final spectrum = _fft.realFft(_windowed);
     return _computeAmplitudeSpectrum(spectrum);
   }
 
-  List<double> _createHannWindow(int size) {
-    return List.generate(size, (i) => 0.5 * (1 - cos(2 * pi * i / (size - 1))));
-  }
-
-  List<double> _applyWindow(List<double> data, List<double> window) {
-    return List.generate(data.length, (i) => data[i] * window[i]);
+  Float64List _createHannWindow(int size) {
+    return Float64List.fromList(
+      List<double>.generate(
+        size,
+        (i) => 0.5 * (1 - cos(2 * pi * i / (size - 1))),
+      ),
+    );
   }
 
   List<FlSpot> _computeAmplitudeSpectrum(Float64x2List spectrum) {
@@ -63,61 +75,6 @@ class SignalProcessor {
       points.add(FlSpot(freq, db.isFinite ? db : -120));
     }
     return points;
-  }
-
-  List<double> _filter(List<double> raw, int filtType) {
-    //int filtType - тип фильтрации 0 - lp, 1 - hp , 2 - notch
-    List<double> filteredData = [];
-    switch (filtType) {
-      case 0:
-        butterworth.lowPass(1, sampleRate, settings.lp);
-        for (var v in raw) {
-          filteredData.add(butterworth.filter(v));
-        }
-        break;
-      case 1:
-        butterworth.highPass(2, sampleRate, settings.hp);
-        for (var v in raw) {
-          filteredData.add(butterworth.filter(v));
-        }
-        break;
-      case 2:
-        butterworth.bandStop(3, sampleRate, settings.notch, 10);
-        for (var v in raw) {
-          filteredData.add(butterworth.filter(v));
-        }
-        break;
-      default:
-        break;
-    }
-
-    return filteredData;
-  }
-
-  List<double> filterSignal(List<double> rawData) {
-    List<double> f = [];
-    if (settings.isLpOn) {
-      f = _filter(rawData, 0);
-    }
-    if (settings.isHpOn) {
-      if (f.isEmpty) {
-        f = _filter(rawData, 1);
-      } else {
-        f = _filter(f, 1);
-      }
-    }
-
-    if (settings.isNotchOn) {
-      if (f.isEmpty) {
-        f = _filter(rawData, 2);
-      } else {
-        f = _filter(f, 2);
-      }
-    }
-    if (f.isEmpty) {
-      return rawData;
-    }
-    return f;
   }
 
   Map<String, double> computeBandPowers(List<FlSpot> spectrum) {

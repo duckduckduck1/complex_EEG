@@ -4,24 +4,20 @@ sealed class RtEegState {}
 
 final class DataInitial extends RtEegState {}
 
+/// Пришли новые отсчёты.
+///
+/// Точек в состоянии намеренно нет — только счётчик. Раньше состояние носило
+/// сами списки, причём **те же изменяемые экземпляры**, которые bloc продолжал
+/// менять: виджет читал буфер, меняющийся под ним. И собирались эти списки на
+/// каждый отсчёт, то есть 250 раз в секунду, хотя перерисовка идёт не чаще
+/// кадра.
+///
+/// Теперь состояние — сигнал «данные обновились», а точки виджет берёт
+/// геттерами bloc'а в момент отрисовки. Счётчик нужен, чтобы состояние
+/// действительно менялось.
 class DataUpdated extends RtEegState {
-  final List<FlSpot> newData;
-  final List<FlSpot> spectrum;
-  final List<FlSpot> filterData;
-  final List<FlSpot> filtSpectrum;
-  final List<FlSpot> deltaPower;
-  final List<FlSpot> thetaPower;
-  final List<FlSpot> alphaPower;
-  final List<FlSpot> betaPower;
+  DataUpdated(this.sampleCount);
 
-  DataUpdated(
-    this.newData,
-    this.spectrum,
-    this.filterData,
-    this.filtSpectrum, {
-    this.deltaPower = const [],
-    this.thetaPower = const [],
-    this.alphaPower = const [],
-    this.betaPower = const [],
-  });
+  /// Сколько отсчётов пришло с начала записи графика или с последнего сброса.
+  final int sampleCount;
 }

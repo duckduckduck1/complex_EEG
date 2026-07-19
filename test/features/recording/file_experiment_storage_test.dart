@@ -12,7 +12,7 @@ void main() {
   });
 
   tearDown(() async {
-    if (await root.exists()) {
+    if (root.existsSync()) {
       await root.delete(recursive: true);
     }
   });
@@ -41,7 +41,7 @@ void main() {
     await storage.close();
 
     final signal = File.fromUri(root.uri.resolve('exp_race/signal.bin'));
-    expect(await signal.exists(), isTrue);
+    expect(signal.existsSync(), isTrue);
     // 50 пачек по 2 отсчёта × 4 байта (int32).
     expect(await signal.length(), 50 * 2 * 4);
   });
@@ -56,11 +56,8 @@ void main() {
     await storage.close();
 
     final folder = Directory.fromUri(root.uri.resolve('Мышь%201/'));
-    expect(await folder.exists(), isTrue);
-    expect(
-      await File.fromUri(folder.uri.resolve('signal.bin')).exists(),
-      isTrue,
-    );
+    expect(folder.existsSync(), isTrue);
+    expect(File.fromUri(folder.uri.resolve('signal.bin')).existsSync(), isTrue);
   });
 
   test('повтор названия отклоняется и не трогает чужие данные', () async {
@@ -106,7 +103,7 @@ void main() {
     final signal = File.fromUri(folder.resolve('signal.bin'));
     final rawSignal = File.fromUri(folder.resolve('signal_raw.bin'));
 
-    expect(await rawSignal.exists(), isTrue);
+    expect(rawSignal.existsSync(), isTrue);
     expect(await signal.length(), 3 * 4);
     expect(
       await rawSignal.length(),

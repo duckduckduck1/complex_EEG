@@ -13,11 +13,11 @@ class MainLayout extends StatelessWidget {
   const MainLayout({super.key});
 
   static final List<Widget> _pages = [
-    PageStorage(bucket: PageStorageBucket(), child: MainPage()),
+    PageStorage(bucket: PageStorageBucket(), child: const MainPage()),
     PageStorage(bucket: PageStorageBucket(), child: const BlePageView()),
     PageStorage(
       bucket: PageStorageBucket(),
-      child: Center(
+      child: const Center(
         child: Text('Настройки ⚙️', style: TextStyle(fontSize: 24)),
       ),
     ),
@@ -25,8 +25,10 @@ class MainLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool isWideScreen =
-        MediaQuery.of(context).size.width >= 600; // Порог для переключения
+    // sizeOf вместо of: подписываемся только на размер, а не на весь
+    // MediaQuery — иначе экран пересобирался бы и от смены темы, отступов
+    // безопасной зоны или системного масштаба текста.
+    final bool isWideScreen = MediaQuery.sizeOf(context).width >= 600;
 
     return BlocBuilder<NavigationCubit, NavigationState>(
       builder: (context, state) {

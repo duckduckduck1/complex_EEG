@@ -64,7 +64,7 @@ class FileExperimentStorage implements ExperimentStorage {
     );
     // Не дописываем в чужую папку: иначе перемешаем два эксперимента и затрём
     // signal.bin уже записанного.
-    if (await experimentDirectory.exists()) {
+    if (experimentDirectory.existsSync()) {
       throw ExperimentFolderExists(folderName);
     }
     await experimentDirectory.create(recursive: true);
@@ -174,7 +174,7 @@ class FileExperimentStorage implements ExperimentStorage {
     );
     const encoder = JsonEncoder.withIndent('  ');
     await temp.writeAsString(encoder.convert(experimentJson), encoding: utf8);
-    if (await target.exists()) {
+    if (target.existsSync()) {
       await target.delete();
     }
     await temp.rename(target.path);

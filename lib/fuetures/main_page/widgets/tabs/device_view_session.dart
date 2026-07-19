@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/bloc/eeg_settings_cubit.dart';
+import 'package:eeg_app_max30003_stm32/fuetures/main_page/widgets/apps/eeg_widget/eeg_settings.dart';
 import 'package:eeg_app_max30003_stm32/features/devices/presentation/blocs/device_connection_bloc.dart';
 import 'package:eeg_app_max30003_stm32/features/recording/application/recording_bloc.dart';
 import 'package:eeg_app_max30003_stm32/features/recording/application/recording_bridge.dart';
@@ -35,6 +36,12 @@ class DeviceViewSession {
       recordingBloc: recordingBloc,
     );
     _recordingSub = recordingBloc.stream.listen(_onRecordingState);
+    // Настройки живут отдельно, а bloc графиков на них подписан: так их видит
+    // и панель фильтров, и сам расчёт, и никто не держит общий изменяемый
+    // объект.
+    _settingsSub = settings.stream.listen(
+      (value) => rtEegDataBloc.add(NewSettings(newSettings: value)),
+    );
   }
 
   /// BLoC подключения устройства; жизненным циклом владеет `SessionsCubit`.
@@ -47,41 +54,22 @@ class DeviceViewSession {
   final RecordingBloc recordingBloc;
   final RtEegDataBloc rtEegDataBloc;
 
+  /// Настройки живого графика: состав и фильтры.
+  final EegSettingsCubit settings = EegSettingsCubit();
+
+  late final StreamSubscription<EegSettings> _settingsSub;
   late final DeviceEegBridge _eegBridge;
   late final RecordingBridge _recordingBridge;
   late final StreamSubscription<RecordingState> _recordingSub;
   RecordingStatus _lastRecordingStatus = RecordingStatus.idle;
 
-  /// Счётчик пересборки видов графика.
-  ///
-  /// Настройки фильтров — изменяемый объект, общий с графиком, поэтому по нему
-  /// самому перестроиться нельзя: панель фильтров показывала бы старые
-  /// значения. Вид слушает счётчик и пересоздаёт график по ключу.
-  final ValueNotifier<int> plotSettingsRevision = ValueNotifier(0);
-
   void _onRecordingState(RecordingState state) {
     if (_lastRecordingStatus == RecordingStatus.preparing &&
         state.status == RecordingStatus.recording) {
       rtEegDataBloc.add(RtEegResetRequested());
-      _applyRecordingFiltersToPlot(state.filters);
+      settings.applyRecordingFilters(state.filters);
     }
     _lastRecordingStatus = state.status;
-  }
-
-  /// Переносит фильтры, выбранные при старте записи, на живой график.
-  ///
-  /// Иначе оператор выставляет их дважды: один раз в диалоге старта (для
-  /// записи) и второй раз руками в панели (для картинки).
-  void _applyRecordingFiltersToPlot(RecordingFilters filters) {
-    final plotFilters = rtEegDataBloc.eegSettings.fillterSettings;
-    plotFilters.lp = filters.lpHz;
-    plotFilters.hp = filters.hpHz;
-    plotFilters.notch = filters.notchHz;
-    plotFilters.isLpOn = filters.isLpEnabled;
-    plotFilters.isHpOn = filters.isHpEnabled;
-    plotFilters.isNotchOn = filters.isNotchEnabled;
-    rtEegDataBloc.add(NewSettings(newSettings: rtEegDataBloc.eegSettings));
-    plotSettingsRevision.value++;
   }
 
   bool _disposed = false;
@@ -98,10 +86,17 @@ class DeviceViewSession {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
-    await _recordingSub.cancel();
-    _eegBridge.dispose();
-    _recordingBridge.dispose();
-    plotSettingsRevision.dispose();
+    // Порядок важен: сначала перекрываем всё, что шлёт события, и **дожидаемся**
+    // отмены подписок, потом закрываем получателей. Мосты отменяют подписки
+    // асинхронно, и без await пакет, пришедший в этом окне, летел бы в уже
+    // закрывающийся bloc — «Cannot add new events after calling close».
+    await Future.wait([
+      _recordingSub.cancel(),
+      _settingsSub.cancel(),
+      _eegBridge.dispose(),
+      _recordingBridge.dispose(),
+    ]);
+    await settings.close();
     await recordingBloc.close();
     await rtEegDataBloc.close();
   }
